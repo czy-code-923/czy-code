@@ -45,7 +45,7 @@ def main():
         # Credentials are never printed and only enter a root-readable systemd environment file.
         os.umask(0o077)
         if subprocess.run(['id','harbor-agent'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode:run('useradd','--system','--home-dir','/var/lib/harbor-agent','--shell','/usr/sbin/nologin','harbor-agent')
-        root.mkdir(mode=0o755);rollback['dirs'].append(root)
+        root.mkdir(mode=0o755);rollback['dirs'].append(root);root.chmod(0o755)
         env.parent.mkdir(mode=0o700);rollback['dirs'].append(env.parent)
         for name in names:shutil.copyfile(stage/name,root/name);(root/name).chmod(0o755)
         state=Path('/var/lib/harbor-agent');state.mkdir(mode=0o700);rollback['dirs'].append(state);run('chown','harbor-agent:harbor-agent',str(state))
@@ -85,15 +85,18 @@ WantedBy=multi-user.target
         rollback['complete']=True
         print('4/4 Agent started. Return to the panel to confirm its heartbeat. No inbound management port was opened.')
 
+def rollback_install():
+    if not rollback['complete']:
+        if rollback['unit']:
+            subprocess.run(['systemctl','disable','--now','harbor-agent.service'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+            Path('/etc/systemd/system/harbor-agent.service').unlink(missing_ok=True)
+        for directory in reversed(rollback['dirs']):shutil.rmtree(directory)
+        if rollback['unit']:subprocess.run(['systemctl','daemon-reload'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+
 if __name__=='__main__':
     try:main()
     except Exception as error:
-        if not rollback['complete']:
-            if rollback['unit']:
-                subprocess.run(['systemctl','disable','--now','harbor-agent.service'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-                Path('/etc/systemd/system/harbor-agent.service').unlink(missing_ok=True)
-            for directory in reversed(rollback['dirs']):shutil.rmtree(directory)
-            if rollback['unit']:subprocess.run(['systemctl','daemon-reload'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        rollback_install()
         print('Installation failed: '+str(error),file=sys.stderr)
         print('New installation files were rolled back. Generate a new command in the panel and retry. Pre-existing Agents are never overwritten.',file=sys.stderr)
         sys.exit(1)
