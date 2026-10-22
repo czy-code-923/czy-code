@@ -1,0 +1,9 @@
+[Unit]
+Description=Harbor managed domain and certificate reconciliation
+After=network-online.target
+[Service]
+Type=oneshot
+# Root reviewed local helper. Replace the administrator CIDR with your actual source.
+ExecStart=/usr/bin/python3 /opt/harbor/domain-sync.py --env /etc/harbor/control.env --gateway /opt/harbor/harbor-gateway --nginx /usr/sbin/nginx --out /etc/nginx/conf.d/harbor.conf --admin-cidrs 127.0.0.1/32,::1/128 --issue --apply
+UMask=0077
+TimeoutStartSec=300

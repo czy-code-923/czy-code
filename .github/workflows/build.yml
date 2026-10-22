@@ -1,0 +1,40 @@
+name: Build distributable binaries
+on: workflow_dispatch
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [linux-amd64, linux-arm64, windows-amd64, windows-arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: cd web && npm ci && npm run build
+      - name: Compile portable binaries
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          export GOOS="${TARGET%-*}" GOARCH="${TARGET#*-}" CGO_ENABLED=0
+          ext=''; test "$GOOS" != windows || ext='.exe'
+          mkdir -p bin
+          for cmd in control agent firewall gateway; do
+            go build -trimpath -ldflags='-s -w' -o "bin/harbor-$cmd$ext" "./cmd/$cmd"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: harbor-${{ matrix.target }}
+          path: |
+            bin/
+            web/dist/
+            scripts/
+            docs/
+            README.md

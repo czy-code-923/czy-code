@@ -1,0 +1,10 @@
+{
+ "host_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+ "policy":{
+  "name":"Example only - replace admin network",
+  "ssh_port":22,
+  "admin_cidrs":["192.0.2.0/24","2001:db8::/64"],
+  "default_action":"drop",
+  "rules":[{"name":"Proxy ingress","protocol":"tcp","port":2080,"source":"0.0.0.0/0","action":"accept"}]
+ }
+}

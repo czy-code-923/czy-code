@@ -1,0 +1,18 @@
+# Explicit opt-in: private config staging only, no systemd, firewall, engine run or public listeners.
+services:
+  agent:
+    environment:
+      AGENT_MODE: staging
+      STATE_DIR: /state
+      ENGINE_SECRET: ${ENGINE_SECRET:?Generate and preserve a private local engine secret}
+      SING_BOX_BINARY: /engines/sing-box
+      SING_BOX_SHA256: ${SING_BOX_SHA256:?Set the SHA256 of the trusted Linux sing-box binary}
+      FRPS_BINARY: /engines/frps
+      FRPS_SHA256: ${FRPS_SHA256:?Set the SHA256 of the trusted Linux frps binary}
+      FRPC_BINARY: /engines/frpc
+      FRPC_SHA256: ${FRPC_SHA256:?Set the SHA256 of the trusted Linux frpc binary}
+    volumes:
+      - ./engines:/engines:ro
+      - stagedata:/state
+volumes:
+  stagedata:

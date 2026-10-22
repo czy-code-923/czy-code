@@ -1,0 +1,8 @@
+.git
+.env*
+web/node_modules
+web/dist
+demo-agent.json
+*.exe
+engines
+state

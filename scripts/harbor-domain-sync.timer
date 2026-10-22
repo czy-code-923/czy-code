@@ -1,0 +1,9 @@
+[Unit]
+Description=Reconcile Harbor domain settings periodically
+[Timer]
+OnBootSec=1min
+OnUnitInactiveSec=1min
+AccuracySec=5s
+Persistent=true
+[Install]
+WantedBy=timers.target

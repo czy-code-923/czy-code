@@ -1,0 +1,72 @@
+name: Verify Harbor
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: harbor
+          POSTGRES_PASSWORD: ci-test-password
+          POSTGRES_DB: harbor_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U harbor -d harbor_test"
+          --health-interval 3s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+      - run: python3 scripts/test_domain_sync.py
+      - run: go vet ./...
+      - run: go test -race -count=1 -v ./...
+        env:
+          TEST_DATABASE_URL: postgres://harbor:ci-test-password@127.0.0.1:5432/harbor_test?sslmode=disable
+      - name: Validate nft syntax in an isolated network namespace
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y nftables
+          go run ./cmd/firewall preview --file docs/firewall-example.json > /tmp/harbor-example.nft
+          sudo unshare --net nft --check -f /tmp/harbor-example.nft
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+
+  native:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python scripts/fetch-engines.py
+      - name: Native IPv4 and IPv6 forwarding
+        shell: bash
+        run: |
+          ext=''; test "$RUNNER_OS" != Windows || ext='.exe'
+          export TEST_SING_BOX_BINARY="$GITHUB_WORKSPACE/engines/sing-box$ext"
+          export TEST_FRPS_BINARY="$GITHUB_WORKSPACE/engines/frps$ext"
+          export TEST_FRPC_BINARY="$GITHUB_WORKSPACE/engines/frpc$ext"
+          go test -count=1 -v ./internal/live ./internal/executor

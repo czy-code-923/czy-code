@@ -1,0 +1,71 @@
+name: harbor-mvp
+services:
+  db:
+    image: postgres:17-alpine
+    command: ["postgres", "-c", "shared_buffers=64MB", "-c", "max_connections=30", "-c", "work_mem=2MB", "-c", "maintenance_work_mem=32MB"]
+    mem_limit: 384m
+    pids_limit: 100
+    environment:
+      POSTGRES_DB: harbor
+      POSTGRES_USER: harbor
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run python scripts/init_env.py first}
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U harbor -d harbor"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  api:
+    build: .
+    environment:
+      DATABASE_URL: postgres://harbor:${POSTGRES_PASSWORD}@db:5432/harbor?sslmode=disable
+      MASTER_KEY: ${MASTER_KEY:?Run python scripts/prepare.py first}
+      SHARE_ADDR: 0.0.0.0:8091
+      ADMIN_TOKEN: ${ADMIN_TOKEN:?Run python scripts/init_env.py first}
+      HTTP_ADDR: 0.0.0.0:8080
+      GOMEMLIMIT: 128MiB
+    mem_limit: 192m
+    pids_limit: 64
+    ports: ["127.0.0.1:8080:8080", "127.0.0.1:8091:8091"]
+    depends_on:
+      db: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+  web:
+    build: ./web
+    ports: ["127.0.0.1:5173:8080"]
+    depends_on:
+      api: {condition: service_healthy}
+    mem_limit: 64m
+    pids_limit: 32
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+  agent:
+    build: .
+    entrypoint: ["/app/agent"]
+    profiles: [demo]
+    environment:
+      CONTROL_URL: http://api:8080
+      ALLOW_COMPOSE_HTTP: "1"
+      HOST_ID: ${HOST_ID:-}
+      AGENT_TOKEN: ${AGENT_TOKEN:-}
+      GOMEMLIMIT: 128MiB
+    mem_limit: 192m
+    pids_limit: 64
+    depends_on:
+      api: {condition: service_healthy}
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: "no"
+volumes:
+  pgdata:
