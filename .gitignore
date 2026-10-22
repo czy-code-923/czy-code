@@ -1,0 +1,10 @@
+node_modules/
+web/dist/
+.env
+.env.*
+!.env.example
+/state/
+/engines/
+*.exe
+*.log
+/bin/
