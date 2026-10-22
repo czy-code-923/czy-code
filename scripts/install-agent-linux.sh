@@ -42,7 +42,9 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/var/lib/harbor
-RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+# sing-box initializes its interface monitor using an unprivileged Netlink socket.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+CapabilityBoundingSet=
 UMask=0077
 MemoryMax=384M
 TasksMax=96

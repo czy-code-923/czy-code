@@ -2,7 +2,7 @@
 
 Vue 3 / TypeScript / Go / PostgreSQL 个人控制面：库存、模拟/暂存任务、防火墙策略，以及显式启用的真实 sing-box、跨机 FRP、中转和域名订阅分享。
 
-**尚未部署到真实 VPS。** 本地 PostgreSQL、Windows 官方引擎的 IPv4/IPv6 转发已验证；Linux 内核防火墙、Docker、ACME 和真实 VPS 尚待现场验证。不能把模拟成功或编译通过当作真实部署完成。
+**基础控制面已部署到真实 VPS，HTTPS 页面可访问。** 运行目录、登录方式、资源限制、验收与未完成项见 [实际部署记录](docs/DEPLOYMENT-v04.md)。本地模拟通过与真实代理上线是不同状态。
 
 ## 一键启动
 
