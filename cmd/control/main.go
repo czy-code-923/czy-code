@@ -35,7 +35,7 @@ func main() {
 	if os.Getenv("MASTER_KEY") != "" && (err != nil || len(key) != 32) {
 		log.Fatal("MASTER_KEY must be 64 hexadecimal characters")
 	}
-	control := &api.Server{DB: db, AdminToken: token, MasterKey: key}
+	control := &api.Server{DB: db, AdminToken: token, MasterKey: key, AgentReleaseDir: os.Getenv("AGENT_RELEASE_DIR")}
 	shareAddr := os.Getenv("SHARE_ADDR")
 	if shareAddr == "" {
 		shareAddr = "127.0.0.1:8091"

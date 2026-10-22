@@ -23,9 +23,10 @@ import (
 
 const tenant = "self" // Never accepted from client input. Replace with membership resolution before multi-tenant release.
 type Server struct {
-	DB         *pgxpool.Pool
-	MasterKey  []byte
-	AdminToken string
+	DB              *pgxpool.Pool
+	MasterKey       []byte
+	AdminToken      string
+	AgentReleaseDir string
 }
 type problem struct {
 	status  int
@@ -113,6 +114,13 @@ func (s *Server) agent(f func(http.ResponseWriter, *http.Request, string) error)
 }
 func (s *Server) Handler() http.Handler {
 	m := http.NewServeMux()
+	m.HandleFunc("POST /api/v1/hosts/{id}/enrollment", s.admin(s.enrollmentCreate))
+	m.HandleFunc("GET /api/v1/hosts/{id}/enrollment", s.admin(s.enrollmentStatus))
+	m.HandleFunc("POST /api/v1/hosts/{id}/enrollment/revoke", s.admin(s.enrollmentRevoke))
+	m.HandleFunc("POST /api/v1/agent/enroll", wrap(s.enrollmentClaim))
+	m.HandleFunc("GET /api/v1/agent/install.sh", s.bootstrapScript)
+	m.HandleFunc("GET /api/v1/agent/install.py", s.bootstrapScript)
+	m.HandleFunc("GET /api/v1/agent/releases/{platform}", wrap(s.agentRelease))
 	m.HandleFunc("GET /api/v1/site", s.admin(s.site))
 	m.HandleFunc("PUT /api/v1/site", s.admin(s.site))
 	m.HandleFunc("POST /api/v1/site/gateway-status", s.admin(s.gatewayStatus))
@@ -160,7 +168,7 @@ func audit(ctx context.Context, tx pgx.Tx, actor, action, id string) error {
 }
 func (s *Server) list(w http.ResponseWriter, r *http.Request) error {
 	// SQL identifiers are selected solely from this fixed allowlist.
-	tables := map[string]string{"hosts": "SELECT tenant_id,id,name,provider,address,last_seen,agent_mode,created_at FROM hosts", "nodes": "SELECT * FROM nodes", "instances": "SELECT * FROM instances", "tunnels": "SELECT * FROM tunnels", "configs": "SELECT * FROM configs", "tasks": "SELECT tenant_id,id,instance_id,config_id,request_key,state,attempts,lease_until,result,created_at,updated_at,mode,operation,artifact_checksum FROM tasks", "audit": "SELECT * FROM audit", "routes": "SELECT * FROM route_plans"}
+	tables := map[string]string{"hosts": "SELECT tenant_id,id,name,provider,address,last_seen,agent_mode,agent_version,platform,reported_addresses,created_at FROM hosts", "nodes": "SELECT * FROM nodes", "instances": "SELECT * FROM instances", "tunnels": "SELECT * FROM tunnels", "configs": "SELECT * FROM configs", "tasks": "SELECT tenant_id,id,instance_id,config_id,request_key,state,attempts,lease_until,result,created_at,updated_at,mode,operation,artifact_checksum FROM tasks", "audit": "SELECT * FROM audit", "routes": "SELECT * FROM route_plans"}
 	tables["firewalls"] = "SELECT tenant_id,id,host_id,name,version,checksum,archived_at,created_at FROM firewall_policies"
 	q, ok := tables[r.PathValue("kind")]
 	if !ok {
@@ -240,8 +248,14 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) error {
 	result := map[string]any{"id": id}
 	switch kind {
 	case "hosts":
-		if len(b.Address) > 255 || b.Address == "" || len(b.Provider) > 100 || b.Provider == "" {
-			return bad("provider and inventory address required")
+		if b.Provider == "" {
+			b.Provider = "self"
+		}
+		if b.Address == "" {
+			b.Address = "outbound-agent"
+		}
+		if len(b.Address) > 255 || len(b.Provider) > 100 {
+			return bad("provider or inventory address too long")
 		}
 		token := ID() + ID()
 		_, e = tx.Exec(ctx, "INSERT INTO hosts(tenant_id,id,name,provider,address,agent_hash) VALUES($1,$2,$3,$4,$5,$6)", tenant, id, b.Name, b.Provider, b.Address, Hash(token))

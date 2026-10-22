@@ -17,3 +17,6 @@ state/
 *.pem
 *.key
 bin/
+
+agent-releases/*
+!agent-releases/.gitkeep

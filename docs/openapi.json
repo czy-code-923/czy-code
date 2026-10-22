@@ -2,8 +2,8 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Harbor control plane MVP",
-    "version": "0.4.0",
-    "description": "Single-admin self workspace. Simulation and opt-in validated native config staging. No services started; no arbitrary shell. Lists return latest 200. Includes versioned firewall policies and a metadata-only conditional snapshot. API never applies host firewall rules."
+    "version": "0.5.0",
+    "description": "Single-admin control plane, inventory, safe task staging, opt-in live sing-box/FRP, subscriptions, domain gateway and single-use outbound Agent enrollment. No arbitrary shell. Firewall changes require the local restricted helper."
   },
   "servers": [
     {
@@ -3032,6 +3032,199 @@
           }
         ]
       }
+    },
+    "/api/v1/hosts/{id}/enrollment": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Read connection status without returning credentials",
+        "security": [
+          {
+            "adminBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Unauthorized or invalid/expired/consumed ticket"
+          },
+          "503": {
+            "description": "Verified installer package unavailable"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create 15-minute single-use installer command; revoke prior unused tickets",
+        "security": [
+          {
+            "adminBearer": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Unauthorized or invalid/expired/consumed ticket"
+          },
+          "503": {
+            "description": "Verified installer package unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/hosts/{id}/enrollment/revoke": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Revoke unused installation tickets without disconnecting the active Agent",
+        "security": [
+          {
+            "adminBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Unauthorized or invalid/expired/consumed ticket"
+          },
+          "503": {
+            "description": "Verified installer package unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/agent/enroll": {
+      "post": {
+        "summary": "Exchange one-use ticket for host-scoped Agent credential",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Unauthorized or invalid/expired/consumed ticket"
+          },
+          "503": {
+            "description": "Verified installer package unavailable"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "ticket"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "ticket": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent/install.sh": {
+      "get": {
+        "summary": "Download fixed HTTPS bootstrap script",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Unauthorized or invalid/expired/consumed ticket"
+          },
+          "503": {
+            "description": "Verified installer package unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/agent/install.py": {
+      "get": {
+        "summary": "Download fixed HTTPS bootstrap script",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Unauthorized or invalid/expired/consumed ticket"
+          },
+          "503": {
+            "description": "Verified installer package unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/agent/releases/{platform}": {
+      "get": {
+        "summary": "Read package SHA-256/size or download fixed ZIP with download=1",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Unauthorized or invalid/expired/consumed ticket"
+          },
+          "503": {
+            "description": "Verified installer package unavailable"
+          }
+        },
+        "parameters": [
+          {
+            "name": "platform",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "linux-amd64",
+                "linux-arm64"
+              ]
+            }
+          },
+          {
+            "name": "download",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ]
+            }
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -3050,9 +3243,7 @@
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "name",
-          "provider",
-          "address"
+          "name"
         ],
         "properties": {
           "name": {
@@ -3453,6 +3644,19 @@
               "staging"
             ],
             "default": "simulation"
+          },
+          "agent_version": {
+            "type": "string"
+          },
+          "platform": {
+            "type": "string"
+          },
+          "reported_addresses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 16
           }
         }
       },
@@ -3728,6 +3932,21 @@
               "staging"
             ],
             "default": "simulation"
+          },
+          "version": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "platform": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "addresses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 16
           }
         }
       },

@@ -25,6 +25,8 @@ services:
       ADMIN_TOKEN: ${ADMIN_TOKEN:?Run python scripts/init_env.py first}
       HTTP_ADDR: 0.0.0.0:8080
       GOMEMLIMIT: 128MiB
+      AGENT_RELEASE_DIR: /app/agent-releases
+    volumes: ["./agent-releases:/app/agent-releases:ro"]
     mem_limit: 192m
     pids_limit: 64
     ports: ["127.0.0.1:8080:8080", "127.0.0.1:8091:8091"]

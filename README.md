@@ -1,8 +1,12 @@
-# Harbor · VPS 管理平台 v0.4
+# Harbor · VPS 管理平台 v0.5
 
 Vue 3 / TypeScript / Go / PostgreSQL 个人控制面：库存、模拟/暂存任务、防火墙策略，以及显式启用的真实 sing-box、跨机 FRP、中转和域名订阅分享。
 
 **基础控制面已部署到真实 VPS，HTTPS 页面可访问。** 运行目录、登录方式、资源限制、验收与未完成项见 [实际部署记录](docs/DEPLOYMENT-v04.md)。本地模拟通过与真实代理上线是不同状态。
+
+## 连接其他 VPS
+
+这台是总管理端。进入「主机资产 → 新建主机」只填名称，复制自动生成的安装命令，在目标 VPS 执行即可接入。无需填写 HOST_ID/长效令牌、写 Compose 或安装数据库。支持 Linux amd64/arm64 + systemd；命令15分钟有效、单次使用，连接状态依据真实心跳。详见 [一键连接与保护机制](docs/AGENT-CONNECT.md)。
 
 ## 一键启动
 
@@ -26,7 +30,7 @@ ssh -N -L 5173:127.0.0.1:5173 YOUR_USER@YOUR_VPS
 
 1. 在「域名与分享」设置域名、选择HTTPS；保存是期望设置，界面另列网关实际回报。
 2. 按 [安装文档](docs/INSTALL.md) 安装本地受限域名同步器。它维护自己的nginx站点，处理ACME证书、校验配置后重载，失败恢复。启用计时器后面板更换域名自动同步，DNS需提前配置。
-3. 每台Linux/Windows主机登记独立Agent；显式启用 ENABLE_LIVE 才能运行真实服务。
+3. Linux 目标主机优先使用面板一键连接，安装器配置真实服务执行器；Windows 保留独立 Agent 手动登记方式。
 4. 创建Shadowsocks 2022（IPv4/IPv6/域名、最多8跳）或FRP服务端/客户端。默认停用、默认回环监听；核对防火墙及端口后启用。
 5. 选择服务创建有期限订阅，支持sing-box、Mihomo/Clash Meta、Base64 URI列表；链接仅显示一次，可轮换和撤销。只有新鲜回报运行的服务会下发。
 

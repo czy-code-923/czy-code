@@ -9,10 +9,13 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"os/signal"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -103,7 +106,24 @@ func run(ctx context.Context) error {
 		delay := time.Second
 		e = nil
 		if time.Now().After(nextHeartbeat) {
-			_, _, e = call(ctx, "heartbeat", map[string]string{"mode": mode})
+			addresses := []string{}
+			if items, err := net.InterfaceAddrs(); err == nil {
+				for _, item := range items {
+					prefix, err := netip.ParsePrefix(item.String())
+					if err != nil {
+						continue
+					}
+					a := prefix.Addr()
+					if a.IsUnspecified() || a.IsLoopback() || a.IsMulticast() || a.IsLinkLocalUnicast() {
+						continue
+					}
+					addresses = append(addresses, a.String())
+					if len(addresses) == 16 {
+						break
+					}
+				}
+			}
+			_, _, e = call(ctx, "heartbeat", map[string]any{"mode": mode, "version": "0.5.0", "platform": runtime.GOOS + "/" + runtime.GOARCH, "addresses": addresses})
 			if e == nil {
 				nextHeartbeat = time.Now().Add(30 * time.Second)
 			}

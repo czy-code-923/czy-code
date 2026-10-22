@@ -13,7 +13,7 @@ func (s *Server) snapshot(w http.ResponseWriter, r *http.Request) error {
 		kind, query string
 		limit       int
 	}{
-		{"hosts", "SELECT id,name,provider,address,last_seen,agent_mode,created_at FROM hosts", 200},
+		{"hosts", "SELECT id,name,provider,address,last_seen,agent_mode,agent_version,platform,reported_addresses,created_at FROM hosts", 200},
 		{"nodes", "SELECT id,name,engine,created_at FROM nodes", 200},
 		{"instances", "SELECT id,name,host_id,node_id,listen_port,state,applied_config_id,staged_config_id,created_at FROM instances", 200},
 		{"tunnels", "SELECT id,name,instance_id,local_host,local_port,remote_port,created_at FROM tunnels", 200},

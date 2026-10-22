@@ -5,12 +5,16 @@ import (
 	"errors"
 	"github.com/jackc/pgx/v5"
 	"net/http"
+	"net/netip"
 	"regexp"
 )
 
 func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request, host string) error {
 	var b struct {
-		Mode string `json:"mode"`
+		Mode      string   `json:"mode"`
+		Version   string   `json:"version"`
+		Platform  string   `json:"platform"`
+		Addresses []string `json:"addresses"`
 	}
 	if e := decode(w, r, &b); e != nil {
 		return e
@@ -21,7 +25,23 @@ func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request, host string) 
 	if b.Mode != "simulation" && b.Mode != "staging" {
 		return bad("invalid agent mode")
 	}
-	_, e := s.DB.Exec(r.Context(), "UPDATE hosts SET last_seen=now(),agent_mode=$3 WHERE tenant_id=$1 AND id=$2", tenant, host, b.Mode)
+	if len(b.Version) > 40 || len(b.Platform) > 40 || len(b.Addresses) > 16 {
+		return bad("invalid agent identity")
+	}
+	addresses := []string{}
+	primary := ""
+	for _, value := range b.Addresses {
+		a, e := netip.ParseAddr(value)
+		if e != nil || a.Zone() != "" || a.IsUnspecified() || a.IsMulticast() || a.IsLoopback() || a.IsLinkLocalUnicast() {
+			return bad("invalid interface address")
+		}
+		addresses = append(addresses, a.String())
+		if primary == "" || a.Is4() && !a.IsPrivate() {
+			primary = a.String()
+		}
+	}
+	raw, _ := json.Marshal(addresses)
+	_, e := s.DB.Exec(r.Context(), "UPDATE hosts SET last_seen=now(),agent_mode=$3,agent_version=CASE WHEN $4<>'' THEN $4 ELSE agent_version END,platform=CASE WHEN $5<>'' THEN $5 ELSE platform END,reported_addresses=$6,address=CASE WHEN address='outbound-agent' AND $7<>'' THEN $7 ELSE address END WHERE tenant_id=$1 AND id=$2", tenant, host, b.Mode, b.Version, b.Platform, raw, primary)
 	if e != nil {
 		return e
 	}
