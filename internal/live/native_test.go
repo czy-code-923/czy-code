@@ -67,7 +67,11 @@ func nativeForwarding(t *testing.T, bindAddress string) {
 	client := server
 	client.Kind = "frpc"
 	client.PrivateKey = ""
-	runner, e := NewRunner(t.TempDir(), binaries)
+	stateDirectory := t.TempDir()
+	if e = os.Chmod(stateDirectory, 0700); e != nil {
+		t.Fatal(e)
+	}
+	runner, e := NewRunner(stateDirectory, binaries)
 	if e != nil {
 		t.Fatal(e)
 	}
