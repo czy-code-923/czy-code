@@ -44,7 +44,7 @@ func (s *Server) updateResource(w http.ResponseWriter, r *http.Request) error {
 		if key == "name" && len([]rune(v)) > 100 {
 			return bad("name too long")
 		}
-		if key == "engine" && v != "sing-box" && v != "frp" {
+		if key == "engine" && v != "sing-box" && v != "frp" && v != "xray" {
 			return bad("unsupported engine")
 		}
 		updates[key] = v
@@ -66,7 +66,7 @@ func (s *Server) updateResource(w http.ResponseWriter, r *http.Request) error {
 			return e
 		}
 		if engine != old {
-			if e = tx.QueryRow(ctx, "SELECT count(*) FROM instances WHERE tenant_id=$1 AND node_id=$2", tenant, locked).Scan(&count); e != nil {
+			if e = tx.QueryRow(ctx, "SELECT (SELECT count(*) FROM instances WHERE tenant_id=$1 AND node_id=$2)+(SELECT count(*) FROM live_services WHERE tenant_id=$1 AND node_id=$2)", tenant, locked).Scan(&count); e != nil {
 				return e
 			}
 			if count > 0 {

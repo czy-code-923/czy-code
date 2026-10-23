@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Harbor control plane MVP",
-    "version": "0.6.0",
+    "version": "0.7.0",
     "description": "Single-admin control plane, inventory, safe task staging, opt-in live sing-box/Xray/FRP, subscriptions, domain gateway and single-use outbound Agent enrollment. No arbitrary shell. Firewall changes require the local restricted helper."
   },
   "servers": [
@@ -2602,7 +2602,9 @@
                       "hysteria2",
                       "tuic",
                       "trojan",
-                      "snell"
+                      "snell",
+                      "vmess",
+                      "anytls"
                     ]
                   },
                   "address": {
@@ -2682,6 +2684,37 @@
                     "type": "string",
                     "writeOnly": true,
                     "description": "Matching private key PEM, encrypted at rest"
+                  },
+                  "node_id": {
+                    "type": "string"
+                  },
+                  "certificate_id": {
+                    "type": "string"
+                  },
+                  "transport": {
+                    "enum": [
+                      "tcp",
+                      "ws",
+                      ""
+                    ]
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "tls_mode": {
+                    "enum": [
+                      "tls",
+                      "none",
+                      ""
+                    ]
+                  },
+                  "password": {
+                    "type": "string",
+                    "writeOnly": true
+                  },
+                  "uuid": {
+                    "type": "string",
+                    "writeOnly": true
                   }
                 }
               }
@@ -3308,6 +3341,284 @@
           },
           "404": {
             "description": "Unknown, expired or revoked subscription"
+          }
+        }
+      }
+    },
+    "/api/v1/live/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Node detail and redacted generated inbound/outbound",
+        "responses": {
+          "200": {
+            "description": "Typed fields and redacted configuration"
+          }
+        }
+      },
+      "put": {
+        "summary": "Versioned proxy configuration edit",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "name",
+                      "host_id",
+                      "kind"
+                    ],
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "host_id": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "enum": [
+                          "shadowsocks",
+                          "frps",
+                          "frpc",
+                          "vless",
+                          "hysteria2",
+                          "tuic",
+                          "trojan",
+                          "snell",
+                          "vmess",
+                          "anytls"
+                        ]
+                      },
+                      "address": {
+                        "type": "string"
+                      },
+                      "listen": {
+                        "enum": [
+                          "127.0.0.1",
+                          "::1",
+                          "0.0.0.0",
+                          "::"
+                        ]
+                      },
+                      "port": {
+                        "type": "integer",
+                        "minimum": 1024,
+                        "maximum": 65535
+                      },
+                      "parent_id": {
+                        "type": "string"
+                      },
+                      "next_id": {
+                        "type": "string"
+                      },
+                      "tunnels": {
+                        "type": "array",
+                        "maxItems": 64,
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "name",
+                            "local_host",
+                            "local_port",
+                            "remote_port"
+                          ],
+                          "properties": {
+                            "name": {
+                              "type": "string"
+                            },
+                            "local_host": {
+                              "enum": [
+                                "127.0.0.1",
+                                "::1"
+                              ]
+                            },
+                            "local_port": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 65535
+                            },
+                            "remote_port": {
+                              "type": "integer",
+                              "minimum": 1024,
+                              "maximum": 65535
+                            }
+                          }
+                        }
+                      },
+                      "engine": {
+                        "enum": [
+                          "sing-box",
+                          "xray"
+                        ],
+                        "description": "Xray supports VLESS and Trojan only; default sing-box"
+                      },
+                      "server_name": {
+                        "type": "string",
+                        "description": "TLS certificate DNS name"
+                      },
+                      "certificate": {
+                        "type": "string",
+                        "writeOnly": true,
+                        "description": "Publicly trusted full-chain PEM for TLS proxy templates"
+                      },
+                      "private_key": {
+                        "type": "string",
+                        "writeOnly": true,
+                        "description": "Matching private key PEM, encrypted at rest"
+                      },
+                      "node_id": {
+                        "type": "string"
+                      },
+                      "certificate_id": {
+                        "type": "string"
+                      },
+                      "transport": {
+                        "enum": [
+                          "tcp",
+                          "ws",
+                          ""
+                        ]
+                      },
+                      "path": {
+                        "type": "string"
+                      },
+                      "tls_mode": {
+                        "enum": [
+                          "tls",
+                          "none",
+                          ""
+                        ]
+                      },
+                      "password": {
+                        "type": "string",
+                        "writeOnly": true
+                      },
+                      "uuid": {
+                        "type": "string",
+                        "writeOnly": true
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "version": {
+                        "type": "integer"
+                      },
+                      "rotate_credentials": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "New desired configuration version"
+          },
+          "409": {
+            "description": "Version, port or capability conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/certificates": {
+      "get": {
+        "summary": "GET certificates",
+        "responses": {
+          "200": {
+            "description": "Authenticated typed operation; see CONFIGURATION-v07.md"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST certificates",
+        "responses": {
+          "201": {
+            "description": "Authenticated typed operation; see CONFIGURATION-v07.md"
+          }
+        }
+      }
+    },
+    "/api/v1/certificates/{id}/retry": {
+      "post": {
+        "summary": "POST certificates/{id}/retry",
+        "responses": {
+          "200": {
+            "description": "Authenticated typed operation; see CONFIGURATION-v07.md"
+          }
+        }
+      }
+    },
+    "/api/v1/reverse-proxies": {
+      "get": {
+        "summary": "GET reverse-proxies",
+        "responses": {
+          "200": {
+            "description": "Authenticated typed operation; see CONFIGURATION-v07.md"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST reverse-proxies",
+        "responses": {
+          "201": {
+            "description": "Authenticated typed operation; see CONFIGURATION-v07.md"
+          }
+        }
+      }
+    },
+    "/api/v1/reverse-proxies/{id}": {
+      "put": {
+        "summary": "PUT reverse-proxies/{id}",
+        "responses": {
+          "200": {
+            "description": "Authenticated typed operation; see CONFIGURATION-v07.md"
+          }
+        }
+      }
+    },
+    "/api/v1/engine-catalog": {
+      "get": {
+        "summary": "GET engine-catalog",
+        "responses": {
+          "200": {
+            "description": "Authenticated typed operation; see CONFIGURATION-v07.md"
+          }
+        }
+      }
+    },
+    "/api/v1/gateway/work": {
+      "post": {
+        "summary": "POST gateway/work",
+        "responses": {
+          "200": {
+            "description": "Authenticated typed operation; see CONFIGURATION-v07.md"
+          }
+        }
+      }
+    },
+    "/api/v1/gateway/report": {
+      "post": {
+        "summary": "POST gateway/report",
+        "responses": {
+          "200": {
+            "description": "Authenticated typed operation; see CONFIGURATION-v07.md"
           }
         }
       }

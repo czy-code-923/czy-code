@@ -123,7 +123,7 @@ func run(ctx context.Context) error {
 					}
 				}
 			}
-			_, _, e = call(ctx, "heartbeat", map[string]any{"mode": mode, "version": "0.6.0", "platform": runtime.GOOS + "/" + runtime.GOARCH, "addresses": addresses})
+			_, _, e = call(ctx, "heartbeat", map[string]any{"mode": mode, "version": "0.7.0", "platform": runtime.GOOS + "/" + runtime.GOARCH, "addresses": addresses})
 			if e == nil {
 				nextHeartbeat = time.Now().Add(30 * time.Second)
 			}

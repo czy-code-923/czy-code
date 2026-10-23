@@ -17,7 +17,7 @@ import (
 )
 
 func TLSProxy(kind string) bool {
-	return kind == "vless" || kind == "hysteria2" || kind == "tuic" || kind == "trojan"
+	return kind == "vless" || kind == "hysteria2" || kind == "tuic" || kind == "trojan" || kind == "vmess" || kind == "anytls"
 }
 func Proxy(kind string) bool { return kind == "shadowsocks" || kind == "snell" || TLSProxy(kind) }
 func UUID() string {
@@ -33,7 +33,7 @@ func UUID() string {
 var uuidPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
 func (s Spec) validateProxy() error {
-	if s.Engine != "" && s.Engine != "sing-box" && !(s.Engine == "xray" && (s.Kind == "vless" || s.Kind == "trojan")) {
+	if s.Engine != "" && s.Engine != "sing-box" && !EngineSupports(s.Engine, s.Kind) {
 		return errors.New("engine does not support this protocol template")
 	}
 	if s.Peer != nil || len(s.Tunnels) > 0 {
@@ -49,8 +49,14 @@ func (s Spec) validateProxy() error {
 		}
 		return nil
 	}
-	if (s.Kind == "vless" || s.Kind == "tuic") && !uuidPattern.MatchString(s.UUID) {
+	if (s.Kind == "vless" || s.Kind == "tuic" || s.Kind == "vmess") && !uuidPattern.MatchString(s.UUID) {
 		return errors.New("valid UUID required")
+	}
+	if !s.UsesTLS() {
+		if s.ServerName != "" || s.Certificate != "" || s.PrivateKey != "" {
+			return errors.New("TLS fields require TLS mode")
+		}
+		return nil
 	}
 	if !Address(s.ServerName) {
 		return errors.New("TLS server name required")
@@ -78,10 +84,18 @@ func (s Spec) renderProxy() (string, map[string][]byte, error) {
 		files["tls.crt"] = []byte(s.Certificate)
 		files["tls.key"] = []byte(s.PrivateKey)
 		tls := map[string]any{"enabled": true, "certificate_path": "tls.crt", "key_path": "tls.key"}
-		inbound["tls"] = tls
+		if s.UsesTLS() {
+			inbound["tls"] = tls
+		} else {
+			delete(files, "tls.crt")
+			delete(files, "tls.key")
+		}
+		if s.Transport == "ws" {
+			inbound["transport"] = map[string]any{"type": "ws", "path": s.Path}
+		}
 		user := map[string]any{"name": "harbor"}
 		switch s.Kind {
-		case "vless":
+		case "vless", "vmess":
 			user["uuid"] = s.UUID
 		case "tuic":
 			user["uuid"] = s.UUID
@@ -96,6 +110,9 @@ func (s Spec) renderProxy() (string, map[string][]byte, error) {
 	}
 	b, e := json.MarshalIndent(map[string]any{"log": map[string]any{"level": "warn"}, "inbounds": []any{inbound}, "outbounds": []any{map[string]any{"type": "direct", "tag": "egress"}}, "route": map[string]any{"final": "egress"}}, "", "  ")
 	files["config.json"] = b
+	if e == nil && s.Outbound != nil {
+		e = s.patchOutbound("sing-box", files)
+	}
 	return "sing-box", files, e
 }
 
@@ -126,22 +143,29 @@ func (s Spec) Client(tag string) (map[string]any, map[string]any, string, error)
 		u.User = url.User(s.Password)
 		q.Set("version", "4")
 	} else {
-		sb["tls"] = map[string]any{"enabled": true, "server_name": s.ServerName, "certificate": s.Certificate}
+		if s.UsesTLS() {
+			sb["tls"] = map[string]any{"enabled": true, "server_name": s.ServerName, "certificate": s.Certificate}
+		}
 		mh["sni"] = s.ServerName
-		mh["tls"] = true
+		mh["tls"] = s.UsesTLS()
 		mh["skip-cert-verify"] = false
 		block, _ := pem.Decode([]byte(s.Certificate))
-		if block == nil {
+		if block == nil && s.UsesTLS() {
 			return nil, nil, "", errors.New("missing certificate")
 		}
 		// Keep URI certificate validation enabled. No allowInsecure export.
 		q.Set("sni", s.ServerName)
 		q.Set("security", "tls")
 		switch s.Kind {
-		case "vless":
+		case "vless", "vmess":
 			delete(mh, "sni")
 			mh["servername"] = s.ServerName
 			sb["uuid"] = s.UUID
+			if s.Kind == "vmess" {
+				sb["security"] = "aes-128-gcm"
+				mh["cipher"] = "aes-128-gcm"
+				mh["alterId"] = 0
+			}
 			mh["uuid"] = s.UUID
 			mh["network"] = "tcp"
 			u.User = url.User(s.UUID)
@@ -165,8 +189,32 @@ func (s Spec) Client(tag string) (map[string]any, map[string]any, string, error)
 			u.User = url.User(s.Password)
 		}
 	}
+	if !s.UsesTLS() {
+		delete(mh, "sni")
+		delete(mh, "servername")
+		q.Del("sni")
+		q.Del("security")
+	}
+	if s.Transport == "ws" {
+		sb["transport"] = map[string]any{"type": "ws", "path": s.Path}
+		mh["network"] = "ws"
+		mh["ws-opts"] = map[string]any{"path": s.Path}
+		q.Set("type", "ws")
+		q.Set("path", s.Path)
+	}
+	if s.Kind == "vmess" {
+		payload := map[string]any{"v": "2", "ps": tag, "add": s.Address, "port": s.Port, "id": s.UUID, "aid": "0", "scy": "aes-128-gcm", "net": "tcp", "type": "none", "tls": "", "sni": s.ServerName, "path": s.Path}
+		if s.UsesTLS() {
+			payload["tls"] = "tls"
+		}
+		if s.Transport == "ws" {
+			payload["net"] = "ws"
+		}
+		raw, _ := json.Marshal(payload)
+		return sb, mh, "vmess://" + base64.StdEncoding.EncodeToString(raw), nil
+	}
 	u.RawQuery = q.Encode()
-	if s.Kind == "snell" {
+	if s.Kind == "snell" || s.Kind == "anytls" {
 		return sb, mh, "", nil
 	}
 	return sb, mh, u.String(), nil
@@ -207,21 +255,6 @@ func (s Spec) VerifyPublicCertificate() error {
 		return errors.New("publicly trusted fullchain required for portable subscriptions")
 	}
 	return nil
-}
-
-func (s Spec) renderXray() (string, map[string][]byte, error) {
-	user := map[string]any{"email": "harbor"}
-	settings := map[string]any{}
-	if s.Kind == "vless" {
-		user["id"] = s.UUID
-		settings["decryption"] = "none"
-	} else {
-		user["password"] = s.Password
-	}
-	settings["users"] = []any{user}
-	cfg := map[string]any{"log": map[string]any{"loglevel": "warning"}, "inbounds": []any{map[string]any{"tag": "entry", "listen": s.Listen, "port": s.Port, "protocol": s.Kind, "settings": settings, "streamSettings": map[string]any{"network": "tcp", "security": "tls", "tlsSettings": map[string]any{"certificates": []any{map[string]any{"certificate": strings.Split(strings.TrimSpace(s.Certificate), "\n"), "key": strings.Split(strings.TrimSpace(s.PrivateKey), "\n")}}}}}}, "outbounds": []any{map[string]any{"protocol": "freedom", "tag": "egress"}}}
-	b, e := json.MarshalIndent(cfg, "", "  ")
-	return "xray", map[string][]byte{"config.json": b, "tls.crt": []byte(s.Certificate), "tls.key": []byte(s.PrivateKey)}, e
 }
 
 func ProtocolCapable(version string) bool {

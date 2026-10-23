@@ -23,26 +23,67 @@ func TestProtocolTemplates(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	for _, kind := range []string{"vless", "hysteria2", "tuic", "trojan", "snell", "xray-vless", "xray-trojan"} {
+	for _, kind := range []string{"vless", "hysteria2", "tuic", "trojan", "snell", "xray-vless", "xray-trojan", "vmess", "vmess-plain", "vmess-ws", "xray-vmess", "xray-vmess-plain", "xray-vless-ws", "trojan-ws", "anytls", "chain-vmess-ws", "xray-chain-vless"} {
 		t.Run(kind, func(t *testing.T) {
 			serverEngine := "sing-box"
 			if strings.HasPrefix(kind, "xray-") {
 				serverEngine = "xray"
 				kind = strings.TrimPrefix(kind, "xray-")
 			}
+			chainMode := strings.HasPrefix(kind, "chain-")
+			kind = strings.TrimPrefix(kind, "chain-")
+			plain := strings.HasSuffix(kind, "-plain")
+			ws := strings.HasSuffix(kind, "-ws")
+			kind = strings.TrimSuffix(strings.TrimSuffix(kind, "-plain"), "-ws")
 			s := Spec{Engine: serverEngine, Kind: kind, Listen: "127.0.0.1", Address: "127.0.0.1", Port: 25000, Password: Secret()}
-			if TLSProxy(kind) {
+			if plain {
+				s.TLSMode = "none"
+			}
+			if ws {
+				s.Transport = "ws"
+				s.Path = "/proxy"
+			}
+			if kind == "vmess" {
+				s.UUID = UUID()
+			}
+			if s.UsesTLS() {
 				s.UUID = UUID()
 				s.ServerName = "localhost"
 				s.Certificate = cert
 				s.PrivateKey = key
+			}
+			if chainMode {
+				binary := os.Getenv("TEST_SING_BOX_BINARY")
+				if binary == "" {
+					return
+				}
+				listener, e := net.Listen("tcp", "127.0.0.1:0")
+				if e != nil {
+					t.Fatal(e)
+				}
+				port := listener.Addr().(*net.TCPAddr).Port
+				listener.Close()
+				exit := Spec{Kind: "shadowsocks", Address: "127.0.0.1", Listen: "127.0.0.1", Port: port, Password: Secret()}
+				_, exitFiles, e := exit.Render()
+				if e != nil {
+					t.Fatal(e)
+				}
+				dir := t.TempDir()
+				os.WriteFile(filepath.Join(dir, "config.json"), exitFiles["config.json"], 0600)
+				cmd := exec.Command(binary, "run", "-c", "config.json")
+				cmd.Dir = dir
+				if e = cmd.Start(); e != nil {
+					t.Fatal(e)
+				}
+				defer func() { cmd.Process.Kill(); cmd.Wait() }()
+				s.Outbound = &exit
 			}
 			engine, files, e := s.Render()
 			if e != nil {
 				t.Fatal(e)
 			}
 			sb, mh, uri, e := s.Client("test")
-			if e != nil || sb["type"] != kind || mh["name"] != "test" || (uri == "" && kind != "snell") {
+			if e != nil || sb["type"] != kind || mh["name"] != "test" || (uri == "" && kind != "snell" && kind != "anytls") {
 				t.Fatal(sb, mh, uri, e)
 			}
 			if kind == "vless" && mh["servername"] != "localhost" {
@@ -95,7 +136,7 @@ func TestProtocolTemplates(t *testing.T) {
 				t.Fatal(e)
 			}
 			// Xray protects private targets by default. Scope the test-only exception to this fixture.
-			if serverEngine == "xray" {
+			if serverEngine == "xray" && !chainMode {
 				var cfg map[string]any
 				json.Unmarshal(files["config.json"], &cfg)
 				cfg["outbounds"].([]any)[0].(map[string]any)["settings"] = map[string]any{"finalRules": []any{map[string]any{"action": "allow", "network": "tcp", "ip": []string{"127.0.0.1/32"}, "port": target.Listener.Addr().(*net.TCPAddr).Port}}}

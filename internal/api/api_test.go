@@ -133,7 +133,7 @@ func TestIntegration(t *testing.T) {
 	}
 	post("agent/claim", nil, 401, map[string]any{"id": host["id"], "agent_token": token}, "")
 	node := post("nodes", map[string]any{"name": "proxy", "engine": "sing-box"}, 201, nil, "")
-	post("nodes", map[string]any{"name": "unsupported", "engine": "xray"}, 400, nil, "")
+	post("nodes", map[string]any{"name": "unsupported", "engine": "unknown-engine"}, 400, nil, "")
 	post("hosts", map[string]any{"name": "bad", "provider": "x", "address": "x", "tenant_id": "foreign"}, 400, nil, "")
 	makeInstance := func(hostID string, port int) map[string]any {
 		return post("instances", map[string]any{"name": "proxy", "host_id": hostID, "node_id": node["id"], "listen_port": port}, 201, nil, "")

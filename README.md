@@ -1,4 +1,4 @@
-# Harbor · VPS 管理平台 v0.6
+# Harbor · VPS 管理平台 v0.7
 
 Vue 3 / TypeScript / Go / PostgreSQL 个人控制面：库存、模拟/暂存任务、防火墙策略，以及显式启用的真实 sing-box、跨机 FRP、中转和域名订阅分享。
 
@@ -88,3 +88,7 @@ npm test
 库存「中转规划」仍是规划表，真实中转通过「真实服务」下一跳执行；历史模拟/暂存任务与真实服务状态分开。防火墙保存不等于应用，仅管理自有Linux INPUT表，不接管宝塔、Docker NAT、云安全组或Windows Defender Firewall。
 
 协议依据：[sing-box Shadowsocks](https://sing-box.sagernet.org/configuration/inbound/shadowsocks/)、[FRP TLS验证](https://gofrp.org/en/docs/features/common/network/network-tls/)、[SIP002](https://shadowsocks.org/doc/sip002.html)。官方引擎不随源码分发，下载与使用遵守其各自许可证。
+
+## v0.7 配置管理
+
+主机、内核、协议入站/出站分层；带版本编辑、链式节点、ACME证书引用与自动续期、HTTPS反代，详见 [配置管理](docs/CONFIGURATION-v07.md)。

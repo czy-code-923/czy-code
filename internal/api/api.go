@@ -114,6 +114,7 @@ func (s *Server) agent(f func(http.ResponseWriter, *http.Request, string) error)
 }
 func (s *Server) Handler() http.Handler {
 	m := http.NewServeMux()
+	m.HandleFunc("GET /api/v1/engine-catalog", s.admin(s.engineCatalog))
 	m.HandleFunc("GET /api/v1/protocol-templates", s.admin(s.protocolTemplates))
 	m.HandleFunc("POST /api/v1/hosts/{id}/enrollment", s.admin(s.enrollmentCreate))
 	m.HandleFunc("GET /api/v1/hosts/{id}/enrollment", s.admin(s.enrollmentStatus))
@@ -125,6 +126,16 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("GET /api/v1/site", s.admin(s.site))
 	m.HandleFunc("PUT /api/v1/site", s.admin(s.site))
 	m.HandleFunc("POST /api/v1/site/gateway-status", s.admin(s.gatewayStatus))
+	m.HandleFunc("GET /api/v1/live/{id}", s.admin(s.liveDetail))
+	m.HandleFunc("PUT /api/v1/live/{id}", s.admin(s.liveUpdate))
+	m.HandleFunc("GET /api/v1/certificates", s.admin(s.certificates))
+	m.HandleFunc("POST /api/v1/certificates", s.admin(s.certificates))
+	m.HandleFunc("POST /api/v1/certificates/{id}/retry", s.admin(s.certificateRetry))
+	m.HandleFunc("POST /api/v1/gateway/work", s.admin(s.gatewayWork))
+	m.HandleFunc("POST /api/v1/gateway/report", s.admin(s.gatewayReport))
+	m.HandleFunc("GET /api/v1/reverse-proxies", s.admin(s.reverseProxies))
+	m.HandleFunc("POST /api/v1/reverse-proxies", s.admin(s.reverseProxies))
+	m.HandleFunc("PUT /api/v1/reverse-proxies/{id}", s.admin(s.reverseProxies))
 	m.HandleFunc("GET /api/v1/live", s.admin(s.liveList))
 	m.HandleFunc("POST /api/v1/live", s.admin(s.liveCreate))
 	m.HandleFunc("POST /api/v1/live/{id}/toggle", s.admin(s.liveToggle))
@@ -263,7 +274,7 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) error {
 		_, e = tx.Exec(ctx, "INSERT INTO hosts(tenant_id,id,name,provider,address,agent_hash) VALUES($1,$2,$3,$4,$5,$6)", tenant, id, b.Name, b.Provider, b.Address, Hash(token))
 		result["agent_token"] = token
 	case "nodes":
-		if b.Engine != "sing-box" && b.Engine != "frp" {
+		if b.Engine != "sing-box" && b.Engine != "frp" && b.Engine != "xray" {
 			return bad("engine must be sing-box or frp")
 		}
 		_, e = tx.Exec(ctx, "INSERT INTO nodes(tenant_id,id,name,engine) VALUES($1,$2,$3,$4)", tenant, id, b.Name, b.Engine)

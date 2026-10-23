@@ -92,6 +92,10 @@ type Tunnel struct {
 	RemotePort int    `json:"remote_port"`
 }
 type Spec struct {
+	Transport   string   `json:"transport,omitempty"`
+	Path        string   `json:"path,omitempty"`
+	TLSMode     string   `json:"tls_mode,omitempty"`
+	Outbound    *Spec    `json:"outbound,omitempty"`
 	Engine      string   `json:"engine,omitempty"`
 	UUID        string   `json:"uuid,omitempty"`
 	ServerName  string   `json:"server_name,omitempty"`
@@ -107,7 +111,10 @@ type Spec struct {
 }
 
 func (s Spec) Validate() error {
-	if s.Engine != "" && s.Engine != "sing-box" && !(s.Engine == "xray" && (s.Kind == "vless" || s.Kind == "trojan")) {
+	if e := s.validateRouting(); e != nil {
+		return e
+	}
+	if s.Engine != "" && s.Engine != "sing-box" && !EngineSupports(s.Engine, s.Kind) {
 		return errors.New("unsupported engine/protocol combination")
 	}
 	if !Address(s.Address) || s.Port < 1024 || s.Port > 65535 {
@@ -119,7 +126,7 @@ func (s Spec) Validate() error {
 	if s.Port == 8080 || s.Port == 5173 || s.Port == 8091 {
 		return errors.New("reserved management port")
 	}
-	if TLSProxy(s.Kind) || s.Kind == "snell" {
+	if Proxy(s.Kind) && s.Kind != "shadowsocks" {
 		return s.validateProxy()
 	}
 	if s.Kind != "shadowsocks" && s.Kind != "frps" && s.Kind != "frpc" {
@@ -200,7 +207,7 @@ func (s Spec) Render() (string, map[string][]byte, error) {
 		return "", nil, e
 	}
 	files := map[string][]byte{}
-	if TLSProxy(s.Kind) || s.Kind == "snell" {
+	if Proxy(s.Kind) && s.Kind != "shadowsocks" {
 		return s.renderProxy()
 	}
 	engine := "sing-box"
@@ -233,5 +240,8 @@ func (s Spec) Render() (string, map[string][]byte, error) {
 	}
 	b, e := json.MarshalIndent(config, "", "  ")
 	files["config.json"] = b
+	if e == nil && s.Outbound != nil {
+		e = s.patchOutbound(engine, files)
+	}
 	return engine, files, e
 }

@@ -60,7 +60,7 @@ func (s *Server) ShareHandler() http.Handler {
 		if e != nil {
 			return problem{404, "subscription unavailable"}
 		}
-		rows, e := s.DB.Query(r.Context(), `SELECT l.id,l.name,l.sealed FROM live_services l JOIN subscription_services x ON (l.tenant_id,l.id)=(x.tenant_id,x.service_id) WHERE l.tenant_id=$1 AND x.subscription_id=$2 AND l.enabled AND l.state='running' AND l.version=l.reported_version AND l.reported_at>now()-interval '45 seconds' ORDER BY l.created_at LIMIT 64`, tenant, id)
+		rows, e := s.DB.Query(r.Context(), `SELECT l.id,l.name,l.sealed FROM live_services l JOIN subscription_services x ON (l.tenant_id,l.id)=(x.tenant_id,x.service_id) WHERE l.tenant_id=$1 AND x.subscription_id=$2 AND NOT EXISTS (WITH RECURSIVE chain AS (SELECT n.id,n.next_id,n.enabled,n.state,n.version,n.reported_version,n.reported_at,1 depth FROM live_services n WHERE n.tenant_id=l.tenant_id AND n.id=l.next_id UNION ALL SELECT n.id,n.next_id,n.enabled,n.state,n.version,n.reported_version,n.reported_at,c.depth+1 FROM live_services n JOIN chain c ON n.id=c.next_id WHERE n.tenant_id=l.tenant_id AND c.depth<8) SELECT 1 FROM chain WHERE NOT enabled OR state<>'running' OR version<>reported_version OR reported_at IS NULL OR reported_at<now()-interval '45 seconds') AND l.enabled AND l.state='running' AND l.version=l.reported_version AND l.reported_at>now()-interval '45 seconds' ORDER BY l.created_at LIMIT 64`, tenant, id)
 		if e != nil {
 			return e
 		}
@@ -93,7 +93,7 @@ func (s *Server) ShareHandler() http.Handler {
 			}
 			format := r.URL.Query().Get("format")
 			if uri == "" && (format == "shadowrocket" || format == "base64") {
-				return problem{422, "Snell URI export is not standardized; select sing-box or Mihomo for these services"}
+				return problem{422, "Selected protocol has no supported URI export; select sing-box or Mihomo"}
 			}
 			tags = append(tags, tag)
 			out = append(out, sb)

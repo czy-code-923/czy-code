@@ -83,7 +83,7 @@ func TestLiveIntegration(t *testing.T) {
 		}
 		return call("POST", "live", b, 201, nil)
 	}
-	call("POST", "agent/heartbeat", map[string]any{"mode": "simulation", "version": "0.6.0", "platform": "linux/amd64"}, 200, h)
+	call("POST", "agent/heartbeat", map[string]any{"mode": "simulation", "version": "0.7.0", "platform": "linux/amd64"}, 200, h)
 	snell := create("snell", 22009, nil)
 	snellSub := call("POST", "subscriptions", map[string]any{"name": "Snell", "days": 2, "service_ids": []any{snell["id"]}}, 201, nil)
 	call("POST", "live/"+snell["id"].(string)+"/toggle", map[string]any{"enabled": true}, 200, nil)
@@ -131,6 +131,41 @@ func TestLiveIntegration(t *testing.T) {
 	share(link, 503)
 	call("POST", "subscriptions/"+sub["id"].(string)+"/revoke", map[string]any{}, 200, nil)
 	share(link, 404)
+	// Detail is useful without disclosing stored credentials or server private keys.
+	detail := call("GET", "live/"+a["id"].(string), nil, 200, nil)
+	if detail["spec"].(map[string]any)["password"] != "" {
+		t.Fatal("detail leaked password")
+	}
+	specBefore, _ := s.loadSpec(httptest.NewRequest("GET", "/", nil), a["id"].(string))
+	update := map[string]any{"name": "edited entry", "host_id": h["id"], "node_id": detail["node_id"], "engine": "sing-box", "kind": "shadowsocks", "address": "2001:db8::2", "listen": "::1", "port": 22000, "version": detail["version"]}
+	call("PUT", "live/"+a["id"].(string), update, 200, nil)
+	call("PUT", "live/"+a["id"].(string), update, 409, nil)
+	specAfter, _ := s.loadSpec(httptest.NewRequest("GET", "/", nil), a["id"].(string))
+	if specBefore.Password != specAfter.Password || specAfter.Address != "2001:db8::2" {
+		t.Fatal("edit lost credentials/address")
+	}
+	detail = call("GET", "live/"+a["id"].(string), nil, 200, nil)
+	update["version"] = detail["version"]
+	update["next_id"] = upstream["id"]
+	call("PUT", "live/"+a["id"].(string), update, 400, nil)
+	update["next_id"] = ""
+	update["port"] = 22002
+	call("PUT", "live/"+a["id"].(string), update, 409, nil)
+	cert := call("POST", "certificates", map[string]any{"domain": "proxy.example.com", "provider": "http-01", "email": "ops@example.com"}, 201, nil)
+	work := call("POST", "gateway/work", map[string]any{}, 200, nil)
+	if len(work["certificates"].([]any)) != 1 {
+		t.Fatal("certificate not claimed")
+	}
+	work = call("POST", "gateway/work", map[string]any{}, 200, nil)
+	if len(work["certificates"].([]any)) != 0 {
+		t.Fatal("duplicate certificate claim")
+	}
+	call("POST", "gateway/report", map[string]any{"kind": "certificate", "id": cert["id"], "state": "failed"}, 200, nil)
+	call("POST", "certificates/"+cert["id"].(string)+"/retry", map[string]any{}, 409, nil)
+	call("POST", "reverse-proxies", map[string]any{"domain": "proxy.example.com", "upstream": "http://127.0.0.1:3000", "certificate_id": cert["id"], "enabled": false}, 201, nil)
+	call("POST", "reverse-proxies", map[string]any{"domain": "bad.example.com", "upstream": "http://127.0.0.1:8080", "certificate_id": cert["id"], "enabled": false}, 400, nil)
+	call("POST", "reverse-proxies", map[string]any{"domain": "proxy.example.com", "upstream": "http://127.0.0.1:3000", "certificate_id": cert["id"], "enabled": true}, 400, nil)
+
 	r := httptest.NewRequest("GET", "/api/v1/hosts", nil)
 	w := httptest.NewRecorder()
 	public.ServeHTTP(w, r)

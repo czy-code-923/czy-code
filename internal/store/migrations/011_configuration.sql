@@ -1,0 +1,12 @@
+ALTER TABLE nodes DROP CONSTRAINT nodes_engine_check;
+ALTER TABLE nodes ADD CONSTRAINT nodes_engine_check CHECK(engine IN ('sing-box','xray','frp'));
+ALTER TABLE live_services DROP CONSTRAINT live_services_kind_check;
+ALTER TABLE live_services ADD CONSTRAINT live_services_kind_check CHECK(kind IN ('shadowsocks','frps','frpc','vless','hysteria2','tuic','trojan','snell','vmess','anytls'));
+ALTER TABLE live_services ADD COLUMN node_id text;
+INSERT INTO nodes(tenant_id,id,name,engine) SELECT tenant_id,'live-'||id,name,CASE WHEN kind IN ('frps','frpc') THEN 'frp' ELSE engine END FROM live_services;
+UPDATE live_services SET node_id='live-'||id;
+ALTER TABLE live_services ADD CONSTRAINT live_node_fk FOREIGN KEY(tenant_id,node_id) REFERENCES nodes(tenant_id,id);
+CREATE TABLE managed_certificates(tenant_id text NOT NULL REFERENCES tenants(id),id text NOT NULL,domain text NOT NULL,provider text NOT NULL CHECK(provider IN ('http-01','cloudflare')),email text NOT NULL,sealed_credentials bytea,state text NOT NULL DEFAULT 'pending' CHECK(state IN ('pending','running','ready','failed')),sealed bytea,expires_at timestamptz,last_attempt timestamptz,result text NOT NULL DEFAULT '',created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(tenant_id,id),UNIQUE(tenant_id,domain));
+ALTER TABLE live_services ADD COLUMN certificate_id text;
+ALTER TABLE live_services ADD CONSTRAINT live_certificate_fk FOREIGN KEY(tenant_id,certificate_id) REFERENCES managed_certificates(tenant_id,id);
+CREATE TABLE reverse_proxies(tenant_id text NOT NULL REFERENCES tenants(id),id text NOT NULL,domain text NOT NULL,upstream text NOT NULL,certificate_id text NOT NULL,enabled boolean NOT NULL DEFAULT false,version int NOT NULL DEFAULT 1,reported_version int NOT NULL DEFAULT 0,state text NOT NULL DEFAULT 'pending',PRIMARY KEY(tenant_id,id),UNIQUE(tenant_id,domain),FOREIGN KEY(tenant_id,certificate_id) REFERENCES managed_certificates(tenant_id,id));
