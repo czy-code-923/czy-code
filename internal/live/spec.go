@@ -92,6 +92,9 @@ type Tunnel struct {
 	RemotePort int    `json:"remote_port"`
 }
 type Spec struct {
+	Engine      string   `json:"engine,omitempty"`
+	UUID        string   `json:"uuid,omitempty"`
+	ServerName  string   `json:"server_name,omitempty"`
 	Kind        string   `json:"kind"`
 	Listen      string   `json:"listen"`
 	Port        int      `json:"port"`
@@ -104,6 +107,9 @@ type Spec struct {
 }
 
 func (s Spec) Validate() error {
+	if s.Engine != "" && s.Engine != "sing-box" && !(s.Engine == "xray" && (s.Kind == "vless" || s.Kind == "trojan")) {
+		return errors.New("unsupported engine/protocol combination")
+	}
 	if !Address(s.Address) || s.Port < 1024 || s.Port > 65535 {
 		return errors.New("valid IPv4/IPv6/DNS address and port 1024-65535 required")
 	}
@@ -112,6 +118,9 @@ func (s Spec) Validate() error {
 	}
 	if s.Port == 8080 || s.Port == 5173 || s.Port == 8091 {
 		return errors.New("reserved management port")
+	}
+	if TLSProxy(s.Kind) || s.Kind == "snell" {
+		return s.validateProxy()
 	}
 	if s.Kind != "shadowsocks" && s.Kind != "frps" && s.Kind != "frpc" {
 		return errors.New("unsupported live service")
@@ -191,6 +200,9 @@ func (s Spec) Render() (string, map[string][]byte, error) {
 		return "", nil, e
 	}
 	files := map[string][]byte{}
+	if TLSProxy(s.Kind) || s.Kind == "snell" {
+		return s.renderProxy()
+	}
 	engine := "sing-box"
 	var config any
 	if s.Kind == "shadowsocks" {

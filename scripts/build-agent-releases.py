@@ -23,7 +23,7 @@ def main():
             archive=stage/f'linux-{arch}.zip'
             with zipfile.ZipFile(archive,'w',zipfile.ZIP_DEFLATED) as package:
                 package.write(binary,'harbor-agent')
-                for name in ('sing-box','frps','frpc'):package.write(target/'engines'/name,name)
+                for name in ('sing-box','frps','frpc','xray'):package.write(target/'engines'/name,name)
             manifest[f'linux-{arch}']={'sha256':hashlib.sha256(archive.read_bytes()).hexdigest(),'size':archive.stat().st_size}
         output.mkdir(exist_ok=True,parents=True)
         for arch in ('amd64','arm64'):shutil.copyfile(stage/f'linux-{arch}.zip',output/f'linux-{arch}.zip')

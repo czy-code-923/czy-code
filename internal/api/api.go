@@ -114,6 +114,7 @@ func (s *Server) agent(f func(http.ResponseWriter, *http.Request, string) error)
 }
 func (s *Server) Handler() http.Handler {
 	m := http.NewServeMux()
+	m.HandleFunc("GET /api/v1/protocol-templates", s.admin(s.protocolTemplates))
 	m.HandleFunc("POST /api/v1/hosts/{id}/enrollment", s.admin(s.enrollmentCreate))
 	m.HandleFunc("GET /api/v1/hosts/{id}/enrollment", s.admin(s.enrollmentStatus))
 	m.HandleFunc("POST /api/v1/hosts/{id}/enrollment/revoke", s.admin(s.enrollmentRevoke))
@@ -130,6 +131,7 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("GET /api/v1/live/{id}/tunnels", s.admin(s.liveTunnels))
 	m.HandleFunc("GET /api/v1/subscriptions", s.admin(s.subscriptionList))
 	m.HandleFunc("POST /api/v1/subscriptions", s.admin(s.subscriptionCreate))
+	m.HandleFunc("PUT /api/v1/subscriptions/{id}/services", s.admin(s.subscriptionServices))
 	m.HandleFunc("POST /api/v1/subscriptions/{id}/revoke", s.admin(s.subscriptionRevoke))
 	m.HandleFunc("POST /api/v1/subscriptions/{id}/rotate", s.admin(s.subscriptionRotate))
 	m.HandleFunc("POST /api/v1/agent/live/sync", s.agent(s.liveSync))

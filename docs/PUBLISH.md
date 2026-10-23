@@ -48,6 +48,6 @@ toggle接口控制期望启停。Agent每10秒同步，固定引擎check/verify�
 
 ## 显式客户端格式与手机管理
 
-新建或轮换订阅后，在客户端格式下拉框选择 sing-box、Mihomo / Clash Meta 或 Shadowrocket，再复制链接。分别使用 format=sing-box、format=mihomo、format=shadowrocket；旧 clash/base64 参数继续兼容。当前已验证的订阅服务仍仅为 Shadowsocks 2022，增加格式选项不会增加协议支持。
+新建或轮换订阅后，在客户端格式下拉框选择 sing-box、Mihomo / Clash Meta 或 Shadowrocket，再复制链接。分别使用 format=sing-box、format=mihomo、format=shadowrocket；旧 clash/base64 参数继续兼容。v0.6 新增协议支持范围和 Snell 导出边界见 [协议配置](PROTOCOLS-v06.md)。
 
 总管理端可显式给 domain-sync.py 增加 --public-management，以允许任意来源访问 HTTPS 控制台，管理员令牌仍必需；底层 8080/5173/8091 继续只监听回环。该选项拒绝 HTTP，不影响订阅和 Agent 的独立接口。默认仍保持管理员 CIDR 限制。

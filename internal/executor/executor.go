@@ -52,6 +52,8 @@ func (v NativeValidator) Check(ctx context.Context, dir string, files []manifest
 		switch file.Engine {
 		case "sing-box":
 			args = []string{"check", "-c", filepath.Join(dir, file.Name)}
+		case "xray":
+			args = []string{"run", "-test", "-config", filepath.Join(dir, file.Name)}
 		case "frps", "frpc":
 			args = []string{"verify", "-c", filepath.Join(dir, file.Name)}
 		default:

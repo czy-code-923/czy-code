@@ -25,16 +25,17 @@ def main():
     dest=Path(__file__).resolve().parents[1]/'engines'
     if dest.exists(): raise SystemExit('engines/ already exists; keep the running version and stage upgrades in a separate checkout.')
     output={};receipt={}
-    for repo,version in [('SagerNet/sing-box','v1.14.3'),('fatedier/frp','v0.71.1')]:
+    for repo,version in [('SagerNet/sing-box','v1.14.3'),('fatedier/frp','v0.71.1'),('XTLS/Xray-core','v26.10.21')]:
         release=json.loads(fetch('https://api.github.com/repos/'+repo+'/releases/tags/'+version))
-        extension='zip' if args.os=='windows' else 'tar.gz'
+        extension='zip' if args.os=='windows' or repo=='XTLS/Xray-core' else 'tar.gz'
         name=(f'sing-box-{version[1:]}-{args.os}-{args.arch}.{extension}' if 'sing-box' in repo else f'frp_{version[1:]}_{args.os}_{args.arch}.{extension}')
+        if repo=='XTLS/Xray-core': name='Xray-'+args.os+'-'+('64' if args.arch=='amd64' else 'arm64-v8a')+'.zip'
         asset=next(a for a in release['assets'] if a['name']==name)
         url=asset['browser_download_url']
         if not url.startswith('https://github.com/'+repo+'/releases/download/'+version+'/'): raise ValueError('Unexpected asset URL')
         data=fetch(url);digest=hashlib.sha256(data).hexdigest()
         if asset.get('digest')!='sha256:'+digest: raise ValueError('Missing or mismatched official archive digest')
-        names=['sing-box'] if 'sing-box' in repo else ['frps','frpc']
+        names=['xray'] if repo=='XTLS/Xray-core' else ['sing-box'] if 'sing-box' in repo else ['frps','frpc']
         names=[n+('.exe' if args.os=='windows' else '') for n in names]
         archive=zipfile.ZipFile(io.BytesIO(data)) if extension=='zip' else tarfile.open(fileobj=io.BytesIO(data),mode='r:gz')
         for wanted in names:

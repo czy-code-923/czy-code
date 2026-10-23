@@ -30,14 +30,14 @@ def main():
     path='/api/v1/agent/releases/linux-'+arch
     manifest=json.loads(fetch(path,limit=65536));archive=fetch(path+'?download=1')
     if len(archive)!=manifest['size'] or hashlib.sha256(archive).hexdigest()!=manifest['sha256']:raise ValueError('Package integrity verification failed')
-    names={'harbor-agent','sing-box','frps','frpc'}
+    names={'harbor-agent','sing-box','frps','frpc','xray'}
     with tempfile.TemporaryDirectory(prefix='harbor-install-') as temporary:
         stage=Path(temporary)
         with zipfile.ZipFile(io.BytesIO(archive)) as z:
-            if set(z.namelist())!=names or len(z.infolist())!=4 or sum(m.file_size for m in z.infolist())>400<<20:raise ValueError('Unexpected package contents')
+            if set(z.namelist())!=names or len(z.infolist())!=5 or sum(m.file_size for m in z.infolist())>400<<20:raise ValueError('Unexpected package contents')
             for name in names:
                 p=stage/name;p.write_bytes(z.read(name));p.chmod(0o755)
-        for binary,args in [('harbor-agent',[]),('sing-box',['version']),('frps',['--version']),('frpc',['--version'])]:
+        for binary,args in [('harbor-agent',[]),('sing-box',['version']),('frps',['--version']),('frpc',['--version']),('xray',['version'])]:
             if args:run(str(stage/binary),*args)
         print('2/4 Exchanging the single-use registration ticket...',flush=True)
         registration=json.loads(fetch('/api/v1/agent/enroll',{'ticket':ticket},65536))
@@ -50,7 +50,7 @@ def main():
         for name in names:shutil.copyfile(stage/name,root/name);(root/name).chmod(0o755)
         state=Path('/var/lib/harbor-agent');state.mkdir(mode=0o700);rollback['dirs'].append(state);run('chown','harbor-agent:harbor-agent',str(state))
         values={'CONTROL_URL':origin,'HOST_ID':registration['host_id'],'AGENT_TOKEN':registration['agent_token'],'AGENT_MODE':'simulation','ENABLE_LIVE':'1','LIVE_STATE_DIR':str(state/'live'),'GOMEMLIMIT':'96MiB','GOMAXPROCS':'1'}
-        for name,prefix in [('sing-box','SING_BOX'),('frps','FRPS'),('frpc','FRPC')]:values[prefix+'_BINARY']=str(root/name);values[prefix+'_SHA256']=hashlib.sha256((root/name).read_bytes()).hexdigest()
+        for name,prefix in [('sing-box','SING_BOX'),('frps','FRPS'),('frpc','FRPC'),('xray','XRAY')]:values[prefix+'_BINARY']=str(root/name);values[prefix+'_SHA256']=hashlib.sha256((root/name).read_bytes()).hexdigest()
         env.write_text(''.join(k+'='+v+'\n' for k,v in values.items()));env.chmod(0o600)
         with unit.open('x') as unit_file:unit_file.write('''[Unit]
 Description=Harbor outbound Agent

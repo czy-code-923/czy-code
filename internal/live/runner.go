@@ -205,7 +205,7 @@ func (r *Runner) Reconcile(ctx context.Context, work []Work) error {
 				continue
 			}
 			ln.Close()
-			if w.Spec.Kind == "shadowsocks" {
+			if w.Spec.Kind == "shadowsocks" || w.Spec.Kind == "hysteria2" || w.Spec.Kind == "tuic" || w.Spec.Kind == "snell" {
 				conn, e := net.ListenPacket("udp", net.JoinHostPort(w.Spec.Listen, portString(w.Spec.Port)))
 				if e != nil {
 					continue
@@ -214,6 +214,9 @@ func (r *Runner) Reconcile(ctx context.Context, work []Work) error {
 			}
 		}
 		args := []string{"-c", "config.json"}
+		if engine == "xray" {
+			args = []string{"run", "-config", "config.json"}
+		}
 		if engine == "sing-box" {
 			args = append([]string{"run"}, args...)
 		}

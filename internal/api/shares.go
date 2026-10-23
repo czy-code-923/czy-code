@@ -83,16 +83,22 @@ func (s *Server) ShareHandler() http.Handler {
 			if e = json.Unmarshal(raw, &spec); e != nil {
 				return e
 			}
-			if spec.Kind != "shadowsocks" {
+			if !live.Proxy(spec.Kind) {
 				continue
 			}
 			tag := name + "-" + service[:8]
+			sb, mh, uri, err := spec.Client(tag)
+			if err != nil {
+				return err
+			}
+			format := r.URL.Query().Get("format")
+			if uri == "" && (format == "shadowrocket" || format == "base64") {
+				return problem{422, "Snell URI export is not standardized; select sing-box or Mihomo for these services"}
+			}
 			tags = append(tags, tag)
-			out = append(out, map[string]any{"type": "shadowsocks", "tag": tag, "server": spec.Address, "server_port": spec.Port, "method": live.Method, "password": spec.Password})
-			clash = append(clash, map[string]any{"type": "ss", "name": tag, "server": spec.Address, "port": spec.Port, "cipher": live.Method, "password": spec.Password, "udp": true})
-			// SIP002 explicitly forbids Base64URL userinfo for AEAD-2022.
-			userinfo := url.QueryEscape(live.Method) + ":" + url.QueryEscape(spec.Password)
-			uris = append(uris, fmt.Sprintf("ss://%s@%s#%s", userinfo, net.JoinHostPort(spec.Address, fmt.Sprint(spec.Port)), url.PathEscape(tag)))
+			out = append(out, sb)
+			clash = append(clash, mh)
+			uris = append(uris, uri)
 		}
 		if e = rows.Err(); e != nil {
 			return e

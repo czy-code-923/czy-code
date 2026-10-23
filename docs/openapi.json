@@ -2,8 +2,8 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Harbor control plane MVP",
-    "version": "0.5.0",
-    "description": "Single-admin control plane, inventory, safe task staging, opt-in live sing-box/FRP, subscriptions, domain gateway and single-use outbound Agent enrollment. No arbitrary shell. Firewall changes require the local restricted helper."
+    "version": "0.6.0",
+    "description": "Single-admin control plane, inventory, safe task staging, opt-in live sing-box/Xray/FRP, subscriptions, domain gateway and single-use outbound Agent enrollment. No arbitrary shell. Firewall changes require the local restricted helper."
   },
   "servers": [
     {
@@ -2597,7 +2597,12 @@
                     "enum": [
                       "shadowsocks",
                       "frps",
-                      "frpc"
+                      "frpc",
+                      "vless",
+                      "hysteria2",
+                      "tuic",
+                      "trojan",
+                      "snell"
                     ]
                   },
                   "address": {
@@ -2656,6 +2661,27 @@
                         }
                       }
                     }
+                  },
+                  "engine": {
+                    "enum": [
+                      "sing-box",
+                      "xray"
+                    ],
+                    "description": "Xray supports VLESS and Trojan only; default sing-box"
+                  },
+                  "server_name": {
+                    "type": "string",
+                    "description": "TLS certificate DNS name"
+                  },
+                  "certificate": {
+                    "type": "string",
+                    "writeOnly": true,
+                    "description": "Publicly trusted full-chain PEM for TLS proxy templates"
+                  },
+                  "private_key": {
+                    "type": "string",
+                    "writeOnly": true,
+                    "description": "Matching private key PEM, encrypted at rest"
                   }
                 }
               }
@@ -3224,6 +3250,66 @@
             }
           }
         ]
+      }
+    },
+    "/api/v1/protocol-templates": {
+      "get": {
+        "summary": "List fixed protocol templates and supported engines",
+        "responses": {
+          "200": {
+            "description": "Protocol catalog"
+          }
+        }
+      }
+    },
+    "/api/v1/subscriptions/{id}/services": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "put": {
+        "summary": "Replace proxy membership without rotating URL or extending expiration",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "service_ids"
+                ],
+                "properties": {
+                  "service_ids": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 64,
+                    "uniqueItems": true,
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated"
+          },
+          "400": {
+            "description": "Invalid service selection"
+          },
+          "404": {
+            "description": "Unknown, expired or revoked subscription"
+          }
+        }
       }
     }
   },

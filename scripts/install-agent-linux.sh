@@ -12,14 +12,14 @@ install -o root -g root -m 0755 bin/harbor-agent /opt/harbor/harbor-agent
 install -o root -g harbor -m 0640 .agent.env /etc/harbor/agent.env
 if [[ -f engines/receipt.json ]]; then
  install -d -o root -g root -m 0755 /opt/harbor/engines
- for engine in sing-box frps frpc; do install -o root -g root -m 0755 "engines/$engine" "/opt/harbor/engines/$engine"; done
+ for engine in sing-box frps frpc xray; do install -o root -g root -m 0755 "engines/$engine" "/opt/harbor/engines/$engine"; done
 fi
 python3 - <<'PY'
 from pathlib import Path
 p=Path('/etc/harbor/agent.env');s=p.read_text();lines=[]
 for line in s.splitlines():
  if line.startswith('LIVE_STATE_DIR='): line='LIVE_STATE_DIR=/var/lib/harbor/live'
- for prefix,name in [('SING_BOX','sing-box'),('FRPS','frps'),('FRPC','frpc')]:
+ for prefix,name in [('SING_BOX','sing-box'),('FRPS','frps'),('FRPC','frpc'),('XRAY','xray')]:
   if line.startswith(prefix+'_BINARY='): line=prefix+'_BINARY=/opt/harbor/engines/'+name
  lines.append(line)
 p.write_text('\n'.join(lines)+'\n')

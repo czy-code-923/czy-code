@@ -1,0 +1,190 @@
+package live
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+	"vps-control/internal/executor"
+	"vps-control/internal/manifest"
+)
+
+func TestProtocolTemplates(t *testing.T) {
+	cert, key, e := Certificate("localhost")
+	if e != nil {
+		t.Fatal(e)
+	}
+	for _, kind := range []string{"vless", "hysteria2", "tuic", "trojan", "snell", "xray-vless", "xray-trojan"} {
+		t.Run(kind, func(t *testing.T) {
+			serverEngine := "sing-box"
+			if strings.HasPrefix(kind, "xray-") {
+				serverEngine = "xray"
+				kind = strings.TrimPrefix(kind, "xray-")
+			}
+			s := Spec{Engine: serverEngine, Kind: kind, Listen: "127.0.0.1", Address: "127.0.0.1", Port: 25000, Password: Secret()}
+			if TLSProxy(kind) {
+				s.UUID = UUID()
+				s.ServerName = "localhost"
+				s.Certificate = cert
+				s.PrivateKey = key
+			}
+			engine, files, e := s.Render()
+			if e != nil {
+				t.Fatal(e)
+			}
+			sb, mh, uri, e := s.Client("test")
+			if e != nil || sb["type"] != kind || mh["name"] != "test" || (uri == "" && kind != "snell") {
+				t.Fatal(sb, mh, uri, e)
+			}
+			if kind == "vless" && mh["servername"] != "localhost" {
+				t.Fatal("missing Mihomo VLESS servername")
+			}
+			b, _ := json.Marshal(sb)
+			if strings.Contains(string(b), "PRIVATE KEY") || strings.Contains(uri, "insecure") {
+				t.Fatal("unsafe subscription")
+			}
+			clientBinary := os.Getenv("TEST_SING_BOX_BINARY")
+			binary := clientBinary
+			if serverEngine == "xray" {
+				binary = os.Getenv("TEST_XRAY_BINARY")
+			}
+			if binary == "" || clientBinary == "" {
+				return
+			}
+			dir := t.TempDir()
+			for name, data := range files {
+				if e = os.WriteFile(filepath.Join(dir, name), data, 0600); e != nil {
+					t.Fatal(e)
+				}
+			}
+			sum, _ := executor.FileDigest(binary)
+			v := executor.NativeValidator{Binaries: map[string]executor.Binary{engine: {Path: binary, SHA256: sum}}}
+			if e = v.Check(context.Background(), dir, []manifest.Artifact{{Name: "config.json", Engine: engine, Content: files["config.json"]}}); e != nil {
+				if engine == "xray" {
+					c := exec.Command(binary, "run", "-test", "-config", filepath.Join(dir, "config.json"))
+					c.Dir = dir
+					output, _ := c.CombinedOutput()
+					t.Log(string(output))
+				}
+				t.Fatal("native server template", e)
+			}
+			// A real server/client pair exercises authentication, TLS and QUIC, not just JSON.
+			target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				t.Log("target received request", kind)
+				w.Header().Set("Connection", "close")
+				io.WriteString(w, "protocol-forwarding-ok")
+			}))
+			defer func() { target.CloseClientConnections(); target.Close() }()
+			listener, e := net.Listen("tcp", "127.0.0.1:0")
+			if e != nil {
+				t.Fatal(e)
+			}
+			s.Port = listener.Addr().(*net.TCPAddr).Port
+			listener.Close()
+			_, files, e = s.Render()
+			if e != nil {
+				t.Fatal(e)
+			}
+			// Xray protects private targets by default. Scope the test-only exception to this fixture.
+			if serverEngine == "xray" {
+				var cfg map[string]any
+				json.Unmarshal(files["config.json"], &cfg)
+				cfg["outbounds"].([]any)[0].(map[string]any)["settings"] = map[string]any{"finalRules": []any{map[string]any{"action": "allow", "network": "tcp", "ip": []string{"127.0.0.1/32"}, "port": target.Listener.Addr().(*net.TCPAddr).Port}}}
+				files["config.json"], _ = json.Marshal(cfg)
+			}
+			os.WriteFile(filepath.Join(dir, "config.json"), files["config.json"], 0600)
+			args := []string{"run", "-c", "config.json"}
+			if serverEngine == "xray" {
+				args = []string{"run", "-config", "config.json"}
+			}
+			server := exec.Command(binary, args...)
+			server.Dir = dir
+			logFile, _ := os.Create(filepath.Join(dir, "server.log"))
+			defer logFile.Close()
+			server.Stdout = logFile
+			server.Stderr = logFile
+			if e = server.Start(); e != nil {
+				t.Fatal(e)
+			}
+			defer func() { server.Process.Kill(); server.Wait() }()
+			l, e := net.Listen("tcp", "127.0.0.1:0")
+			if e != nil {
+				t.Fatal(e)
+			}
+			clientPort := l.Addr().(*net.TCPAddr).Port
+			l.Close()
+			sb, _, _, _ = s.Client("proxy")
+			config := map[string]any{"inbounds": []any{map[string]any{"type": "mixed", "listen": "127.0.0.1", "listen_port": clientPort}}, "outbounds": []any{sb}, "route": map[string]any{"final": "proxy"}}
+			content, _ := json.Marshal(config)
+			os.WriteFile(filepath.Join(dir, "client.json"), content, 0600)
+			client := exec.Command(clientBinary, "run", "-c", "client.json")
+			client.Dir = dir
+			if e = client.Start(); e != nil {
+				t.Fatal(e)
+			}
+			defer func() { client.Process.Kill(); client.Wait() }()
+
+			proxyURL, _ := url.Parse("http://127.0.0.1:" + portString(clientPort))
+			transport := &http.Transport{Proxy: http.ProxyURL(proxyURL)}
+			defer transport.CloseIdleConnections()
+			httpClient := &http.Client{Transport: transport, Timeout: 2 * time.Second}
+			for attempt := 0; attempt < 3; attempt++ {
+				response, err := httpClient.Get(target.URL)
+				if err == nil {
+					body, _ := io.ReadAll(response.Body)
+					response.Body.Close()
+					if string(body) == "protocol-forwarding-ok" {
+						return
+					}
+				}
+				time.Sleep(150 * time.Millisecond)
+			}
+			server.Process.Kill()
+			server.Wait()
+			logFile.Sync()
+			logData, _ := os.ReadFile(filepath.Join(dir, "server.log"))
+			t.Log(string(logData))
+			t.Fatal("real protocol forwarding failed")
+		})
+	}
+}
+
+func TestProtocolSafety(t *testing.T) {
+	for _, version := range []string{"0.5.9", "invalid", "0.6.-1", "0.6.0foo"} {
+		if ProtocolCapable(version) {
+			t.Fatal(version)
+		}
+	}
+	for _, version := range []string{"0.6.0", "0.7.0", "1.0.0"} {
+		if !ProtocolCapable(version) {
+			t.Fatal(version)
+		}
+	}
+	cert, key, _ := Certificate("localhost")
+	s := Spec{Kind: "vless", Address: "localhost", Listen: "127.0.0.1", Port: 23000, Password: Secret(), UUID: UUID(), ServerName: "localhost", Certificate: cert, PrivateKey: key}
+	if s.VerifyPublicCertificate() == nil {
+		t.Fatal("self-signed certificate accepted for portable subscription")
+	}
+	s.ServerName = "wrong.example.com"
+	if s.Validate() == nil {
+		t.Fatal("certificate hostname mismatch accepted")
+	}
+	s.ServerName = "localhost"
+	s.PrivateKey = Secret()
+	if s.Validate() == nil {
+		t.Fatal("bad key accepted")
+	}
+	s.Engine = "arbitrary-engine"
+	if s.Validate() == nil {
+		t.Fatal("unknown engine accepted")
+	}
+}

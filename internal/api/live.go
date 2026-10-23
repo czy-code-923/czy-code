@@ -71,7 +71,7 @@ func (s *Server) site(w http.ResponseWriter, r *http.Request) error {
 }
 func (s *Server) liveList(w http.ResponseWriter, r *http.Request) error {
 	var b json.RawMessage
-	e := s.DB.QueryRow(r.Context(), `SELECT COALESCE(jsonb_agg(x),'[]') FROM (SELECT id,host_id,name,kind,address,port,parent_id,next_id,enabled,version,reported_version,state,reported_at,created_at,(reported_at>now()-interval '45 seconds' AND version=reported_version AND state='running' AND enabled) AS online FROM live_services WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT 200) x`, tenant).Scan(&b)
+	e := s.DB.QueryRow(r.Context(), `SELECT COALESCE(jsonb_agg(x),'[]') FROM (SELECT id,host_id,name,kind,engine,address,port,parent_id,next_id,enabled,version,reported_version,state,reported_at,created_at,(reported_at>now()-interval '45 seconds' AND version=reported_version AND state='running' AND enabled) AS online FROM live_services WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT 200) x`, tenant).Scan(&b)
 	if e != nil {
 		return e
 	}
@@ -97,15 +97,19 @@ func (s *Server) liveCreate(w http.ResponseWriter, r *http.Request) error {
 		return e
 	}
 	var b struct {
-		Name     string        `json:"name"`
-		HostID   string        `json:"host_id"`
-		Kind     string        `json:"kind"`
-		Address  string        `json:"address"`
-		Listen   string        `json:"listen"`
-		Port     int           `json:"port"`
-		ParentID string        `json:"parent_id"`
-		NextID   string        `json:"next_id"`
-		Tunnels  []live.Tunnel `json:"tunnels"`
+		Engine      string        `json:"engine"`
+		Name        string        `json:"name"`
+		HostID      string        `json:"host_id"`
+		Kind        string        `json:"kind"`
+		Address     string        `json:"address"`
+		Listen      string        `json:"listen"`
+		Port        int           `json:"port"`
+		ParentID    string        `json:"parent_id"`
+		NextID      string        `json:"next_id"`
+		Tunnels     []live.Tunnel `json:"tunnels"`
+		ServerName  string        `json:"server_name"`
+		Certificate string        `json:"certificate"`
+		PrivateKey  string        `json:"private_key"`
 	}
 	if e := decode(w, r, &b); e != nil {
 		return e
@@ -117,6 +121,18 @@ func (s *Server) liveCreate(w http.ResponseWriter, r *http.Request) error {
 		b.Listen = "127.0.0.1"
 	}
 	spec := live.Spec{Kind: b.Kind, Listen: b.Listen, Address: b.Address, Port: b.Port, Password: live.Secret(), Tunnels: b.Tunnels}
+	spec.Engine = b.Engine
+	if b.Engine != "" && !live.Proxy(b.Kind) {
+		return bad("engine selection only valid for proxy templates")
+	}
+	if live.TLSProxy(b.Kind) {
+		spec.UUID = live.UUID()
+		spec.ServerName = b.ServerName
+		spec.Certificate = b.Certificate
+		spec.PrivateKey = b.PrivateKey
+	} else if b.ServerName != "" || b.Certificate != "" || b.PrivateKey != "" {
+		return bad("TLS fields only valid for TLS proxy templates")
+	}
 	if b.Kind == "frpc" {
 		if b.NextID != "" {
 			return bad("FRP client cannot contain route peers")
@@ -177,6 +193,11 @@ func (s *Server) liveCreate(w http.ResponseWriter, r *http.Request) error {
 	if e := spec.Validate(); e != nil {
 		return bad(e.Error())
 	}
+	if live.TLSProxy(spec.Kind) {
+		if e := spec.VerifyPublicCertificate(); e != nil {
+			return bad(e.Error())
+		}
+	}
 	raw, _ := json.Marshal(spec)
 	sealed, e := live.Seal(s.MasterKey, raw)
 	if e != nil {
@@ -192,6 +213,15 @@ func (s *Server) liveCreate(w http.ResponseWriter, r *http.Request) error {
 	if e = tx.QueryRow(ctx, "SELECT id FROM hosts WHERE tenant_id=$1 AND id=$2 FOR UPDATE", tenant, b.HostID).Scan(&host); e != nil {
 		return e
 	}
+	if live.Proxy(spec.Kind) && spec.Kind != "shadowsocks" {
+		var version string
+		if e = tx.QueryRow(ctx, "SELECT agent_version FROM hosts WHERE tenant_id=$1 AND id=$2", tenant, host).Scan(&version); e != nil {
+			return e
+		}
+		if !live.ProtocolCapable(version) {
+			return problem{409, "upgrade this host to Agent 0.6.0 before creating protocol services"}
+		}
+	}
 	var count int
 	if e = tx.QueryRow(ctx, "SELECT count(*) FROM live_services WHERE tenant_id=$1 AND host_id=$2", tenant, host).Scan(&count); e != nil {
 		return e
@@ -200,7 +230,7 @@ func (s *Server) liveCreate(w http.ResponseWriter, r *http.Request) error {
 		return bad("at most 64 live services per host")
 	}
 	id := ID()
-	_, e = tx.Exec(ctx, "INSERT INTO live_services(tenant_id,id,host_id,name,kind,address,port,parent_id,next_id,sealed) VALUES($1,$2,$3,$4,$5,$6,$7,NULLIF($8,''),NULLIF($9,''),$10)", tenant, id, host, b.Name, spec.Kind, spec.Address, spec.Port, b.ParentID, b.NextID, sealed)
+	_, e = tx.Exec(ctx, "INSERT INTO live_services(tenant_id,id,host_id,name,kind,address,port,parent_id,next_id,sealed,engine) VALUES($1,$2,$3,$4,$5,$6,$7,NULLIF($8,''),NULLIF($9,''),$10,$11)", tenant, id, host, b.Name, spec.Kind, spec.Address, spec.Port, b.ParentID, b.NextID, sealed, map[bool]string{true: "xray", false: "sing-box"}[spec.Engine == "xray"])
 	if e != nil {
 		return e
 	}
@@ -258,6 +288,15 @@ func (s *Server) liveToggle(w http.ResponseWriter, r *http.Request) error {
 		return e
 	}
 	defer tx.Rollback(r.Context())
+	if *b.Enabled {
+		var kind, version string
+		if e = tx.QueryRow(r.Context(), "SELECT l.kind,h.agent_version FROM live_services l JOIN hosts h ON (l.tenant_id,l.host_id)=(h.tenant_id,h.id) WHERE l.tenant_id=$1 AND l.id=$2", tenant, r.PathValue("id")).Scan(&kind, &version); e != nil {
+			return e
+		}
+		if live.Proxy(kind) && kind != "shadowsocks" && !live.ProtocolCapable(version) {
+			return problem{409, "upgrade this host to protocol-capable Agent 0.6.0 before activation"}
+		}
+	}
 	tag, e := tx.Exec(r.Context(), "UPDATE live_services SET enabled=$3,version=version+1,state='pending' WHERE tenant_id=$1 AND id=$2 AND enabled<>$3", tenant, r.PathValue("id"), *b.Enabled)
 	if e != nil {
 		return e
@@ -322,7 +361,11 @@ func (s *Server) liveSync(w http.ResponseWriter, r *http.Request, host string) e
 		}
 		_ = tag
 	}
-	rows, e := tx.Query(r.Context(), "SELECT id,version,enabled,sealed FROM live_services WHERE tenant_id=$1 AND host_id=$2 ORDER BY created_at LIMIT 64", tenant, host)
+	var agentVersion string
+	if e = tx.QueryRow(r.Context(), "SELECT agent_version FROM hosts WHERE tenant_id=$1 AND id=$2", tenant, host).Scan(&agentVersion); e != nil {
+		return e
+	}
+	rows, e := tx.Query(r.Context(), "SELECT id,version,enabled,sealed FROM live_services WHERE tenant_id=$1 AND host_id=$2 AND (kind IN ('shadowsocks','frps','frpc') OR $3) ORDER BY created_at LIMIT 64", tenant, host, live.ProtocolCapable(agentVersion))
 	if e != nil {
 		return e
 	}
@@ -414,7 +457,7 @@ func (s *Server) subscriptionCreate(w http.ResponseWriter, r *http.Request) erro
 		if e = tx.QueryRow(r.Context(), "SELECT kind FROM live_services WHERE tenant_id=$1 AND id=$2", tenant, service).Scan(&kind); e != nil {
 			return e
 		}
-		if kind != "shadowsocks" {
+		if !live.Proxy(kind) {
 			return bad("only encrypted proxy endpoints are subscribable")
 		}
 		if _, e = tx.Exec(r.Context(), "INSERT INTO subscription_services VALUES($1,$2,$3)", tenant, id, service); e != nil {

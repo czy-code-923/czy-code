@@ -6,11 +6,24 @@ let wrapper:VueWrapper
 let api:Mock<(path:string,method?:string,body?:any)=>Promise<any>>
 const host={id:'a'.repeat(32),name:'Device'}
 const service={id:'b'.repeat(32),name:'Encrypted entry',host_id:host.id,kind:'shadowsocks',address:'2001:db8::1',port:2080,enabled:false,version:1,reported_version:0,state:'pending'}
-beforeEach(()=>{vi.useFakeTimers();api=vi.fn(async(path:string,method='GET')=>path==='site'?{domain:'vps.example.com',https:true}:path==='live'?[service]:method==='POST'?{url:'https://vps.example.com/s/secret-test-token'}:path==='subscriptions'?[]:{});wrapper=mount(Publish,{props:{api,hosts:[host]},attachTo:document.body})})
+beforeEach(()=>{vi.useFakeTimers();api=vi.fn(async(path:string,method='GET')=>path==='protocol-templates'?[{kind:'vless',name:'VLESS / TCP / TLS'},{kind:'hysteria2',name:'Hysteria2 / QUIC / TLS'}]:path==='site'?{domain:'vps.example.com',https:true}:path==='live'?[service]:method==='POST'?{url:'https://vps.example.com/s/secret-test-token'}:path==='subscriptions'?[]:{});wrapper=mount(Publish,{props:{api,hosts:[host]},attachTo:document.body})})
 afterEach(()=>{wrapper.unmount();vi.useRealTimers();vi.restoreAllMocks()})
 describe('domains and actual service controls',()=>{
  it('saves the domain without pretending a certificate was applied',async()=>{await flushPromises();await wrapper.get('input[placeholder="vps.example.com"]').setValue('new.example.com');await wrapper.findAll('form')[0].trigger('submit');await flushPromises();expect(api).toHaveBeenCalledWith('site','PUT',{domain:'new.example.com',https:true});expect(wrapper.text()).toContain('否则需运行部署文档');expect(wrapper.text()).toContain('网关待同步')})
  it('asks before starting actual services',async()=>{await flushPromises();api.mockClear();await wrapper.findAll('button').find(b=>b.text()==='启用')!.trigger('click');expect(api).not.toHaveBeenCalled();expect(wrapper.find('[role=dialog]').text()).toContain('启动真实服务');await wrapper.findAll('button').find(b=>b.text()==='确认执行')!.trigger('click');await flushPromises();expect(api).toHaveBeenCalledWith('live/'+service.id+'/toggle','POST',{enabled:true})})
  it('only reveals a share link after successful creation, and can hide it',async()=>{await flushPromises();const forms=wrapper.findAll('form');await forms[2].find('input').setValue('Personal');await wrapper.get('input[type=checkbox]').setValue(true);await forms[2].trigger('submit');await flushPromises();expect(wrapper.find('input[aria-label="订阅分享链接"]').attributes('value')??(wrapper.get('input[aria-label="订阅分享链接"]').element as HTMLInputElement).value).toContain('secret-test-token');await wrapper.findAll('button').find(b=>b.text()==='隐藏链接')!.trigger('click');expect(wrapper.find('input[aria-label="订阅分享链接"]').exists()).toBe(false)})
  it('does not poll in hidden browser tabs',async()=>{await flushPromises();api.mockClear();vi.spyOn(document,'visibilityState','get').mockReturnValue('hidden');await vi.advanceTimersByTimeAsync(45000);expect(api).not.toHaveBeenCalled()})
+})
+
+it('offers engine choice for VLESS and clears certificate material after creation',async()=>{
+ await flushPromises();const form=wrapper.findAll('form')[1];await form.findAll('select')[1].setValue('vless');await flushPromises();
+ const engine=form.findAll('select').find(s=>s.text().includes('Xray'))!;await engine.setValue('xray');
+ await form.get('input[placeholder="proxy.example.com"]').setValue('proxy.example.com');await form.findAll('textarea')[0].setValue('certificate-fixture');await form.findAll('textarea')[1].setValue('private-key-fixture');
+ await form.trigger('submit');await flushPromises();expect(api).toHaveBeenCalledWith('live','POST',expect.objectContaining({kind:'vless',engine:'xray',server_name:'proxy.example.com',certificate:'certificate-fixture',private_key:'private-key-fixture'}));
+ expect((form.findAll('textarea')[1].element as HTMLTextAreaElement).value).toBe('');
+ await form.findAll('select')[1].setValue('hysteria2');expect(form.findAll('select').some(s=>s.text().includes('Xray'))).toBe(false)
+})
+it('lets the administrator explicitly choose each subscription client format',async()=>{
+ await flushPromises();const form=wrapper.findAll('form')[2];await wrapper.get('input[type=checkbox]').setValue(true);await form.trigger('submit');await flushPromises();
+ for(const client of ['sing-box','mihomo','shadowrocket']){await wrapper.get('[aria-label="订阅客户端格式"]').setValue(client);expect((wrapper.get('[aria-label="订阅分享链接"]').element as HTMLInputElement).value).toContain('format='+client)}
 })

@@ -16,7 +16,7 @@ func runLive(ctx context.Context, call func(context.Context, string, any) ([]byt
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	binaries := map[string]executor.Binary{}
-	for engine, prefix := range map[string]string{"sing-box": "SING_BOX", "frps": "FRPS", "frpc": "FRPC"} {
+	for engine, prefix := range map[string]string{"xray": "XRAY", "sing-box": "SING_BOX", "frps": "FRPS", "frpc": "FRPC"} {
 		binaries[engine] = executor.Binary{Path: os.Getenv(prefix + "_BINARY"), SHA256: os.Getenv(prefix + "_SHA256")}
 	}
 	runner, e := live.NewRunner(os.Getenv("LIVE_STATE_DIR"), binaries)

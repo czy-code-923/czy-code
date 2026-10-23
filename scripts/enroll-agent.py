@@ -27,7 +27,7 @@ def main():
     settings={'CONTROL_URL':args.control,'AGENT_MODE':'simulation','ENABLE_LIVE':'1' if args.live else '0','ENGINE_SECRET':secrets.token_hex(32),'LIVE_STATE_DIR':str(state),'GOMEMLIMIT':'128MiB'}
     if args.live:
         receipt=json.loads((root/'engines'/'receipt.json').read_text(encoding='utf-8'))
-        for name,prefix in [('sing-box','SING_BOX'),('frps','FRPS'),('frpc','FRPC')]:
+        for name,prefix in [('sing-box','SING_BOX'),('frps','FRPS'),('frpc','FRPC'),('xray','XRAY')]:
             file=name+('.exe' if os.name=='nt' else '');path=root/'engines'/file
             digest=hashlib.sha256(path.read_bytes()).hexdigest()
             if digest!=receipt['binaries'][file]: raise ValueError('Engine no longer matches verified receipt')

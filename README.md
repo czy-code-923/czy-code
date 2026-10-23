@@ -1,8 +1,12 @@
-# Harbor · VPS 管理平台 v0.5
+# Harbor · VPS 管理平台 v0.6
 
 Vue 3 / TypeScript / Go / PostgreSQL 个人控制面：库存、模拟/暂存任务、防火墙策略，以及显式启用的真实 sing-box、跨机 FRP、中转和域名订阅分享。
 
 **基础控制面已部署到真实 VPS，HTTPS 页面可访问。** 运行目录、登录方式、资源限制、验收与未完成项见 [实际部署记录](docs/DEPLOYMENT-v04.md)。本地模拟通过与真实代理上线是不同状态。
+
+## 协议模板
+
+已加入 VLESS、Hysteria2、TUIC v5、Trojan、Snell 模板，VLESS/Trojan 可选择 sing-box 或 Xray。详见 [协议、证书、订阅兼容性与验证](docs/PROTOCOLS-v06.md)。新协议需要 Agent 0.6.0。
 
 ## 连接其他 VPS
 

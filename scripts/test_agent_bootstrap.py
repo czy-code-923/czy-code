@@ -21,7 +21,7 @@ class BootstrapTests(unittest.TestCase):
         for relative in ('opt','etc/systemd/system','var/lib'):(self.root/relative).mkdir(parents=True,exist_ok=True)
         package=io.BytesIO()
         with zipfile.ZipFile(package,'w') as archive:
-            for name in ('harbor-agent','sing-box','frps','frpc'):archive.writestr(name,b'fake-'+name.encode())
+            for name in ('harbor-agent','sing-box','frps','frpc','xray'):archive.writestr(name,b'fake-'+name.encode())
         self.archive=package.getvalue()
         def mapped(value):
             value=str(value)
