@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Harbor control plane MVP",
-    "version": "0.7.0",
+    "version": "0.8.0",
     "description": "Single-admin control plane, inventory, safe task staging, opt-in live sing-box/Xray/FRP, subscriptions, domain gateway and single-use outbound Agent enrollment. No arbitrary shell. Firewall changes require the local restricted helper."
   },
   "servers": [
@@ -2669,7 +2669,7 @@
                       "sing-box",
                       "xray"
                     ],
-                    "description": "Xray supports VLESS and Trojan only; default sing-box"
+                    "description": "sing-box or Xray. Xray managed templates: VLESS, VMess, Trojan."
                   },
                   "server_name": {
                     "type": "string",
@@ -2693,9 +2693,10 @@
                   },
                   "transport": {
                     "enum": [
+                      "",
                       "tcp",
                       "ws",
-                      ""
+                      "grpc"
                     ]
                   },
                   "path": {
@@ -2703,9 +2704,10 @@
                   },
                   "tls_mode": {
                     "enum": [
+                      "",
                       "tls",
                       "none",
-                      ""
+                      "reality"
                     ]
                   },
                   "password": {
@@ -2715,6 +2717,40 @@
                   "uuid": {
                     "type": "string",
                     "writeOnly": true
+                  },
+                  "reality": {
+                    "$ref": "#/components/schemas/Reality"
+                  },
+                  "flow": {
+                    "type": "string",
+                    "enum": [
+                      "",
+                      "xtls-rprx-vision"
+                    ]
+                  },
+                  "alpn": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "congestion": {
+                    "type": "string",
+                    "enum": [
+                      "",
+                      "cubic",
+                      "bbr",
+                      "new_reno"
+                    ]
+                  },
+                  "ws_host": {
+                    "type": "string"
+                  },
+                  "service_name": {
+                    "type": "string"
+                  },
+                  "managed_users": {
+                    "type": "boolean"
                   }
                 }
               }
@@ -2865,6 +2901,23 @@
                         }
                       }
                     }
+                  },
+                  "bundle_mode": {
+                    "type": "boolean"
+                  },
+                  "capabilities": {
+                    "type": "array",
+                    "maxItems": 4,
+                    "items": {
+                      "type": "object"
+                    }
+                  },
+                  "kernel_reports": {
+                    "type": "array",
+                    "maxItems": 2,
+                    "items": {
+                      "type": "object"
+                    }
                   }
                 }
               }
@@ -2943,8 +2996,7 @@
                 "additionalProperties": false,
                 "required": [
                   "name",
-                  "days",
-                  "service_ids"
+                  "days"
                 ],
                 "properties": {
                   "name": {
@@ -2962,6 +3014,12 @@
                     "items": {
                       "type": "string"
                     }
+                  },
+                  "user_id": {
+                    "type": "string"
+                  },
+                  "profile_id": {
+                    "type": "string"
                   }
                 }
               }
@@ -3367,162 +3425,192 @@
       "put": {
         "summary": "Versioned proxy configuration edit",
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "allOf": [
-                  {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "required": [
-                      "name",
-                      "host_id",
-                      "kind"
-                    ],
-                    "properties": {
-                      "name": {
-                        "type": "string"
-                      },
-                      "host_id": {
-                        "type": "string"
-                      },
-                      "kind": {
-                        "enum": [
-                          "shadowsocks",
-                          "frps",
-                          "frpc",
-                          "vless",
-                          "hysteria2",
-                          "tuic",
-                          "trojan",
-                          "snell",
-                          "vmess",
-                          "anytls"
-                        ]
-                      },
-                      "address": {
-                        "type": "string"
-                      },
-                      "listen": {
-                        "enum": [
-                          "127.0.0.1",
-                          "::1",
-                          "0.0.0.0",
-                          "::"
-                        ]
-                      },
-                      "port": {
-                        "type": "integer",
-                        "minimum": 1024,
-                        "maximum": 65535
-                      },
-                      "parent_id": {
-                        "type": "string"
-                      },
-                      "next_id": {
-                        "type": "string"
-                      },
-                      "tunnels": {
-                        "type": "array",
-                        "maxItems": 64,
-                        "items": {
-                          "type": "object",
-                          "additionalProperties": false,
-                          "required": [
-                            "name",
-                            "local_host",
-                            "local_port",
-                            "remote_port"
-                          ],
-                          "properties": {
-                            "name": {
-                              "type": "string"
-                            },
-                            "local_host": {
-                              "enum": [
-                                "127.0.0.1",
-                                "::1"
-                              ]
-                            },
-                            "local_port": {
-                              "type": "integer",
-                              "minimum": 1,
-                              "maximum": 65535
-                            },
-                            "remote_port": {
-                              "type": "integer",
-                              "minimum": 1024,
-                              "maximum": 65535
-                            }
-                          }
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "host_id",
+                  "kind",
+                  "version"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "host_id": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "enum": [
+                      "shadowsocks",
+                      "frps",
+                      "frpc",
+                      "vless",
+                      "hysteria2",
+                      "tuic",
+                      "trojan",
+                      "snell",
+                      "vmess",
+                      "anytls"
+                    ]
+                  },
+                  "address": {
+                    "type": "string"
+                  },
+                  "listen": {
+                    "enum": [
+                      "127.0.0.1",
+                      "::1",
+                      "0.0.0.0",
+                      "::"
+                    ]
+                  },
+                  "port": {
+                    "type": "integer",
+                    "minimum": 1024,
+                    "maximum": 65535
+                  },
+                  "parent_id": {
+                    "type": "string"
+                  },
+                  "next_id": {
+                    "type": "string"
+                  },
+                  "tunnels": {
+                    "type": "array",
+                    "maxItems": 64,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "name",
+                        "local_host",
+                        "local_port",
+                        "remote_port"
+                      ],
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "local_host": {
+                          "enum": [
+                            "127.0.0.1",
+                            "::1"
+                          ]
+                        },
+                        "local_port": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 65535
+                        },
+                        "remote_port": {
+                          "type": "integer",
+                          "minimum": 1024,
+                          "maximum": 65535
                         }
-                      },
-                      "engine": {
-                        "enum": [
-                          "sing-box",
-                          "xray"
-                        ],
-                        "description": "Xray supports VLESS and Trojan only; default sing-box"
-                      },
-                      "server_name": {
-                        "type": "string",
-                        "description": "TLS certificate DNS name"
-                      },
-                      "certificate": {
-                        "type": "string",
-                        "writeOnly": true,
-                        "description": "Publicly trusted full-chain PEM for TLS proxy templates"
-                      },
-                      "private_key": {
-                        "type": "string",
-                        "writeOnly": true,
-                        "description": "Matching private key PEM, encrypted at rest"
-                      },
-                      "node_id": {
-                        "type": "string"
-                      },
-                      "certificate_id": {
-                        "type": "string"
-                      },
-                      "transport": {
-                        "enum": [
-                          "tcp",
-                          "ws",
-                          ""
-                        ]
-                      },
-                      "path": {
-                        "type": "string"
-                      },
-                      "tls_mode": {
-                        "enum": [
-                          "tls",
-                          "none",
-                          ""
-                        ]
-                      },
-                      "password": {
-                        "type": "string",
-                        "writeOnly": true
-                      },
-                      "uuid": {
-                        "type": "string",
-                        "writeOnly": true
                       }
                     }
                   },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "version": {
-                        "type": "integer"
-                      },
-                      "rotate_credentials": {
-                        "type": "boolean"
-                      }
+                  "engine": {
+                    "enum": [
+                      "sing-box",
+                      "xray"
+                    ],
+                    "description": "sing-box or Xray. Xray managed templates: VLESS, VMess, Trojan."
+                  },
+                  "server_name": {
+                    "type": "string",
+                    "description": "TLS certificate DNS name"
+                  },
+                  "certificate": {
+                    "type": "string",
+                    "writeOnly": true,
+                    "description": "Publicly trusted full-chain PEM for TLS proxy templates"
+                  },
+                  "private_key": {
+                    "type": "string",
+                    "writeOnly": true,
+                    "description": "Matching private key PEM, encrypted at rest"
+                  },
+                  "node_id": {
+                    "type": "string"
+                  },
+                  "certificate_id": {
+                    "type": "string"
+                  },
+                  "transport": {
+                    "enum": [
+                      "",
+                      "tcp",
+                      "ws",
+                      "grpc"
+                    ]
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "tls_mode": {
+                    "enum": [
+                      "",
+                      "tls",
+                      "none",
+                      "reality"
+                    ]
+                  },
+                  "password": {
+                    "type": "string",
+                    "writeOnly": true
+                  },
+                  "uuid": {
+                    "type": "string",
+                    "writeOnly": true
+                  },
+                  "reality": {
+                    "$ref": "#/components/schemas/Reality"
+                  },
+                  "flow": {
+                    "type": "string",
+                    "enum": [
+                      "",
+                      "xtls-rprx-vision"
+                    ]
+                  },
+                  "alpn": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
                     }
+                  },
+                  "congestion": {
+                    "type": "string",
+                    "enum": [
+                      "",
+                      "cubic",
+                      "bbr",
+                      "new_reno"
+                    ]
+                  },
+                  "ws_host": {
+                    "type": "string"
+                  },
+                  "service_name": {
+                    "type": "string"
+                  },
+                  "managed_users": {
+                    "type": "boolean"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "rotate_credentials": {
+                    "type": "boolean"
                   }
-                ]
+                }
               }
             }
           }
@@ -3619,6 +3707,303 @@
         "responses": {
           "200": {
             "description": "Authenticated typed operation; see CONFIGURATION-v07.md"
+          }
+        }
+      }
+    },
+    "/api/v1/certificates/{id}": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "put": {
+        "summary": "Update manually managed certificate and propagate to bound deployments",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "provider",
+                  "domain",
+                  "certificate",
+                  "private_key"
+                ],
+                "properties": {
+                  "provider": {
+                    "enum": [
+                      "manual"
+                    ]
+                  },
+                  "domain": {
+                    "type": "string"
+                  },
+                  "certificate": {
+                    "type": "string"
+                  },
+                  "private_key": {
+                    "type": "string",
+                    "writeOnly": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Validated certificate encrypted and configuration versions advanced"
+          },
+          "400": {
+            "description": "Untrusted, mismatched, expired or malformed certificate"
+          }
+        }
+      }
+    },
+    "/api/v1/proxy-users": {
+      "get": {
+        "summary": "List proxy-users",
+        "responses": {
+          "200": {
+            "description": "Redacted collection"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create ProxyUser",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProxyUser"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved; server credentials never returned"
+          }
+        }
+      }
+    },
+    "/api/v1/proxy-users/{id}": {
+      "put": {
+        "summary": "Update ProxyUser",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProxyUser"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved"
+          },
+          "409": {
+            "description": "Version or membership conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/user-groups": {
+      "get": {
+        "summary": "List user-groups",
+        "responses": {
+          "200": {
+            "description": "Redacted collection"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create UserGroup",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserGroup"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved; server credentials never returned"
+          }
+        }
+      }
+    },
+    "/api/v1/user-groups/{id}": {
+      "put": {
+        "summary": "Update UserGroup",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserGroup"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved"
+          },
+          "409": {
+            "description": "Version or membership conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/client-profiles": {
+      "get": {
+        "summary": "List client-profiles",
+        "responses": {
+          "200": {
+            "description": "Redacted collection"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create ClientProfile",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClientProfile"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved; server credentials never returned"
+          }
+        }
+      }
+    },
+    "/api/v1/client-profiles/{id}": {
+      "put": {
+        "summary": "Update ClientProfile",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClientProfile"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved"
+          },
+          "409": {
+            "description": "Version or membership conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/hosts/{id}/kernels": {
+      "get": {
+        "summary": "Host kernel readiness and revision reports",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Host-scoped result"
+          },
+          "404": {
+            "description": "No synchronized revision yet"
+          }
+        }
+      }
+    },
+    "/api/v1/hosts/{id}/kernel-config": {
+      "get": {
+        "summary": "Host kernel redacted full deployment configuration",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "engine",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "sing-box",
+                "xray"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Host-scoped result"
+          },
+          "404": {
+            "description": "No synchronized revision yet"
           }
         }
       }
@@ -4477,6 +4862,309 @@
           "created_at": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "Reality": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string"
+          },
+          "port": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          },
+          "short_id": {
+            "type": "string",
+            "pattern": "^(?:[0-9a-fA-F]{2}){1,8}$"
+          },
+          "fingerprint": {
+            "type": "string",
+            "enum": [
+              "chrome",
+              "firefox",
+              "safari",
+              "edge"
+            ]
+          },
+          "public_key": {
+            "type": "string",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "target",
+          "port"
+        ]
+      },
+      "ProxyUser": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "rotate_credentials": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "enabled",
+          "expires_at"
+        ]
+      },
+      "UserGroup": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "user_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "service_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "version": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "user_ids",
+          "service_ids"
+        ]
+      },
+      "ClientProfile": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "sing-box",
+              "mihomo",
+              "shadowrocket",
+              "xray"
+            ]
+          },
+          "local_port": {
+            "type": "integer",
+            "minimum": 1024,
+            "maximum": 65535
+          },
+          "selection": {
+            "type": "string",
+            "enum": [
+              "select",
+              "urltest"
+            ]
+          },
+          "test_url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "format",
+          "local_port",
+          "selection",
+          "test_url"
+        ]
+      },
+      "LiveInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "host_id",
+          "kind"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "host_id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "shadowsocks",
+              "frps",
+              "frpc",
+              "vless",
+              "hysteria2",
+              "tuic",
+              "trojan",
+              "snell",
+              "vmess",
+              "anytls"
+            ]
+          },
+          "address": {
+            "type": "string"
+          },
+          "listen": {
+            "enum": [
+              "127.0.0.1",
+              "::1",
+              "0.0.0.0",
+              "::"
+            ]
+          },
+          "port": {
+            "type": "integer",
+            "minimum": 1024,
+            "maximum": 65535
+          },
+          "parent_id": {
+            "type": "string"
+          },
+          "next_id": {
+            "type": "string"
+          },
+          "tunnels": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "local_host",
+                "local_port",
+                "remote_port"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "local_host": {
+                  "enum": [
+                    "127.0.0.1",
+                    "::1"
+                  ]
+                },
+                "local_port": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 65535
+                },
+                "remote_port": {
+                  "type": "integer",
+                  "minimum": 1024,
+                  "maximum": 65535
+                }
+              }
+            }
+          },
+          "engine": {
+            "enum": [
+              "sing-box",
+              "xray"
+            ],
+            "description": "sing-box or Xray. Xray managed templates: VLESS, VMess, Trojan."
+          },
+          "server_name": {
+            "type": "string",
+            "description": "TLS certificate DNS name"
+          },
+          "certificate": {
+            "type": "string",
+            "writeOnly": true,
+            "description": "Publicly trusted full-chain PEM for TLS proxy templates"
+          },
+          "private_key": {
+            "type": "string",
+            "writeOnly": true,
+            "description": "Matching private key PEM, encrypted at rest"
+          },
+          "node_id": {
+            "type": "string"
+          },
+          "certificate_id": {
+            "type": "string"
+          },
+          "transport": {
+            "enum": [
+              "",
+              "tcp",
+              "ws",
+              "grpc"
+            ]
+          },
+          "path": {
+            "type": "string"
+          },
+          "tls_mode": {
+            "enum": [
+              "",
+              "tls",
+              "none",
+              "reality"
+            ]
+          },
+          "password": {
+            "type": "string",
+            "writeOnly": true
+          },
+          "uuid": {
+            "type": "string",
+            "writeOnly": true
+          },
+          "reality": {
+            "$ref": "#/components/schemas/Reality"
+          },
+          "flow": {
+            "type": "string",
+            "enum": [
+              "",
+              "xtls-rprx-vision"
+            ]
+          },
+          "alpn": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "congestion": {
+            "type": "string",
+            "enum": [
+              "",
+              "cubic",
+              "bbr",
+              "new_reno"
+            ]
+          },
+          "ws_host": {
+            "type": "string"
+          },
+          "service_name": {
+            "type": "string"
+          },
+          "managed_users": {
+            "type": "boolean"
           }
         }
       }

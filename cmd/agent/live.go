@@ -24,12 +24,13 @@ func runLive(ctx context.Context, call func(context.Context, string, any) ([]byt
 		return e
 	}
 	defer runner.Close()
+	capabilities := live.Capabilities(binaries)
 	last := time.Now()
 	tick := time.NewTicker(10 * time.Second)
 	defer tick.Stop()
 	for {
 		reports := runner.Reports()
-		raw, status, e := call(ctx, "live/sync", map[string]any{"reports": reports})
+		raw, status, e := call(ctx, "live/sync", map[string]any{"reports": reports, "bundle_mode": true, "capabilities": capabilities, "kernel_reports": runner.KernelReports()})
 		if e == nil && status == 200 {
 			var work []live.Work
 			if json.Unmarshal(raw, &work) == nil {

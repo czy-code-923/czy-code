@@ -11,6 +11,11 @@ class ManagedGatewayTests(unittest.TestCase):
    with self.assertRaises(ValueError):m.render(domain)
   for value in ['http://127.0.0.1:8080','http://evil.example.com:3000','http://127.0.0.1:3000/path','http://u:p@127.0.0.1:3000','https://127.0.0.1:3000']:
    with self.assertRaises(ValueError):m.upstream(value)
+ def test_domain_ownership_protected(self):
+  with tempfile.TemporaryDirectory() as directory:
+   root=Path(directory);(root/'other.conf').write_text('server { server_name app.example.com; }')
+   with self.assertRaises(ValueError):m.ensure_domain_available(root,'app.example.com',root/'ours.conf')
+   m.ensure_domain_available(root,'new.example.com',root/'ours.conf')
  def test_atomic_rolls_back_invalid_candidate(self):
   with tempfile.TemporaryDirectory() as directory:
    path=Path(directory)/'test.conf';old=(m.HEADER+'old').encode();path.write_bytes(old);failed=False

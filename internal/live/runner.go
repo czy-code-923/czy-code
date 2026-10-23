@@ -16,6 +16,7 @@ import (
 )
 
 type Work struct {
+	Members []Work `json:"members,omitempty"`
 	ID      string `json:"id"`
 	Version int    `json:"version"`
 	Enabled bool   `json:"enabled"`
@@ -27,6 +28,8 @@ type Report struct {
 	State   string `json:"state"`
 }
 type process struct {
+	members  []Work
+	engine   string
 	version  int
 	sum      string
 	cmd      *exec.Cmd
@@ -111,7 +114,17 @@ func (r *Runner) Reports() []Report {
 				}
 			}
 		}
-		reports = append(reports, Report{id, p.version, p.state})
+		if len(p.members) > 0 {
+			for _, m := range p.members {
+				state := p.state
+				if !m.Enabled {
+					state = "stopped"
+				}
+				reports = append(reports, Report{m.ID, m.Version, state})
+			}
+		} else {
+			reports = append(reports, Report{id, p.version, p.state})
+		}
 	}
 	return reports
 }
@@ -124,9 +137,6 @@ func (r *Runner) Reconcile(ctx context.Context, work []Work) error {
 		if !manifest.ValidID(w.ID) || w.Version < 1 || seen[w.ID] {
 			return errors.New("invalid service identity")
 		}
-		if e := w.Spec.Validate(); e != nil {
-			return e
-		}
 		seen[w.ID] = true
 	}
 	for id, p := range r.processes {
@@ -136,7 +146,7 @@ func (r *Runner) Reconcile(ctx context.Context, work []Work) error {
 		}
 	}
 	for _, w := range work {
-		raw, _ := json.Marshal(w.Spec)
+		raw, _ := json.Marshal(w)
 		sum := manifest.Digest(raw)
 		p := r.processes[w.ID]
 		if p == nil {
@@ -147,13 +157,32 @@ func (r *Runner) Reconcile(ctx context.Context, work []Work) error {
 			stopProcess(p)
 			p.version = w.Version
 			p.state = "stopped"
+			p.members = w.Members
+			p.sum = sum
+			p.engine = w.Spec.Engine
+			continue
+		}
+		// One expired certificate must not block other instances or prevent a stop request.
+		if e := w.validate(); e != nil {
+			if len(w.Members) > 0 {
+				stopProcess(p)
+				p.members = w.Members
+				p.sum = sum
+				p.engine = w.Spec.Engine
+				p.state = "failed"
+			}
+			if p.cmd == nil {
+				p.version = w.Version
+				p.state = "failed"
+			}
 			continue
 		}
 		if p.cmd != nil && p.sum == sum {
 			p.version = w.Version
+			p.members = w.Members
 			continue
 		}
-		if time.Now().Before(p.retry) {
+		if p.cmd == nil && time.Now().Before(p.retry) {
 			continue
 		}
 		if p.cmd == nil {
@@ -161,7 +190,7 @@ func (r *Runner) Reconcile(ctx context.Context, work []Work) error {
 			p.state = "failed"
 		}
 		p.retry = time.Now().Add(30 * time.Second)
-		engine, files, e := w.Spec.Render()
+		engine, files, e := w.Render()
 		if e != nil {
 			continue
 		}
@@ -192,14 +221,23 @@ func (r *Runner) Reconcile(ctx context.Context, work []Work) error {
 		abs := filepath.Join(r.root.Name(), filepath.FromSlash(dir))
 		v := executor.NativeValidator{Binaries: r.binary}
 		if e = v.Check(ctx, abs, []manifest.Artifact{{Name: "config.json", Engine: engine, Content: files["config.json"]}}); e != nil {
+			if len(w.Members) > 0 {
+				stopProcess(p)
+				p.members = w.Members
+				p.sum = sum
+				p.engine = w.Spec.Engine
+				p.state = "failed"
+			}
 			continue
 		}
 		// Native candidate must pass before interrupting a previously running revision.
 		stopProcess(p)
 		p.version = w.Version
 		p.state = "failed"
+		p.members = w.Members
+		p.engine = engine
 		// Port preflight never changes network settings. Actual bind remains the authority.
-		if w.Spec.Kind != "frpc" {
+		if len(w.Members) == 0 && w.Spec.Kind != "frpc" {
 			ln, e := net.Listen("tcp", net.JoinHostPort(w.Spec.Listen, portString(w.Spec.Port)))
 			if e != nil {
 				continue
@@ -245,6 +283,7 @@ func (r *Runner) Reconcile(ctx context.Context, work []Work) error {
 		p.sum = sum
 		p.started = time.Now()
 		p.state = "pending"
+		r.prune(w.ID, sum)
 	}
 	return nil
 }

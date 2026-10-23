@@ -23,6 +23,13 @@ func (s *Server) subscriptionServices(w http.ResponseWriter, r *http.Request) er
 	}
 	defer tx.Rollback(r.Context())
 	var id string
+	var user string
+	if e = tx.QueryRow(r.Context(), `SELECT COALESCE(user_id,'') FROM subscriptions WHERE tenant_id=$1 AND id=$2`, tenant, r.PathValue("id")).Scan(&user); e != nil {
+		return e
+	}
+	if user != "" {
+		return bad("user subscription membership follows user groups; edit group permissions")
+	}
 	if e = tx.QueryRow(r.Context(), "SELECT id FROM subscriptions WHERE tenant_id=$1 AND id=$2 AND revoked_at IS NULL AND expires_at>now() FOR UPDATE", tenant, r.PathValue("id")).Scan(&id); e != nil {
 		return e
 	}
@@ -39,6 +46,13 @@ func (s *Server) subscriptionServices(w http.ResponseWriter, r *http.Request) er
 		}
 		if e != nil {
 			return e
+		}
+		spec, err := s.loadSpec(r, service)
+		if err != nil {
+			return err
+		}
+		if spec.ManagedUsers {
+			return bad("managed inbounds require a user subscription")
 		}
 		if !live.Proxy(kind) {
 			return bad("only proxy services may be shared")

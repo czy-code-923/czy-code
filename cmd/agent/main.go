@@ -73,8 +73,8 @@ func run(ctx context.Context) error {
 			return nil, 0, errors.New("control connection failed")
 		}
 		defer res.Body.Close()
-		data, e := io.ReadAll(io.LimitReader(res.Body, (2<<20)+1))
-		if len(data) > 2<<20 {
+		data, e := io.ReadAll(io.LimitReader(res.Body, (8<<20)+1))
+		if len(data) > 8<<20 {
 			return nil, res.StatusCode, errors.New("control response too large")
 		}
 		if res.StatusCode >= 300 {
@@ -123,7 +123,7 @@ func run(ctx context.Context) error {
 					}
 				}
 			}
-			_, _, e = call(ctx, "heartbeat", map[string]any{"mode": mode, "version": "0.7.0", "platform": runtime.GOOS + "/" + runtime.GOARCH, "addresses": addresses})
+			_, _, e = call(ctx, "heartbeat", map[string]any{"mode": mode, "version": "0.8.0", "platform": runtime.GOOS + "/" + runtime.GOARCH, "addresses": addresses})
 			if e == nil {
 				nextHeartbeat = time.Now().Add(30 * time.Second)
 			}

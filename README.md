@@ -1,3 +1,7 @@
+# Harbor v0.8 — 主机内核与用户授权
+
+当前部署模型与验证边界见 [v0.8 架构说明](docs/ARCHITECTURE-v08.md)。
+
 # Harbor · VPS 管理平台 v0.7
 
 Vue 3 / TypeScript / Go / PostgreSQL 个人控制面：库存、模拟/暂存任务、防火墙策略，以及显式启用的真实 sing-box、跨机 FRP、中转和域名订阅分享。

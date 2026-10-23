@@ -50,7 +50,7 @@ def main():
                 time.sleep(1)
             else: raise AssertionError('No real Agent heartbeat received')
             row = next(row for row in admin('hosts') if row['id'] == host)
-            assert row['agent_version'] == '0.7.0' and row['platform'] == 'linux/amd64' and row['reported_addresses']
+            assert row['agent_version'] == '0.7.1' and row['platform'] == 'linux/amd64' and row['reported_addresses']
             print('PASS: unprivileged real Linux Agent, verified HTTPS heartbeat, version/platform/IP report', flush=True)
             process.terminate(); process.wait(timeout=15); process=None
             installer = folder/'install.py'; installer.write_bytes(fetch('/api/v1/agent/install.py'))

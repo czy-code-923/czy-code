@@ -45,6 +45,13 @@ func (s *Server) site(w http.ResponseWriter, r *http.Request) error {
 	if !live.Address(b.Domain) || strings.Contains(b.Domain, ":") {
 		return bad("valid DNS domain or IPv4 required; IPv6 endpoints belong on live services")
 	}
+	var reserved bool
+	if e := s.DB.QueryRow(r.Context(), "SELECT EXISTS(SELECT 1 FROM reverse_proxies WHERE tenant_id=$1 AND domain=$2)", tenant, b.Domain).Scan(&reserved); e != nil {
+		return e
+	}
+	if reserved {
+		return problem{409, "domain is reserved by a reverse proxy"}
+	}
 	scheme := "https"
 	if !*b.HTTPS {
 		scheme = "http"
@@ -71,7 +78,7 @@ func (s *Server) site(w http.ResponseWriter, r *http.Request) error {
 }
 func (s *Server) liveList(w http.ResponseWriter, r *http.Request) error {
 	var b json.RawMessage
-	e := s.DB.QueryRow(r.Context(), `SELECT COALESCE(jsonb_agg(x),'[]') FROM (SELECT id,host_id,node_id,certificate_id,name,kind,engine,address,port,parent_id,next_id,enabled,version,reported_version,state,reported_at,created_at,(reported_at>now()-interval '45 seconds' AND version=reported_version AND state='running' AND enabled) AS online FROM live_services WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT 200) x`, tenant).Scan(&b)
+	e := s.DB.QueryRow(r.Context(), `SELECT COALESCE(jsonb_agg(x),'[]') FROM (SELECT id,host_id,node_id,certificate_id,name,kind,engine,address,port,parent_id,next_id,managed_users,enabled,version,reported_version,state,reported_at,created_at,(reported_at>now()-interval '45 seconds' AND version=reported_version AND state='running' AND enabled) AS online FROM live_services WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT 200) x`, tenant).Scan(&b)
 	if e != nil {
 		return e
 	}
@@ -90,10 +97,20 @@ func (s *Server) loadSpec(r *http.Request, id string) (live.Spec, error) {
 	}
 	var spec live.Spec
 	e = json.Unmarshal(raw, &spec)
+	if spec.Outbound != nil {
+		spec.Outbound.StripServerSecrets()
+	}
 	return spec, e
 }
 
 type liveInput struct {
+	Reality           *live.Reality `json:"reality"`
+	Flow              string        `json:"flow"`
+	ALPN              []string      `json:"alpn"`
+	Congestion        string        `json:"congestion"`
+	WSHost            string        `json:"ws_host"`
+	ServiceName       string        `json:"service_name"`
+	ManagedUsers      bool          `json:"managed_users"`
 	Password          string        `json:"password"`
 	UUID              string        `json:"uuid"`
 	Engine            string        `json:"engine"`
@@ -137,6 +154,9 @@ func (s *Server) liveCreate(w http.ResponseWriter, r *http.Request) error {
 	spec.Transport = b.Transport
 	spec.Path = b.Path
 	spec.TLSMode = b.TLSMode
+	if e := applySecurity(&spec, b); e != nil {
+		return e
+	}
 	if b.CertificateID != "" {
 		if e := s.applyCertificate(r, b.CertificateID, &b); e != nil {
 			return e
@@ -200,6 +220,7 @@ func (s *Server) liveCreate(w http.ResponseWriter, r *http.Request) error {
 		}
 		next.Outbound = nil
 		next.Peer = nil
+		next.StripServerSecrets()
 		spec.Outbound = &next
 	}
 
@@ -246,6 +267,9 @@ func (s *Server) liveCreate(w http.ResponseWriter, r *http.Request) error {
 		if e = tx.QueryRow(ctx, "SELECT agent_version FROM hosts WHERE tenant_id=$1 AND id=$2", tenant, host).Scan(&version); e != nil {
 			return e
 		}
+		if (spec.ManagedUsers || spec.IsReality() || spec.Transport == "grpc") && !live.BundleCapable(version) {
+			return problem{409, "upgrade host to Agent 0.8.0 for REALITY, gRPC and users"}
+		}
 		if !live.ProtocolCapable(version) || spec.RequiresAdvanced() && !live.AdvancedCapable(version) {
 			return problem{409, "upgrade this host to Agent 0.7.0 before creating protocol services"}
 		}
@@ -262,7 +286,7 @@ func (s *Server) liveCreate(w http.ResponseWriter, r *http.Request) error {
 		return e
 	}
 	id := ID()
-	_, e = tx.Exec(ctx, "INSERT INTO live_services(tenant_id,id,host_id,name,kind,address,port,parent_id,next_id,sealed,engine,node_id,certificate_id) VALUES($1,$2,$3,$4,$5,$6,$7,NULLIF($8,''),NULLIF($9,''),$10,$11,$12,NULLIF($13,''))", tenant, id, host, b.Name, spec.Kind, spec.Address, spec.Port, b.ParentID, b.NextID, sealed, map[bool]string{true: "xray", false: "sing-box"}[spec.Engine == "xray"], nodeID, b.CertificateID)
+	_, e = tx.Exec(ctx, "INSERT INTO live_services(tenant_id,id,host_id,name,kind,address,port,parent_id,next_id,sealed,engine,node_id,certificate_id,managed_users) VALUES($1,$2,$3,$4,$5,$6,$7,NULLIF($8,''),NULLIF($9,''),$10,$11,$12,NULLIF($13,''),$14)", tenant, id, host, b.Name, spec.Kind, spec.Address, spec.Port, b.ParentID, b.NextID, sealed, map[bool]string{true: "xray", false: "sing-box"}[spec.Engine == "xray"], nodeID, b.CertificateID, spec.ManagedUsers)
 	if e != nil {
 		return e
 	}
@@ -325,6 +349,29 @@ func (s *Server) liveToggle(w http.ResponseWriter, r *http.Request) error {
 		if e = tx.QueryRow(r.Context(), "SELECT l.kind,h.agent_version FROM live_services l JOIN hosts h ON (l.tenant_id,l.host_id)=(h.tenant_id,h.id) WHERE l.tenant_id=$1 AND l.id=$2", tenant, r.PathValue("id")).Scan(&kind, &version); e != nil {
 			return e
 		}
+		if live.BundleCapable(version) {
+			spec, err := s.loadSpec(r, r.PathValue("id"))
+			if err != nil {
+				return err
+			}
+			if err = spec.Validate(); err != nil {
+				return bad(err.Error())
+			}
+			engine := spec.Engine
+			if engine == "" {
+				engine = "sing-box"
+			}
+			if spec.Kind == "frps" || spec.Kind == "frpc" {
+				engine = spec.Kind
+			}
+			var ready bool
+			if e = tx.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM host_kernels WHERE tenant_id=$1 AND host_id=(SELECT host_id FROM live_services WHERE tenant_id=$1 AND id=$2) AND engine=$3 AND available AND checked_at>now()-interval '45 seconds')`, tenant, r.PathValue("id"), engine).Scan(&ready); e != nil {
+				return e
+			}
+			if !ready {
+				return problem{409, "host kernel is unavailable or stale; verify Agent runtime status first"}
+			}
+		}
 		if live.Proxy(kind) && kind != "shadowsocks" && !live.ProtocolCapable(version) {
 			return problem{409, "upgrade this host to protocol-capable Agent 0.6.0 before activation"}
 		}
@@ -371,7 +418,10 @@ func (s *Server) liveSync(w http.ResponseWriter, r *http.Request, host string) e
 		return e
 	}
 	var b struct {
-		Reports []liveReport `json:"reports"`
+		Reports       []liveReport        `json:"reports"`
+		BundleMode    bool                `json:"bundle_mode"`
+		Capabilities  []live.Capability   `json:"capabilities"`
+		KernelReports []live.KernelReport `json:"kernel_reports"`
 	}
 	if e := decode(w, r, &b); e != nil {
 		return e
@@ -384,6 +434,25 @@ func (s *Server) liveSync(w http.ResponseWriter, r *http.Request, host string) e
 		return e
 	}
 	defer tx.Rollback(r.Context())
+	for _, c := range b.Capabilities {
+		if c.Engine != "sing-box" && c.Engine != "xray" && c.Engine != "frps" && c.Engine != "frpc" || len(c.Version) > 120 {
+			return bad("invalid kernel report")
+		}
+		if _, e = tx.Exec(r.Context(), `INSERT INTO host_kernels(tenant_id,host_id,engine,available,version) VALUES($1,$2,$3,$4,$5) ON CONFLICT(tenant_id,host_id,engine) DO UPDATE SET available=excluded.available,version=excluded.version,checked_at=now()`, tenant, host, c.Engine, c.Available, c.Version); e != nil {
+			return e
+		}
+	}
+	if len(b.Capabilities) > 4 || len(b.KernelReports) > 2 {
+		return bad("too many kernel reports")
+	}
+	for _, k := range b.KernelReports {
+		if k.Engine != "sing-box" && k.Engine != "xray" || len(k.Checksum) != 64 || (k.State != "pending" && k.State != "failed" && k.State != "running" && k.State != "stopped") {
+			continue
+		}
+		if _, e = tx.Exec(r.Context(), `UPDATE host_kernels SET applied_checksum=$4,state=$5,reported_at=now() WHERE tenant_id=$1 AND host_id=$2 AND engine=$3 AND desired_checksum=$4`, tenant, host, k.Engine, k.Checksum, k.State); e != nil {
+			return e
+		}
+	}
 	for _, v := range b.Reports {
 		if v.State != "running" && v.State != "stopped" && v.State != "failed" && v.State != "pending" {
 			return bad("invalid live state")
@@ -422,6 +491,9 @@ func (s *Server) liveSync(w http.ResponseWriter, r *http.Request, host string) e
 		if v.Spec.RequiresAdvanced() && !live.AdvancedCapable(agentVersion) {
 			continue
 		}
+		if (v.Spec.ManagedUsers || v.Spec.IsReality() || v.Spec.Transport == "grpc") && (!b.BundleMode || !live.BundleCapable(agentVersion)) {
+			v.Enabled = false
+		}
 
 		work = append(work, v)
 	}
@@ -447,14 +519,51 @@ func (s *Server) liveSync(w http.ResponseWriter, r *http.Request, host string) e
 			}
 			next.Outbound = nil
 			next.Peer = nil
+			next.StripServerSecrets()
 			work[i].Spec.Outbound = &next
 			work[i].Spec.Peer = nil
+		}
+	}
+	compiled := []live.Work{}
+	for i := range work {
+		if e = s.materializeAccounts(r, tx, work[i].ID, &work[i].Spec); e != nil {
+			return e
+		}
+		compiled = append(compiled, live.Work{ID: work[i].ID, Version: work[i].Version, Enabled: work[i].Enabled, Spec: work[i].Spec})
+	}
+	if b.BundleMode {
+		compiled = live.BundleWork(compiled)
+		for _, bundle := range compiled {
+			if len(bundle.Members) == 0 {
+				continue
+			}
+			raw, _ := json.Marshal(bundle)
+			sealed, err := live.Seal(s.MasterKey, raw)
+			if err != nil {
+				return err
+			}
+			tag, err := tx.Exec(r.Context(), `INSERT INTO kernel_revisions(tenant_id,host_id,engine,checksum,sealed) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`, tenant, host, bundle.Spec.Engine, bundle.Revision(), sealed)
+			if err != nil {
+				return err
+			}
+			if tag.RowsAffected() > 0 {
+				if _, e = tx.Exec(r.Context(), `DELETE FROM kernel_revisions WHERE tenant_id=$1 AND host_id=$2 AND engine=$3 AND checksum NOT IN (SELECT checksum FROM kernel_revisions WHERE tenant_id=$1 AND host_id=$2 AND engine=$3 ORDER BY created_at DESC LIMIT 20)`, tenant, host, bundle.Spec.Engine); e != nil {
+					return e
+				}
+			}
+			if _, e = tx.Exec(r.Context(), `UPDATE host_kernels SET desired_checksum=$4 WHERE tenant_id=$1 AND host_id=$2 AND engine=$3`, tenant, host, bundle.Spec.Engine, bundle.Revision()); e != nil {
+				return e
+			}
 		}
 	}
 	if e = tx.Commit(r.Context()); e != nil {
 		return e
 	}
-	send(w, 200, work)
+	if b.BundleMode {
+		send(w, 200, compiled)
+	} else {
+		send(w, 200, work)
+	}
 	return nil
 }
 func (s *Server) publicOrigin(r *http.Request) (string, error) {
@@ -475,7 +584,7 @@ func (s *Server) publicOrigin(r *http.Request) (string, error) {
 }
 func (s *Server) subscriptionList(w http.ResponseWriter, r *http.Request) error {
 	var b json.RawMessage
-	e := s.DB.QueryRow(r.Context(), `SELECT COALESCE(jsonb_agg(x),'[]') FROM (SELECT id,name,expires_at,revoked_at,created_at FROM subscriptions WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT 200) x`, tenant).Scan(&b)
+	e := s.DB.QueryRow(r.Context(), `SELECT COALESCE(jsonb_agg(x),'[]') FROM (SELECT id,name,user_id,profile_id,expires_at,revoked_at,created_at FROM subscriptions WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT 200) x`, tenant).Scan(&b)
 	if e != nil {
 		return e
 	}
@@ -488,13 +597,15 @@ func (s *Server) subscriptionCreate(w http.ResponseWriter, r *http.Request) erro
 	}
 	var b struct {
 		Name       string   `json:"name"`
+		UserID     string   `json:"user_id"`
+		ProfileID  string   `json:"profile_id"`
 		ServiceIDs []string `json:"service_ids"`
 		Days       int      `json:"days"`
 	}
 	if e := decode(w, r, &b); e != nil {
 		return e
 	}
-	if b.Days < 1 || b.Days > 365 || len(b.ServiceIDs) < 1 || len(b.ServiceIDs) > 64 || strings.TrimSpace(b.Name) == "" || len([]rune(b.Name)) > 100 {
+	if b.Days < 1 || b.Days > 365 || (len(b.ServiceIDs) < 1 && b.UserID == "") || len(b.ServiceIDs) > 64 || strings.TrimSpace(b.Name) == "" || len([]rune(b.Name)) > 100 {
 		return bad("name, 1-64 services and expiry 1-365 days required")
 	}
 	origin, e := s.publicOrigin(r)
@@ -506,8 +617,34 @@ func (s *Server) subscriptionCreate(w http.ResponseWriter, r *http.Request) erro
 		return e
 	}
 	defer tx.Rollback(r.Context())
+	if b.UserID != "" {
+		var expires time.Time
+		if e = tx.QueryRow(r.Context(), `SELECT expires_at FROM proxy_users WHERE tenant_id=$1 AND id=$2 AND enabled AND expires_at>now()`, tenant, b.UserID).Scan(&expires); e != nil {
+			return e
+		}
+		b.ServiceIDs = nil
+		rows, err := tx.Query(r.Context(), `SELECT DISTINCT s.service_id FROM user_group_services s JOIN user_group_members m USING(tenant_id,group_id) WHERE m.tenant_id=$1 AND m.user_id=$2 LIMIT 64`, tenant, b.UserID)
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			var id string
+			if err = rows.Scan(&id); err != nil {
+				rows.Close()
+				return err
+			}
+			b.ServiceIDs = append(b.ServiceIDs, id)
+		}
+		rows.Close()
+		if err = rows.Err(); err != nil {
+			return err
+		}
+		if len(b.ServiceIDs) == 0 {
+			return bad("assign user to an authorized inbound group first")
+		}
+	}
 	id, token := ID(), ID()+ID()
-	_, e = tx.Exec(r.Context(), "INSERT INTO subscriptions(tenant_id,id,name,token_hash,expires_at) VALUES($1,$2,$3,$4,$5)", tenant, id, b.Name, Hash(token), time.Now().Add(time.Duration(b.Days)*24*time.Hour))
+	_, e = tx.Exec(r.Context(), "INSERT INTO subscriptions(tenant_id,id,name,token_hash,expires_at,user_id,profile_id) VALUES($1,$2,$3,$4,$5,NULLIF($6,''),NULLIF($7,''))", tenant, id, b.Name, Hash(token), time.Now().Add(time.Duration(b.Days)*24*time.Hour), b.UserID, b.ProfileID)
 	if e != nil {
 		return e
 	}
@@ -515,6 +652,15 @@ func (s *Server) subscriptionCreate(w http.ResponseWriter, r *http.Request) erro
 		var kind string
 		if e = tx.QueryRow(r.Context(), "SELECT kind FROM live_services WHERE tenant_id=$1 AND id=$2", tenant, service).Scan(&kind); e != nil {
 			return e
+		}
+		if b.UserID == "" {
+			spec, err := s.loadSpec(r, service)
+			if err != nil {
+				return err
+			}
+			if spec.ManagedUsers {
+				return bad("managed inbounds require a user subscription")
+			}
 		}
 		if !live.Proxy(kind) {
 			return bad("only encrypted proxy endpoints are subscribable")

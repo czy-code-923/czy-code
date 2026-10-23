@@ -92,22 +92,30 @@ type Tunnel struct {
 	RemotePort int    `json:"remote_port"`
 }
 type Spec struct {
-	Transport   string   `json:"transport,omitempty"`
-	Path        string   `json:"path,omitempty"`
-	TLSMode     string   `json:"tls_mode,omitempty"`
-	Outbound    *Spec    `json:"outbound,omitempty"`
-	Engine      string   `json:"engine,omitempty"`
-	UUID        string   `json:"uuid,omitempty"`
-	ServerName  string   `json:"server_name,omitempty"`
-	Kind        string   `json:"kind"`
-	Listen      string   `json:"listen"`
-	Port        int      `json:"port"`
-	Address     string   `json:"address"`
-	Password    string   `json:"password"`
-	Peer        *Peer    `json:"peer,omitempty"`
-	Tunnels     []Tunnel `json:"tunnels,omitempty"`
-	Certificate string   `json:"certificate,omitempty"`
-	PrivateKey  string   `json:"private_key,omitempty"`
+	Reality      *Reality  `json:"reality,omitempty"`
+	Flow         string    `json:"flow,omitempty"`
+	ALPN         []string  `json:"alpn,omitempty"`
+	Congestion   string    `json:"congestion,omitempty"`
+	WSHost       string    `json:"ws_host,omitempty"`
+	ServiceName  string    `json:"service_name,omitempty"`
+	Accounts     []Account `json:"accounts,omitempty"`
+	ManagedUsers bool      `json:"managed_users,omitempty"`
+	Transport    string    `json:"transport,omitempty"`
+	Path         string    `json:"path,omitempty"`
+	TLSMode      string    `json:"tls_mode,omitempty"`
+	Outbound     *Spec     `json:"outbound,omitempty"`
+	Engine       string    `json:"engine,omitempty"`
+	UUID         string    `json:"uuid,omitempty"`
+	ServerName   string    `json:"server_name,omitempty"`
+	Kind         string    `json:"kind"`
+	Listen       string    `json:"listen"`
+	Port         int       `json:"port"`
+	Address      string    `json:"address"`
+	Password     string    `json:"password"`
+	Peer         *Peer     `json:"peer,omitempty"`
+	Tunnels      []Tunnel  `json:"tunnels,omitempty"`
+	Certificate  string    `json:"certificate,omitempty"`
+	PrivateKey   string    `json:"private_key,omitempty"`
 }
 
 func (s Spec) Validate() error {

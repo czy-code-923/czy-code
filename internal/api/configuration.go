@@ -72,7 +72,7 @@ func redactLive(value any) any {
 	case map[string]any:
 		for k, x := range v {
 			switch strings.ToLower(k) {
-			case "password", "uuid", "id", "psk", "key", "token":
+			case "password", "uuid", "id", "psk", "key", "token", "privatekey", "private_key":
 				v[k] = "[已隐藏]"
 			default:
 				v[k] = redactLive(x)
@@ -109,13 +109,14 @@ func (s *Server) liveDetail(w http.ResponseWriter, r *http.Request) error {
 	spec.Password = ""
 	spec.UUID = ""
 	spec.PrivateKey = ""
+	spec.Reality = spec.PublicReality()
 	if spec.Peer != nil {
 		spec.Peer.Password = ""
 	}
 	if spec.Outbound != nil {
 		spec.Outbound.Password = ""
 		spec.Outbound.UUID = ""
-		spec.Outbound.PrivateKey = ""
+		spec.Outbound.StripServerSecrets()
 	}
 	send(w, 200, map[string]any{"id": r.PathValue("id"), "name": name, "host_id": host, "node_id": node, "certificate_id": cert, "next_id": next, "version": version, "spec": spec, "engine": engine, "rendered": redactLive(preview)})
 	return nil
@@ -170,6 +171,9 @@ func (s *Server) liveUpdate(w http.ResponseWriter, r *http.Request) error {
 	spec.Transport = b.Transport
 	spec.Path = b.Path
 	spec.TLSMode = b.TLSMode
+	if e := applySecurity(&spec, b); e != nil {
+		return e
+	}
 	spec.ServerName = b.ServerName
 	spec.Peer = nil
 	spec.Outbound = nil
@@ -206,7 +210,9 @@ func (s *Server) liveUpdate(w http.ResponseWriter, r *http.Request) error {
 	if !spec.UsesTLS() {
 		spec.Certificate = ""
 		spec.PrivateKey = ""
-		spec.ServerName = ""
+		if !spec.IsReality() {
+			spec.ServerName = ""
+		}
 	}
 	if e = s.checkChain(r, tx, r.PathValue("id"), b.NextID); e != nil {
 		return e
@@ -218,6 +224,7 @@ func (s *Server) liveUpdate(w http.ResponseWriter, r *http.Request) error {
 		}
 		next.Outbound = nil
 		next.Peer = nil
+		next.StripServerSecrets()
 		spec.Outbound = &next
 	}
 	if e = spec.Validate(); e != nil {
@@ -232,8 +239,20 @@ func (s *Server) liveUpdate(w http.ResponseWriter, r *http.Request) error {
 	if e = tx.QueryRow(r.Context(), "SELECT agent_version FROM hosts WHERE tenant_id=$1 AND id=$2 FOR UPDATE", tenant, host).Scan(&av); e != nil {
 		return e
 	}
+	if (spec.ManagedUsers || spec.IsReality() || spec.Transport == "grpc") && !live.BundleCapable(av) {
+		return problem{409, "upgrade host to Agent 0.8.0 first"}
+	}
 	if !live.AdvancedCapable(av) {
 		return problem{409, "upgrade host to Agent 0.7.0 before editing configuration"}
+	}
+	if !spec.ManagedUsers {
+		var grouped bool
+		if e = tx.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM user_group_services WHERE tenant_id=$1 AND service_id=$2)`, tenant, r.PathValue("id")).Scan(&grouped); e != nil {
+			return e
+		}
+		if grouped {
+			return bad("remove inbound from user groups before disabling managed users")
+		}
 	}
 	// An upstream edit must not make existing Xray dependents impossible to render.
 	rows, e := tx.Query(r.Context(), "SELECT l.sealed,h.agent_version FROM live_services l JOIN hosts h ON (l.tenant_id,l.host_id)=(h.tenant_id,h.id) WHERE l.tenant_id=$1 AND l.next_id=$2", tenant, r.PathValue("id"))
@@ -263,6 +282,7 @@ func (s *Server) liveUpdate(w http.ResponseWriter, r *http.Request) error {
 		}
 		next := spec
 		next.Outbound = nil
+		next.StripServerSecrets()
 		parent.Peer = nil
 		parent.Outbound = &next
 		if e = parent.Validate(); e != nil {
@@ -296,7 +316,7 @@ func (s *Server) liveUpdate(w http.ResponseWriter, r *http.Request) error {
 	if e != nil {
 		return e
 	}
-	_, e = tx.Exec(r.Context(), "UPDATE live_services SET name=$3,node_id=$4,engine=$5,address=$6,port=$7,next_id=NULLIF($8,''),certificate_id=NULLIF($9,''),sealed=$10,version=version+1,state='pending' WHERE tenant_id=$1 AND id=$2", tenant, r.PathValue("id"), b.Name, node, map[bool]string{true: "xray", false: "sing-box"}[spec.Engine == "xray"], spec.Address, spec.Port, b.NextID, b.CertificateID, sealed)
+	_, e = tx.Exec(r.Context(), "UPDATE live_services SET name=$3,node_id=$4,engine=$5,address=$6,port=$7,next_id=NULLIF($8,''),certificate_id=NULLIF($9,''),sealed=$10,managed_users=$11,version=version+1,state='pending' WHERE tenant_id=$1 AND id=$2", tenant, r.PathValue("id"), b.Name, node, map[bool]string{true: "xray", false: "sing-box"}[spec.Engine == "xray"], spec.Address, spec.Port, b.NextID, b.CertificateID, sealed, spec.ManagedUsers)
 	if e != nil {
 		return e
 	}

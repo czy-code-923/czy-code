@@ -42,3 +42,9 @@ python3 /opt/harbor/scripts/managed-gateway.py --env /etc/harbor/control.env --n
 - https://xtls.github.io/en/config/inbounds/
 - https://xtls.github.io/en/config/outbounds/
 - https://letsencrypt.org/docs/challenge-types/
+
+## 参考 2s-ui 后补充的调整
+
+参考 https://github.com/shenaba/2s-ui 的入站、出站和集中TLS分区交互；未复制其实现代码。新增独立出站/链式视图、手动PEM证书登记和更新、自动传播到引用节点。网关私有证书目录统一在 /etc/harbor/gateway-certificates，支持ACME和手动证书。不会覆盖其他Nginx站点的域名。下一跳规格只带客户端连接材料，绝不带服务器私钥。一个实例证书异常不会阻塞其他实例停用或更新。
+
+仍需另行实现的能力：任意外部出站库和基于域名/IP规则的分流、REALITY/Vision/gRPC/XHTTP、多用户流量配额、TOTP、WireGuard/WARP/Tailscale端点。2s-ui整体功能列表不等于当前平台已经拥有同样能力。

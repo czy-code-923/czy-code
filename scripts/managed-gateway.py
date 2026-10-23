@@ -15,9 +15,16 @@ def render(domain,target=None,certificate=False):
  challenge='location ^~ /.well-known/acme-challenge/ { root /var/www/harbor-acme; }'
  text=HEADER+'server { listen 80; listen [::]:80; server_name '+domain+'; '+challenge+' location / { '+('return 301 https://$host$request_uri;' if certificate and target else 'return 503;')+' } }\n'
  if certificate and target:
-  target=upstream(target);base='/etc/letsencrypt/live/'+domain
+  target=upstream(target);base='/etc/harbor/gateway-certificates/'+domain
   text+='server { listen 443 ssl; listen [::]:443 ssl; server_name '+domain+'; ssl_certificate '+base+'/fullchain.pem; ssl_certificate_key '+base+'/privkey.pem; ssl_protocols TLSv1.2 TLSv1.3; client_max_body_size 16m; location / { proxy_pass '+target+'; proxy_http_version 1.1; proxy_set_header Host $host; proxy_set_header X-Real-IP $remote_addr; proxy_set_header X-Forwarded-For $remote_addr; proxy_set_header X-Forwarded-Proto https; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection "upgrade"; proxy_connect_timeout 10s; proxy_read_timeout 300s; } }\n'
  return text.encode()
+
+def ensure_domain_available(directory,domain,own):
+ for path in directory.glob('*.conf'):
+  if path==own:continue
+  content=re.sub(r'(?m)#.*$','',path.read_text(errors='replace'))
+  for names in re.findall(r'\bserver_name\s+([^;]+);',content):
+   if domain in names.split():raise ValueError('Domain already owned by another vhost')
 
 def atomic_vhost(path,content,nginx):
  sync.verify_output(path)
@@ -56,7 +63,8 @@ def main():
   try:
    domain=sync.domain_name(job['domain']);path=out/('harbor-route-'+domain+'.conf')
    webroot=Path('/var/www/harbor-acme');webroot.mkdir(parents=True,exist_ok=True,mode=0o755)
-   if domain!=main_domain and not path.exists():atomic_vhost(path,render(domain),nginx)
+   if job['provider']=='http-01' and domain!=main_domain and not path.exists():
+    ensure_domain_available(out,domain,path);atomic_vhost(path,render(domain),nginx)
    argv=[certbot,'certonly','--non-interactive','--agree-tos','--email',job['email'],'--cert-name',domain,'-d',domain,'--keep-until-expiring']
    if job['provider']=='http-01':sync.run(argv+['--webroot','-w',str(webroot)])
    elif job['provider']=='cloudflare':
@@ -77,9 +85,20 @@ def main():
    if domain==main_domain:raise ValueError('Management vhost reserved')
    enabled=proxy['enabled']
    if enabled and (proxy['certificate_domain']!=domain or proxy['certificate_state']!='ready'):continue
-   cert=Path('/etc/letsencrypt/live')/domain/'fullchain.pem'
-   if enabled and not cert.is_file():raise ValueError('Managed certificate missing')
-   path=out/('harbor-route-'+domain+'.conf');atomic_vhost(path,render(domain,proxy['upstream'] if enabled else None,enabled),nginx)
+   changed=False
+   if enabled:
+    directory=Path('/etc/harbor/gateway-certificates')/domain;directory.mkdir(parents=True,exist_ok=True,mode=0o700);directory.chmod(0o700)
+    for field,name in [('certificate','fullchain.pem'),('private_key','privkey.pem')]:
+     content=proxy.get(field,'')
+     if not content:raise ValueError('Certificate payload missing')
+     path=directory/name;sync.verify_output(path)
+     if path.exists() and path.is_symlink():raise ValueError('Unsafe certificate link')
+     if not path.exists() or path.read_text()!=content:
+      fd,temporary=tempfile.mkstemp(dir=directory)
+      with os.fdopen(fd,'w') as file:file.write(content);file.flush();os.fsync(file.fileno())
+      os.chmod(temporary,0o600);os.replace(temporary,path);changed=True
+   path=out/('harbor-route-'+domain+'.conf');ensure_domain_available(out,domain,path);reloaded=atomic_vhost(path,render(domain,proxy['upstream'] if enabled else None,enabled),nginx)
+   if changed and not reloaded:sync.run([nginx,'-t']);sync.run([nginx,'-s','reload'])
    if proxy['reported_version']!=proxy['version'] or proxy['state'] not in ('active','disabled'):call('gateway/report',dict(id=proxy['id'],kind='reverse-proxy',state='active' if enabled else 'disabled',version=proxy['version']))
   except Exception:call('gateway/report',dict(id=proxy['id'],kind='reverse-proxy',state='failed',version=proxy['version']));print('Reverse proxy validation failed:',proxy['domain'])
  os.close(lock)

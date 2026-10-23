@@ -2,6 +2,7 @@ package live
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"io"
 	"net"
@@ -23,7 +24,7 @@ func TestProtocolTemplates(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	for _, kind := range []string{"vless", "hysteria2", "tuic", "trojan", "snell", "xray-vless", "xray-trojan", "vmess", "vmess-plain", "vmess-ws", "xray-vmess", "xray-vmess-plain", "xray-vless-ws", "trojan-ws", "anytls", "chain-vmess-ws", "xray-chain-vless"} {
+	for _, kind := range []string{"vless", "hysteria2", "tuic", "trojan", "snell", "xray-vless", "xray-trojan", "vmess", "vmess-plain", "vmess-ws", "xray-vmess", "xray-vmess-plain", "xray-vless-ws", "trojan-ws", "anytls", "chain-vmess-ws", "xray-chain-vless", "vless-reality", "xray-vless-reality", "vless-grpc", "xray-vless-grpc", "managed-vless", "xray-managed-vmess"} {
 		t.Run(kind, func(t *testing.T) {
 			serverEngine := "sing-box"
 			if strings.HasPrefix(kind, "xray-") {
@@ -32,6 +33,12 @@ func TestProtocolTemplates(t *testing.T) {
 			}
 			chainMode := strings.HasPrefix(kind, "chain-")
 			kind = strings.TrimPrefix(kind, "chain-")
+			managed := strings.HasPrefix(kind, "managed-")
+			kind = strings.TrimPrefix(kind, "managed-")
+			reality := strings.HasSuffix(kind, "-reality")
+			kind = strings.TrimSuffix(kind, "-reality")
+			grpc := strings.HasSuffix(kind, "-grpc")
+			kind = strings.TrimSuffix(kind, "-grpc")
 			plain := strings.HasSuffix(kind, "-plain")
 			ws := strings.HasSuffix(kind, "-ws")
 			kind = strings.TrimSuffix(strings.TrimSuffix(kind, "-plain"), "-ws")
@@ -51,6 +58,28 @@ func TestProtocolTemplates(t *testing.T) {
 				s.ServerName = "localhost"
 				s.Certificate = cert
 				s.PrivateKey = key
+			}
+			if grpc {
+				s.Transport = "grpc"
+				s.ServiceName = "harbor-test"
+			}
+			if managed {
+				s.ManagedUsers = true
+				s.Accounts = []Account{{Name: "fixture-user", UUID: UUID(), Password: Secret()}}
+			}
+			if reality {
+				handshake := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) }))
+				handshake.TLS = &tls.Config{MinVersion: tls.VersionTLS13}
+				handshake.EnableHTTP2 = true
+				handshake.StartTLS()
+				defer handshake.Close()
+				s.TLSMode = "reality"
+				s.Certificate = ""
+				s.PrivateKey = ""
+				s.Flow = "xtls-rprx-vision"
+				s.Reality = NewReality()
+				s.Reality.Target = "localhost"
+				s.Reality.Port = handshake.Listener.Addr().(*net.TCPAddr).Port
 			}
 			if chainMode {
 				binary := os.Getenv("TEST_SING_BOX_BINARY")
@@ -163,12 +192,29 @@ func TestProtocolTemplates(t *testing.T) {
 			}
 			clientPort := l.Addr().(*net.TCPAddr).Port
 			l.Close()
-			sb, _, _, _ = s.Client("proxy")
+			clientSpec := s
+			if managed {
+				clientSpec.UUID = s.Accounts[0].UUID
+				clientSpec.Password = s.Accounts[0].Password
+			}
+			sb, _, _, _ = clientSpec.Client("proxy")
 			config := map[string]any{"inbounds": []any{map[string]any{"type": "mixed", "listen": "127.0.0.1", "listen_port": clientPort}}, "outbounds": []any{sb}, "route": map[string]any{"final": "proxy"}}
+			if reality && serverEngine == "xray" {
+				config = map[string]any{"inbounds": []any{map[string]any{"listen": "127.0.0.1", "port": clientPort, "protocol": "http"}}, "outbounds": []any{s.XrayClient("proxy")}}
+			}
 			content, _ := json.Marshal(config)
 			os.WriteFile(filepath.Join(dir, "client.json"), content, 0600)
-			client := exec.Command(clientBinary, "run", "-c", "client.json")
+			clientArgs := []string{"run", "-c", "client.json"}
+			if reality && serverEngine == "xray" {
+				clientBinary = binary
+				clientArgs = []string{"run", "-config", "client.json"}
+			}
+			client := exec.Command(clientBinary, clientArgs...)
 			client.Dir = dir
+			clientLog, _ := os.Create(filepath.Join(dir, "client.log"))
+			defer clientLog.Close()
+			client.Stderr = clientLog
+			client.Stdout = clientLog
 			if e = client.Start(); e != nil {
 				t.Fatal(e)
 			}
@@ -194,6 +240,9 @@ func TestProtocolTemplates(t *testing.T) {
 			logFile.Sync()
 			logData, _ := os.ReadFile(filepath.Join(dir, "server.log"))
 			t.Log(string(logData))
+			clientLog.Sync()
+			clientData, _ := os.ReadFile(filepath.Join(dir, "client.log"))
+			t.Log(string(clientData))
 			t.Fatal("real protocol forwarding failed")
 		})
 	}

@@ -39,9 +39,8 @@ func (s Spec) validateProxy() error {
 	if s.Peer != nil || len(s.Tunnels) > 0 {
 		return errors.New("protocol template does not support FRP tunnels or route peers")
 	}
-	key, e := base64.StdEncoding.DecodeString(s.Password)
-	if e != nil || len(key) != 32 {
-		return errors.New("random 32-byte credential required")
+	if e := s.validateCredential(); e != nil {
+		return e
 	}
 	if s.Kind == "snell" {
 		if s.Certificate != "" || s.PrivateKey != "" || s.ServerName != "" || s.UUID != "" {
@@ -51,6 +50,9 @@ func (s Spec) validateProxy() error {
 	}
 	if (s.Kind == "vless" || s.Kind == "tuic" || s.Kind == "vmess") && !uuidPattern.MatchString(s.UUID) {
 		return errors.New("valid UUID required")
+	}
+	if s.IsReality() {
+		return nil
 	}
 	if !s.UsesTLS() {
 		if s.ServerName != "" || s.Certificate != "" || s.PrivateKey != "" {
@@ -84,11 +86,21 @@ func (s Spec) renderProxy() (string, map[string][]byte, error) {
 		files["tls.crt"] = []byte(s.Certificate)
 		files["tls.key"] = []byte(s.PrivateKey)
 		tls := map[string]any{"enabled": true, "certificate_path": "tls.crt", "key_path": "tls.key"}
+		if len(s.ALPN) > 0 {
+			tls["alpn"] = s.ALPN
+		}
 		if s.UsesTLS() {
 			inbound["tls"] = tls
 		} else {
 			delete(files, "tls.crt")
 			delete(files, "tls.key")
+		}
+		if s.IsReality() {
+			r := s.Reality
+			inbound["tls"] = map[string]any{"enabled": true, "server_name": s.ServerName, "reality": map[string]any{"enabled": true, "handshake": map[string]any{"server": r.Target, "server_port": r.Port}, "private_key": r.PrivateKey, "short_id": []string{r.ShortID}}}
+		}
+		if s.Transport == "grpc" {
+			inbound["transport"] = map[string]any{"type": "grpc", "service_name": s.ServiceName}
 		}
 		if s.Transport == "ws" {
 			inbound["transport"] = map[string]any{"type": "ws", "path": s.Path}
@@ -97,16 +109,36 @@ func (s Spec) renderProxy() (string, map[string][]byte, error) {
 		switch s.Kind {
 		case "vless", "vmess":
 			user["uuid"] = s.UUID
+			if s.Flow != "" {
+				user["flow"] = s.Flow
+			}
 		case "tuic":
 			user["uuid"] = s.UUID
 			user["password"] = s.Password
-			inbound["congestion_control"] = "cubic"
+			inbound["congestion_control"] = s.congestion()
 			inbound["zero_rtt_handshake"] = false
 			tls["alpn"] = []string{"h3"}
 		default:
 			user["password"] = s.Password
 		}
 		inbound["users"] = []any{user}
+		if s.ManagedUsers {
+			users := []any{}
+			for _, a := range s.Accounts {
+				u := map[string]any{"name": a.Name}
+				if s.Kind == "vless" || s.Kind == "vmess" || s.Kind == "tuic" {
+					u["uuid"] = a.UUID
+				}
+				if s.Kind != "vless" && s.Kind != "vmess" {
+					u["password"] = a.Password
+				}
+				if s.Flow != "" {
+					u["flow"] = s.Flow
+				}
+				users = append(users, u)
+			}
+			inbound["users"] = users
+		}
 	}
 	b, e := json.MarshalIndent(map[string]any{"log": map[string]any{"level": "warn"}, "inbounds": []any{inbound}, "outbounds": []any{map[string]any{"type": "direct", "tag": "egress"}}, "route": map[string]any{"final": "egress"}}, "", "  ")
 	files["config.json"] = b
@@ -150,7 +182,7 @@ func (s Spec) Client(tag string) (map[string]any, map[string]any, string, error)
 		mh["tls"] = s.UsesTLS()
 		mh["skip-cert-verify"] = false
 		block, _ := pem.Decode([]byte(s.Certificate))
-		if block == nil && s.UsesTLS() {
+		if block == nil && s.UsesTLS() && s.Certificate != "" {
 			return nil, nil, "", errors.New("missing certificate")
 		}
 		// Keep URI certificate validation enabled. No allowInsecure export.
@@ -174,14 +206,14 @@ func (s Spec) Client(tag string) (map[string]any, map[string]any, string, error)
 		case "tuic":
 			sb["uuid"] = s.UUID
 			sb["password"] = s.Password
-			sb["congestion_control"] = "cubic"
+			sb["congestion_control"] = s.congestion()
 			sb["tls"].(map[string]any)["alpn"] = []string{"h3"}
 			mh["uuid"] = s.UUID
 			mh["password"] = s.Password
-			mh["congestion-controller"] = "cubic"
+			mh["congestion-controller"] = s.congestion()
 			mh["alpn"] = []string{"h3"}
 			u.User = url.UserPassword(s.UUID, s.Password)
-			q.Set("congestion_control", "cubic")
+			q.Set("congestion_control", s.congestion())
 			q.Set("alpn", "h3")
 		default:
 			sb["password"] = s.Password
@@ -189,7 +221,43 @@ func (s Spec) Client(tag string) (map[string]any, map[string]any, string, error)
 			u.User = url.User(s.Password)
 		}
 	}
-	if !s.UsesTLS() {
+	if len(s.ALPN) > 0 && s.UsesTLS() {
+		sb["tls"].(map[string]any)["alpn"] = s.ALPN
+		mh["alpn"] = s.ALPN
+		q.Set("alpn", strings.Join(s.ALPN, ","))
+	}
+	if s.Flow != "" {
+		sb["flow"] = s.Flow
+		mh["flow"] = s.Flow
+		q.Set("flow", s.Flow)
+	}
+	if s.IsReality() {
+		r := s.Reality
+		if r == nil {
+			return nil, nil, "", errors.New("REALITY missing")
+		}
+		sb["tls"] = map[string]any{"enabled": true, "server_name": s.ServerName, "utls": map[string]any{"enabled": true, "fingerprint": r.Fingerprint}, "reality": map[string]any{"enabled": true, "public_key": r.PublicKey, "short_id": r.ShortID}}
+		mh["tls"] = true
+		mh["servername"] = s.ServerName
+		mh["client-fingerprint"] = r.Fingerprint
+		mh["reality-opts"] = map[string]any{"public-key": r.PublicKey, "short-id": r.ShortID}
+		q.Set("security", "reality")
+		q.Set("sni", s.ServerName)
+		q.Set("fp", r.Fingerprint)
+		q.Set("pbk", r.PublicKey)
+		q.Set("sid", r.ShortID)
+	}
+	if s.Transport == "grpc" {
+		sb["transport"] = map[string]any{"type": "grpc", "service_name": s.ServiceName}
+		mh["network"] = "grpc"
+		mh["grpc-opts"] = map[string]any{"grpc-service-name": s.ServiceName}
+		q.Set("type", "grpc")
+		q.Set("serviceName", s.ServiceName)
+	}
+	if s.WSHost != "" {
+		q.Set("host", s.WSHost)
+	}
+	if !s.UsesTLS() && !s.IsReality() {
 		delete(mh, "sni")
 		delete(mh, "servername")
 		q.Del("sni")
@@ -201,6 +269,11 @@ func (s Spec) Client(tag string) (map[string]any, map[string]any, string, error)
 		mh["ws-opts"] = map[string]any{"path": s.Path}
 		q.Set("type", "ws")
 		q.Set("path", s.Path)
+		if s.WSHost != "" {
+			headers := map[string]string{"Host": s.WSHost}
+			sb["transport"].(map[string]any)["headers"] = headers
+			mh["ws-opts"].(map[string]any)["headers"] = headers
+		}
 	}
 	if s.Kind == "vmess" {
 		payload := map[string]any{"v": "2", "ps": tag, "add": s.Address, "port": s.Port, "id": s.UUID, "aid": "0", "scy": "aes-128-gcm", "net": "tcp", "type": "none", "tls": "", "sni": s.ServerName, "path": s.Path}

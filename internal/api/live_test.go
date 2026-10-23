@@ -166,6 +166,44 @@ func TestLiveIntegration(t *testing.T) {
 	call("POST", "reverse-proxies", map[string]any{"domain": "bad.example.com", "upstream": "http://127.0.0.1:8080", "certificate_id": cert["id"], "enabled": false}, 400, nil)
 	call("POST", "reverse-proxies", map[string]any{"domain": "proxy.example.com", "upstream": "http://127.0.0.1:3000", "certificate_id": cert["id"], "enabled": true}, 400, nil)
 
+	if certFile, keyFile := os.Getenv("TEST_CERTIFICATE_FILE"), os.Getenv("TEST_PRIVATE_KEY_FILE"); certFile != "" && keyFile != "" {
+		certPEM, e := os.ReadFile(certFile)
+		if e != nil {
+			t.Fatal(e)
+		}
+		keyPEM, e := os.ReadFile(keyFile)
+		if e != nil {
+			t.Fatal(e)
+		}
+		manual := call("POST", "certificates", map[string]any{"domain": "vps.iczy.top", "provider": "manual", "certificate": string(certPEM), "private_key": string(keyPEM)}, 201, nil)
+		tlsNode := create("vless", 22012, map[string]any{"certificate_id": manual["id"], "server_name": "vps.iczy.top"})
+		chained := create("vmess", 22013, map[string]any{"tls_mode": "none", "next_id": tlsNode["id"]})
+		actual, e := s.loadSpec(httptest.NewRequest("GET", "/", nil), chained["id"].(string))
+		if e != nil || actual.Outbound == nil || actual.Outbound.PrivateKey != "" {
+			t.Fatal("outbound endpoint leaked a TLS private key")
+		}
+		call("PUT", "certificates/"+manual["id"].(string), map[string]any{"domain": "vps.iczy.top", "provider": "manual", "certificate": string(certPEM), "private_key": string(keyPEM)}, 200, nil)
+		call("POST", "reverse-proxies", map[string]any{"domain": "vps.iczy.top", "upstream": "http://127.0.0.1:3000", "certificate_id": manual["id"], "enabled": true}, 201, nil)
+		packet := call("POST", "gateway/work", map[string]any{}, 200, nil)
+		found := false
+		for _, p := range packet["reverse_proxies"].([]any) {
+			proxy := p.(map[string]any)
+			if proxy["domain"] == "vps.iczy.top" {
+				found = true
+				if proxy["private_key"] != string(keyPEM) {
+					t.Fatal("authenticated gateway did not receive matching certificate key")
+				}
+				if _, exists := proxy["sealed"]; exists {
+					t.Fatal("database ciphertext should not escape API")
+				}
+			}
+		}
+		if !found {
+			t.Fatal("reverse proxy work missing")
+		}
+		call("POST", "certificates/"+manual["id"].(string)+"/retry", map[string]any{}, 409, nil)
+	}
+
 	r := httptest.NewRequest("GET", "/api/v1/hosts", nil)
 	w := httptest.NewRecorder()
 	public.ServeHTTP(w, r)

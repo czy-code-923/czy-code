@@ -129,8 +129,13 @@ func TestEnrollmentIntegration(t *testing.T) {
 		t.Fatal("heartbeat not reflected")
 	}
 	third := issue()
-	if want("GET",path,nil,200)["state"]!="waiting" {t.Fatal("reconnect command hidden by old heartbeat")}
-	var currentHash string;if e=db.QueryRow(ctx,"SELECT agent_hash FROM hosts WHERE tenant_id=$1 AND id=$2",tenant,id).Scan(&currentHash);e!=nil||currentHash!=Hash(claimed["agent_token"].(string)){t.Fatal("generating ticket prematurely revoked active Agent")}
+	if want("GET", path, nil, 200)["state"] != "waiting" {
+		t.Fatal("reconnect command hidden by old heartbeat")
+	}
+	var currentHash string
+	if e = db.QueryRow(ctx, "SELECT agent_hash FROM hosts WHERE tenant_id=$1 AND id=$2", tenant, id).Scan(&currentHash); e != nil || currentHash != Hash(claimed["agent_token"].(string)) {
+		t.Fatal("generating ticket prematurely revoked active Agent")
+	}
 	want("POST", path+"/revoke", nil, 200)
 	if code, _ := call("POST", "agent/enroll", map[string]string{"ticket": third}, false); code != 401 {
 		t.Fatal("revoked ticket accepted")

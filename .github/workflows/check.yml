@@ -22,6 +22,8 @@ jobs:
         with:
           go-version: '1.27'
       - run: python3 scripts/test_domain_sync.py
+      - run: python3 scripts/test_managed_gateway.py
+      - run: python3 scripts/test_agent_bootstrap.py
       - run: go vet ./...
       - run: go test -race -count=1 -v ./...
         env:
@@ -69,4 +71,5 @@ jobs:
           export TEST_SING_BOX_BINARY="$GITHUB_WORKSPACE/engines/sing-box$ext"
           export TEST_FRPS_BINARY="$GITHUB_WORKSPACE/engines/frps$ext"
           export TEST_FRPC_BINARY="$GITHUB_WORKSPACE/engines/frpc$ext"
+          export TEST_XRAY_BINARY="$GITHUB_WORKSPACE/engines/xray$ext"
           go test -count=1 -v ./internal/live ./internal/executor

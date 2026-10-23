@@ -2,6 +2,7 @@ package api
 
 import (
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"github.com/jackc/pgx/v5"
@@ -48,15 +49,58 @@ func (s *Server) certificates(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 	var b struct {
-		Domain   string `json:"domain"`
-		Provider string `json:"provider"`
-		Email    string `json:"email"`
-		DNSToken string `json:"dns_token"`
+		Domain      string `json:"domain"`
+		Provider    string `json:"provider"`
+		Email       string `json:"email"`
+		DNSToken    string `json:"dns_token"`
+		Certificate string `json:"certificate"`
+		PrivateKey  string `json:"private_key"`
 	}
 	if e := decode(w, r, &b); e != nil {
 		return e
 	}
 	b.Domain = strings.ToLower(strings.TrimSpace(b.Domain))
+	if b.Provider == "manual" || r.Method == "PUT" {
+		if !validDomain(b.Domain) || b.Provider != "manual" || b.DNSToken != "" {
+			return bad("valid domain and manual certificate provider required")
+		}
+		tx, e := s.DB.Begin(r.Context())
+		if e != nil {
+			return e
+		}
+		defer tx.Rollback(r.Context())
+		if _, e = tx.Exec(r.Context(), "SELECT pg_advisory_xact_lock(717071)"); e != nil {
+			return e
+		}
+		id := r.PathValue("id")
+		status := 200
+		if r.Method == "POST" {
+			id = ID()
+			status = 201
+			if _, e = tx.Exec(r.Context(), "INSERT INTO managed_certificates(tenant_id,id,domain,provider,email) VALUES($1,$2,$3,'manual','')", tenant, id, b.Domain); e != nil {
+				return e
+			}
+		} else {
+			var domain, provider string
+			if e = tx.QueryRow(r.Context(), "SELECT domain,provider FROM managed_certificates WHERE tenant_id=$1 AND id=$2 FOR UPDATE", tenant, id).Scan(&domain, &provider); e != nil {
+				return e
+			}
+			if domain != b.Domain || provider != "manual" {
+				return bad("only the same manually managed domain can be updated")
+			}
+		}
+		if e = s.saveManagedCertificate(r, tx, id, b.Domain, certificatePair{b.Certificate, b.PrivateKey}); e != nil {
+			return e
+		}
+		if e = audit(r.Context(), tx, "admin", "certificate.import", id); e != nil {
+			return e
+		}
+		if e = tx.Commit(r.Context()); e != nil {
+			return e
+		}
+		send(w, status, map[string]string{"id": id, "state": "ready"})
+		return nil
+	}
 	address, e := mail.ParseAddress(b.Email)
 	if !validDomain(b.Domain) || e != nil || address.Address != b.Email || len(b.Email) > 200 || (b.Provider != "http-01" && b.Provider != "cloudflare") {
 		return bad("valid domain, email and http-01/cloudflare provider required")
@@ -95,7 +139,7 @@ func (s *Server) certificateRetry(w http.ResponseWriter, r *http.Request) error 
 		return e
 	}
 	defer tx.Rollback(r.Context())
-	tag, e := tx.Exec(r.Context(), "UPDATE managed_certificates SET state='pending',result='' WHERE tenant_id=$1 AND id=$2 AND state IN ('ready','failed') AND (last_attempt IS NULL OR last_attempt<now()-interval '5 minutes')", tenant, r.PathValue("id"))
+	tag, e := tx.Exec(r.Context(), "UPDATE managed_certificates SET state='pending',result='' WHERE tenant_id=$1 AND id=$2 AND provider<>'manual' AND state IN ('ready','failed') AND (last_attempt IS NULL OR last_attempt<now()-interval '5 minutes')", tenant, r.PathValue("id"))
 	if e != nil {
 		return e
 	}
@@ -121,7 +165,7 @@ func (s *Server) gatewayWork(w http.ResponseWriter, r *http.Request) error {
 	}
 	defer tx.Rollback(r.Context())
 	// One bounded worker owns a claim for fifteen minutes. Secrets only go to this authenticated local root helper.
-	rows, e := tx.Query(r.Context(), `UPDATE managed_certificates SET state='running',last_attempt=now() WHERE (tenant_id,id) IN (SELECT tenant_id,id FROM managed_certificates WHERE tenant_id=$1 AND (state='pending' OR state='running' AND last_attempt<now()-interval '15 minutes' OR state='ready' AND expires_at<now()+interval '30 days' AND last_attempt<now()-interval '24 hours') ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 4) RETURNING id,domain,provider,email,sealed_credentials`, tenant)
+	rows, e := tx.Query(r.Context(), `UPDATE managed_certificates SET state='running',last_attempt=now() WHERE (tenant_id,id) IN (SELECT tenant_id,id FROM managed_certificates WHERE tenant_id=$1 AND provider<>'manual' AND (state='pending' OR state='running' AND last_attempt<now()-interval '15 minutes' OR state='ready' AND expires_at<now()+interval '30 days' AND last_attempt<now()-interval '24 hours') ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 4) RETURNING id,domain,provider,email,sealed_credentials`, tenant)
 	if e != nil {
 		return e
 	}
@@ -145,13 +189,36 @@ func (s *Server) gatewayWork(w http.ResponseWriter, r *http.Request) error {
 		return e
 	}
 	var proxies json.RawMessage
-	if e = tx.QueryRow(r.Context(), `SELECT COALESCE(jsonb_agg(x),'[]') FROM (SELECT p.*,c.domain AS certificate_domain,c.state AS certificate_state FROM reverse_proxies p JOIN managed_certificates c ON (p.tenant_id,p.certificate_id)=(c.tenant_id,c.id) WHERE p.tenant_id=$1 ORDER BY p.id LIMIT 100)x`, tenant).Scan(&proxies); e != nil {
+	if e = tx.QueryRow(r.Context(), `SELECT COALESCE(jsonb_agg(x),'[]') FROM (SELECT p.*,c.domain AS certificate_domain,c.state AS certificate_state,encode(c.sealed,'base64') AS sealed FROM reverse_proxies p JOIN managed_certificates c ON (p.tenant_id,p.certificate_id)=(c.tenant_id,c.id) WHERE p.tenant_id=$1 ORDER BY p.id LIMIT 100)x`, tenant).Scan(&proxies); e != nil {
 		return e
 	}
 	if e = tx.Commit(r.Context()); e != nil {
 		return e
 	}
-	send(w, 200, map[string]any{"certificates": jobs, "reverse_proxies": proxies})
+	var decoded []map[string]any
+	if e = json.Unmarshal(proxies, &decoded); e != nil {
+		return e
+	}
+	for _, proxy := range decoded {
+		if encoded, ok := proxy["sealed"].(string); ok && proxy["enabled"] == true && proxy["certificate_state"] == "ready" {
+			sealed, e := base64.StdEncoding.DecodeString(encoded)
+			if e != nil {
+				return e
+			}
+			raw, e := live.Open(s.MasterKey, sealed)
+			if e != nil {
+				return e
+			}
+			var pair certificatePair
+			if e = json.Unmarshal(raw, &pair); e != nil {
+				return e
+			}
+			proxy["certificate"] = pair.Certificate
+			proxy["private_key"] = pair.PrivateKey
+		}
+		delete(proxy, "sealed")
+	}
+	send(w, 200, map[string]any{"certificates": jobs, "reverse_proxies": decoded})
 	return nil
 }
 func (s *Server) gatewayReport(w http.ResponseWriter, r *http.Request) error {
@@ -198,77 +265,7 @@ func (s *Server) gatewayReport(w http.ResponseWriter, r *http.Request) error {
 	if b.State == "failed" {
 		_, e = tx.Exec(r.Context(), "UPDATE managed_certificates SET state='failed',result='ACME failed; check DNS, challenge reachability and private helper journal' WHERE tenant_id=$1 AND id=$2", tenant, b.ID)
 	} else if b.State == "ready" {
-		spec := live.Spec{Kind: "trojan", Address: domain, Listen: "127.0.0.1", Port: 25000, Password: live.Secret(), ServerName: domain, Certificate: b.Certificate, PrivateKey: b.PrivateKey}
-		if e = spec.Validate(); e != nil {
-			return bad("invalid certificate/key")
-		}
-		if e = spec.VerifyPublicCertificate(); e != nil {
-			return bad(e.Error())
-		}
-		expires, e := certificateExpiry(b.Certificate)
-		if e != nil {
-			return bad("invalid certificate")
-		}
-		raw, _ := json.Marshal(certificatePair{b.Certificate, b.PrivateKey})
-		sealed, e := live.Seal(s.MasterKey, raw)
-		if e != nil {
-			return e
-		}
-		if _, e = tx.Exec(r.Context(), "UPDATE managed_certificates SET sealed=$3,state='ready',expires_at=$4,result='' WHERE tenant_id=$1 AND id=$2", tenant, b.ID, sealed, expires); e != nil {
-			return e
-		}
-		rows, e := tx.Query(r.Context(), "SELECT id,sealed FROM live_services WHERE tenant_id=$1 AND certificate_id=$2", tenant, b.ID)
-		if e != nil {
-			return e
-		}
-		type change struct {
-			id     string
-			sealed []byte
-		}
-		changes := []change{}
-		for rows.Next() {
-			var id string
-			var sealed []byte
-			if e = rows.Scan(&id, &sealed); e != nil {
-				rows.Close()
-				return e
-			}
-			raw, e := live.Open(s.MasterKey, sealed)
-			if e != nil {
-				rows.Close()
-				return e
-			}
-			var spec live.Spec
-			if e = json.Unmarshal(raw, &spec); e != nil {
-				rows.Close()
-				return e
-			}
-			if spec.ServerName != domain {
-				rows.Close()
-				return bad("certificate binding mismatch")
-			}
-			spec.Certificate = b.Certificate
-			spec.PrivateKey = b.PrivateKey
-			raw, _ = json.Marshal(spec)
-			sealed, e = live.Seal(s.MasterKey, raw)
-			if e != nil {
-				rows.Close()
-				return e
-			}
-			changes = append(changes, change{id, sealed})
-		}
-		rows.Close()
-		if e = rows.Err(); e != nil {
-			return e
-		}
-		for _, v := range changes {
-			if _, e = tx.Exec(r.Context(), "UPDATE live_services SET sealed=$3,version=version+1,state='pending' WHERE tenant_id=$1 AND id=$2", tenant, v.id, v.sealed); e != nil {
-				return e
-			}
-			if e = s.bumpParents(r, tx, v.id); e != nil {
-				return e
-			}
-		}
+		e = s.saveManagedCertificate(r, tx, b.ID, domain, certificatePair{b.Certificate, b.PrivateKey})
 	} else {
 		return bad("invalid certificate state")
 	}
@@ -365,5 +362,81 @@ func (s *Server) reverseProxies(w http.ResponseWriter, r *http.Request) error {
 		return e
 	}
 	send(w, status, map[string]string{"id": id})
+	return nil
+}
+
+func (s *Server) saveManagedCertificate(r *http.Request, tx pgx.Tx, id, domain string, pair certificatePair) error {
+	var e error
+	spec := live.Spec{Kind: "trojan", Address: domain, Listen: "127.0.0.1", Port: 25000, Password: live.Secret(), ServerName: domain, Certificate: pair.Certificate, PrivateKey: pair.PrivateKey}
+	if e = spec.Validate(); e != nil {
+		return bad("invalid certificate/key")
+	}
+	if e = spec.VerifyPublicCertificate(); e != nil {
+		return bad(e.Error())
+	}
+	expires, e := certificateExpiry(pair.Certificate)
+	if e != nil {
+		return bad("invalid certificate")
+	}
+	raw, _ := json.Marshal(certificatePair{pair.Certificate, pair.PrivateKey})
+	sealed, e := live.Seal(s.MasterKey, raw)
+	if e != nil {
+		return e
+	}
+	if _, e = tx.Exec(r.Context(), "UPDATE managed_certificates SET sealed=$3,state='ready',expires_at=$4,result='' WHERE tenant_id=$1 AND id=$2", tenant, id, sealed, expires); e != nil {
+		return e
+	}
+	rows, e := tx.Query(r.Context(), "SELECT id,sealed FROM live_services WHERE tenant_id=$1 AND certificate_id=$2", tenant, id)
+	if e != nil {
+		return e
+	}
+	type change struct {
+		id     string
+		sealed []byte
+	}
+	changes := []change{}
+	for rows.Next() {
+		var id string
+		var sealed []byte
+		if e = rows.Scan(&id, &sealed); e != nil {
+			rows.Close()
+			return e
+		}
+		raw, e := live.Open(s.MasterKey, sealed)
+		if e != nil {
+			rows.Close()
+			return e
+		}
+		var spec live.Spec
+		if e = json.Unmarshal(raw, &spec); e != nil {
+			rows.Close()
+			return e
+		}
+		if spec.ServerName != domain {
+			rows.Close()
+			return bad("certificate binding mismatch")
+		}
+		spec.Certificate = pair.Certificate
+		spec.PrivateKey = pair.PrivateKey
+		raw, _ = json.Marshal(spec)
+		sealed, e = live.Seal(s.MasterKey, raw)
+		if e != nil {
+			rows.Close()
+			return e
+		}
+		changes = append(changes, change{id, sealed})
+	}
+	rows.Close()
+	if e = rows.Err(); e != nil {
+		return e
+	}
+	for _, v := range changes {
+		if _, e = tx.Exec(r.Context(), "UPDATE live_services SET sealed=$3,version=version+1,state='pending' WHERE tenant_id=$1 AND id=$2", tenant, v.id, v.sealed); e != nil {
+			return e
+		}
+		if e = s.bumpParents(r, tx, v.id); e != nil {
+			return e
+		}
+	}
 	return nil
 }

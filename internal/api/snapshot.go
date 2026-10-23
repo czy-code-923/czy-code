@@ -39,6 +39,9 @@ func (s *Server) snapshot(w http.ResponseWriter, r *http.Request) error {
  'hosts',(SELECT count(*) FROM hosts WHERE tenant_id=$1),
  'online_hosts',(SELECT count(*) FROM hosts WHERE tenant_id=$1 AND last_seen>now()-interval '90 seconds'),
  'instances',(SELECT count(*) FROM instances WHERE tenant_id=$1),
+ 'live_services',(SELECT count(*) FROM live_services WHERE tenant_id=$1 AND kind NOT IN ('frps','frpc')),
+ 'running_services',(SELECT count(*) FROM live_services WHERE tenant_id=$1 AND kind NOT IN ('frps','frpc') AND enabled AND state='running' AND reported_version=version AND reported_at>now()-interval '45 seconds'),
+ 'proxy_users',(SELECT count(*) FROM proxy_users WHERE tenant_id=$1),
  'active_tasks',(SELECT count(*) FROM tasks WHERE tenant_id=$1 AND state IN ('queued','running')),
  'completed_tasks',(SELECT count(*) FROM tasks WHERE tenant_id=$1 AND state='succeeded'),
  'firewall_versions',(SELECT count(*) FROM firewall_policies WHERE tenant_id=$1 AND archived_at IS NULL)))`
