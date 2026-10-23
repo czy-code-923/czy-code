@@ -106,13 +106,13 @@ func (s *Server) ShareHandler() http.Handler {
 		case "sing-box", "":
 			out = append(out, map[string]any{"type": "selector", "tag": "proxy", "outbounds": tags, "default": tags[0]})
 			send(w, 200, map[string]any{"log": map[string]any{"level": "warn"}, "inbounds": []any{map[string]any{"type": "mixed", "listen": "127.0.0.1", "listen_port": 1080}}, "outbounds": out, "route": map[string]any{"final": "proxy"}})
-		case "clash":
+		case "clash", "mihomo":
 			send(w, 200, map[string]any{"mixed-port": 1080, "allow-lan": false, "proxies": clash, "proxy-groups": []any{map[string]any{"name": "PROXY", "type": "select", "proxies": tags}}, "rules": []string{"MATCH,PROXY"}})
-		case "base64":
+		case "base64", "shadowrocket":
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 			fmt.Fprint(w, base64.StdEncoding.EncodeToString([]byte(strings.Join(uris, "\n"))))
 		default:
-			return bad("format must be sing-box, clash or base64")
+			return bad("format must be sing-box, mihomo, shadowrocket, clash or base64")
 		}
 		return nil
 	}))

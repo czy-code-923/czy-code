@@ -103,6 +103,8 @@ func TestLiveIntegration(t *testing.T) {
 	call("POST", "agent/live/sync", map[string]any{"reports": []map[string]any{{"id": a["id"], "version": 2, "state": "running"}}}, 200, h)
 	share(link, 200)
 	share(link+"?format=clash", 200)
+	share(link+"?format=mihomo", 200)
+	share(link+"?format=shadowrocket", 200)
 	share(link+"?format=base64", 200)
 	share(strings.Replace(link, "vps.example.com", "evil.example.com", 1), 404)
 	rotated := call("POST", "subscriptions/"+sub["id"].(string)+"/rotate", map[string]any{}, 200, nil)

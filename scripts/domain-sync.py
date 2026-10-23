@@ -52,6 +52,7 @@ def main():
     parser.add_argument('--issue',action='store_true',help='Explicitly allow ACME issuance/renewal through certbot')
     parser.add_argument('--apply',action='store_true')
     parser.add_argument('--allow-http',action='store_true',help='Explicitly allow plaintext subscription endpoint')
+    parser.add_argument('--public-management',action='store_true',help='Allow any source to reach HTTPS management; admin token remains required')
     args=parser.parse_args()
     if os.geteuid()!=0: raise ValueError('Gateway reconciler requires Linux root')
     values={}
@@ -72,6 +73,7 @@ def main():
     site=call('site');domain=domain_name(site['domain']);https=site['https']
     if not isinstance(https,bool): raise ValueError('Invalid HTTPS setting')
     if not https and not args.allow_http: raise ValueError('HTTP refused; review risk and explicitly use --allow-http')
+    if args.public_management and not https: raise ValueError('Public management requires HTTPS')
     for cidr in args.admin_cidrs.split(','):
         network=ipaddress.ip_network(cidr,strict=False)
         if network.prefixlen==0: raise ValueError('Public management CIDR forbidden')
@@ -123,6 +125,10 @@ def main():
             renewal_check=time.time()
             run([certbot,'certonly','--non-interactive','--agree-tos','--register-unsafely-without-email','--webroot','-w',str(webroot),'-d',domain,'--keep-until-expiring'])
         candidate=run(argv)
+        if args.public_management:
+            import re
+            candidate=re.sub(rb'(?m)^\s*allow [^;\n]+;\s*$',b'',candidate)
+            candidate=re.sub(rb'(?m)^\s*deny all;\s*$',b'',candidate)
         cert_mtime=cert.stat().st_mtime_ns if https else 0
         key_mtime=key.stat().st_mtime_ns if https else 0
         if candidate!=original: write(candidate)
