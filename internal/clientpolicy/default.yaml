@@ -85,6 +85,7 @@ proxy-groups:
 - name: 🚀 节点选择
   type: select
   proxies:
+  - ALL
   - ♻️ IPv4自动
   - ♻️ 全部自动
   - protocol:vless

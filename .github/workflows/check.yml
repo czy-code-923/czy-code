@@ -85,8 +85,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Download the immutable binary distribution
         run: |
-          curl --proto '=https' --tlsv1.2 -fL https://github.com/czy-code-923/czy-code/releases/download/v0.15.0-distribution/harbor-0.15.0-linux-amd64.zip -o /tmp/starhub.zip
-          echo '99b4b96e91a5b282e6592e67af80ab7d7a60daab5bff4c1440a61cabfa85ead7  /tmp/starhub.zip' | sha256sum --check
+          curl --proto '=https' --tlsv1.2 -fL https://github.com/czy-code-923/czy-code/releases/download/v0.16.0-distribution/harbor-0.16.0-linux-amd64.zip -o /tmp/starhub.zip
+          echo '050c6e52af640783a593e9f0646abd853c629674455a226d2ff498ef77388aaf  /tmp/starhub.zip' | sha256sum --check
           mkdir /tmp/starhub-distribution
           unzip -q /tmp/starhub.zip -d /tmp/starhub-distribution
       - name: Install, enroll, deploy and uninstall on this fresh CI VM

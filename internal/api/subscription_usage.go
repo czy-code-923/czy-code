@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"gopkg.in/yaml.v3"
 	"net/http"
@@ -70,7 +71,7 @@ func (s *Server) subscriptionUsage(r *http.Request, id, user string) (subscripti
 	return u, nil
 }
 func (s *Server) inspectSubscription(w http.ResponseWriter, r *http.Request) error {
-	if view := r.PathValue("view"); view != "usage" && view != "config" {
+	if view := r.PathValue("view"); view != "usage" && view != "config" && view != "check" {
 		return problem{404, "unknown subscription view"}
 	}
 	id := r.PathValue("id")
@@ -118,7 +119,35 @@ func (s *Server) inspectSubscription(w http.ResponseWriter, r *http.Request) err
 	preview.Header.Set("User-Agent", r.Header.Get("User-Agent"))
 	recorder := httptest.NewRecorder()
 	if e = s.serveSubscription(recorder, preview); e != nil {
+		if r.PathValue("view") == "check" {
+			var p problem
+			if !errors.As(e, &p) {
+				return e
+			}
+			stage := "configuration"
+			switch p.status {
+			case 404:
+				stage = "subscription"
+			case 403:
+				stage = "authorization"
+			case 503:
+				stage = "nodes"
+			case 422:
+				stage = "compatibility"
+			}
+			send(w, 200, map[string]any{"ready": false, "stage": stage, "status": p.status, "reason": p.message})
+			return nil
+		}
 		return e
+	}
+	if r.PathValue("view") == "check" {
+		ready := usage.Remaining == nil || *usage.Remaining > 0
+		reason, stage := "订阅已生成，可导入所选客户端；客户端本机合并配置需另行核对", "ready"
+		if !ready {
+			reason, stage = "用户流量额度已用尽，当前输出为拒绝连接配置", "quota"
+		}
+		send(w, 200, map[string]any{"ready": ready, "stage": stage, "status": 200, "reason": reason, "content_type": recorder.Header().Get("Content-Type"), "excluded_nodes": recorder.Header().Get("X-Starhub-Excluded-Nodes"), "warnings": recorder.Header().Get("X-Starhub-Policy-Warnings")})
+		return nil
 	}
 	var config any
 	if query.Get("client") == "shadowrocket-config" && strings.Contains(recorder.Body.String(), "[Rule]") {

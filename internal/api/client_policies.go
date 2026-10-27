@@ -38,7 +38,8 @@ var clients = []clientInfo{
 }
 
 func clientByID(id string) (clientInfo, bool) {
-	if id == "clash" {
+	id = strings.ToLower(strings.TrimSpace(id))
+	if id == "clash" || id == "clash-meta" || id == "clashverge" || id == "clash-verge-rev" {
 		id = "mihomo"
 	}
 	for _, c := range clients {
@@ -300,9 +301,6 @@ func selectedClient(r *http.Request, profile string) (clientInfo, error) {
 		id = r.URL.Query().Get("format")
 	}
 	if id == "" {
-		id = profile
-	}
-	if id == "" {
 		ua := strings.ToLower(r.UserAgent())
 		switch {
 		case strings.Contains(ua, "clash") || strings.Contains(ua, "mihomo"):
@@ -315,9 +313,19 @@ func selectedClient(r *http.Request, profile string) (clientInfo, error) {
 			id = "hiddify"
 		case strings.Contains(ua, "nekobox"):
 			id = "nekobox"
-		default:
+		case strings.Contains(ua, "stash"):
+			id = "stash"
+		case strings.Contains(ua, "sing-box") || strings.Contains(ua, "singbox") || strings.HasPrefix(ua, "sfa/") || strings.HasPrefix(ua, "sfi/"):
 			id = "sing-box"
+		case strings.Contains(ua, "v2rayn"):
+			id = "v2rayn"
 		}
+	}
+	if id == "" {
+		id = profile
+	}
+	if id == "" {
+		id = "sing-box"
 	}
 	if c, ok := clientByID(id); ok {
 		return c, nil

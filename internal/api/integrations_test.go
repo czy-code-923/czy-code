@@ -206,6 +206,16 @@ func TestIntegrationPermissionsAndSubscriptions(t *testing.T) {
 		}
 	}
 	preview := call("GET", "subscriptions/"+subid+"/config?format=mihomo", nil, 200)
+	check := object(call("GET", "subscriptions/"+subid+"/check?client=mihomo", nil, 200))
+	if check["ready"] != true || strings.Contains(fmt.Sprint(check), sub["url"].(string)) {
+		t.Fatal("readiness or private link leak", check)
+	}
+	sql(`UPDATE live_services SET enabled=false,state='stopped' WHERE id=$1`, sid)
+	check = object(call("GET", "subscriptions/"+subid+"/check?client=mihomo", nil, 200))
+	if check["ready"] != false || check["status"] != float64(503) || check["stage"] != "nodes" {
+		t.Fatal("stopped subscription incorrectly ready", check)
+	}
+	sql(`UPDATE live_services SET enabled=true,state='running' WHERE id=$1`, sid)
 	spec, e := s.loadSpec(httptest.NewRequest("GET", "/", nil), sid)
 	if e != nil {
 		t.Fatal(e)
@@ -238,6 +248,10 @@ func TestIntegrationPermissionsAndSubscriptions(t *testing.T) {
 		t.Fatal("bound quota", usage)
 	}
 	sql(`UPDATE proxy_users SET used_bytes=1000001,download_bytes=999701 WHERE id=$1`, uid)
+	check = object(call("GET", "subscriptions/"+subid+"/check?client=mihomo", nil, 200))
+	if check["ready"] != false || check["stage"] != "quota" {
+		t.Fatal("exhausted user ready", check)
+	}
 	w = download("?format=mihomo", "")
 	if !strings.Contains(w.Header().Get("Subscription-Userinfo"), "total=1000000;") || !strings.Contains(w.Body.String(), "MATCH,REJECT") {
 		t.Fatal("quota refresh blocked metadata")

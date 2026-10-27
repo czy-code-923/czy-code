@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "星枢 · VPS 多机管理 API",
-    "version": "0.15.0",
+    "version": "0.16.0",
     "description": "Self-workspace API for host agents, proxy protocols, user quotas and client subscriptions. Bearer administrator token or expiring scoped xs_ API key. No arbitrary shell; privileged gateway work and API key administration remain root-only."
   },
   "servers": [
@@ -5862,6 +5862,47 @@
         "x-required-scopes": [
           "notifications:write"
         ]
+      }
+    },
+    "/api/v1/subscriptions/{id}/check": {
+      "get": {
+        "summary": "Compile a subscription readiness check without returning credentials",
+        "description": "Same authorization, readiness, protocol filtering and policy compilation as public export. ready=false for no running nodes, incompatible formats, invalid policy or exhausted quota. Does not prove a client local merge or end-to-end reachability. Requires subscriptions:read.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "client",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "policy",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "nodes-only"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ready status, diagnostic stage and export status; no private configuration or link"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
       }
     }
   },

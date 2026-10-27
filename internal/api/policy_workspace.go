@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"vps-control/internal/clientpolicy"
+	"vps-control/internal/live"
 )
 
 // Install the built-in template once for new workspaces. Existing global/user
@@ -64,18 +65,29 @@ func (s *Server) importPolicy(w http.ResponseWriter, r *http.Request) error {
 	if e != nil {
 		return bad(e.Error())
 	}
-	rows, e := s.DB.Query(r.Context(), `SELECT id,name,kind FROM live_services WHERE tenant_id=$1 AND delete_requested_at IS NULL AND kind NOT IN ('frps','frpc')`, tenant)
+	rows, e := s.DB.Query(r.Context(), `SELECT id,name,kind,address,port,sealed FROM live_services WHERE tenant_id=$1 AND delete_requested_at IS NULL AND kind NOT IN ('frps','frpc')`, tenant)
 	if e != nil {
 		return e
 	}
 	defer rows.Close()
-	type node struct{ ID, Name, Kind string }
-	nodes := []node{}
+	nodes := []clientpolicy.Candidate{}
 	for rows.Next() {
-		var n node
-		if e = rows.Scan(&n.ID, &n.Name, &n.Kind); e != nil {
+		var n clientpolicy.Candidate
+		var address string
+		var sealed []byte
+		if e = rows.Scan(&n.ID, &n.Name, &n.Protocol, &address, &n.Port, &sealed); e != nil {
 			return e
 		}
+		n.Addresses = []string{address}
+		raw, err := live.Open(s.MasterKey, sealed)
+		if err != nil {
+			return err
+		}
+		var spec live.Spec
+		if err = json.Unmarshal(raw, &spec); err != nil {
+			return err
+		}
+		n.Addresses = append(n.Addresses, spec.EndpointAddresses...)
 		nodes = append(nodes, n)
 	}
 	if e = rows.Err(); e != nil {
@@ -87,25 +99,8 @@ func (s *Server) importPolicy(w http.ResponseWriter, r *http.Request) error {
 		known[g.Name] = true
 	}
 	for _, a := range result.Aliases {
-		ref := ""
-		for _, n := range nodes {
-			if n.Name == a.Name {
-				if ref != "" {
-					ref = ""
-					break
-				}
-				ref = "node:" + n.ID
-			}
-		}
-		if ref == "" && a.Protocol != "" {
-			for _, n := range nodes {
-				if n.Kind == a.Protocol {
-					ref = "protocol:" + a.Protocol
-					break
-				}
-			}
-		}
-		mappings = append(mappings, map[string]string{"name": a.Name, "protocol": a.Protocol, "reference": ref})
+		ref, reason := clientpolicy.MatchAlias(a, nodes)
+		mappings = append(mappings, map[string]string{"name": a.Name, "protocol": a.Protocol, "reference": ref, "match_reason": reason})
 		if ref != "" {
 			result.Warnings = append(result.Warnings, "节点别名 "+a.Name+" → "+ref)
 		}

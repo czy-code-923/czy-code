@@ -7,6 +7,7 @@ import (
 	"gopkg.in/yaml.v3"
 	"io"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -14,6 +15,7 @@ type Alias struct {
 	Name     string `json:"name"`
 	Protocol string `json:"protocol"`
 	Server   string `json:"server,omitempty"`
+	Port     int    `json:"port,omitempty"`
 }
 type ImportResult struct {
 	UnsupportedRules int                        `json:"unsupported_rules"`
@@ -81,15 +83,17 @@ func Import(source string) (ImportResult, error) {
 			case "direct", "freedom", "block", "blackhole", "dns":
 			default:
 				server := str(o["server"])
+				port, _ := strconv.Atoi(fmt.Sprint(o["server_port"]))
 				if server == "" {
 					settings := obj(o["settings"])
 					for _, key := range []string{"vnext", "servers"} {
 						if a := array(settings[key]); len(a) > 0 {
 							server = str(obj(a[0])["address"])
+							port, _ = strconv.Atoi(fmt.Sprint(obj(a[0])["port"]))
 						}
 					}
 				}
-				r.Aliases = append(r.Aliases, Alias{tag, normalizeKind(kind), server})
+				r.Aliases = append(r.Aliases, Alias{tag, normalizeKind(kind), server, port})
 			}
 		}
 		// Direct/reject names are client-specific identities, never imported as credentials.
@@ -217,7 +221,8 @@ func Import(source string) (ImportResult, error) {
 		r.Policy.Rules = stringsOf(m["rules"])
 		for _, v := range array(m["proxies"]) {
 			o := obj(v)
-			r.Aliases = append(r.Aliases, Alias{str(o["name"]), normalizeKind(str(o["type"])), str(o["server"])})
+			port, _ := strconv.Atoi(fmt.Sprint(o["port"]))
+			r.Aliases = append(r.Aliases, Alias{str(o["name"]), normalizeKind(str(o["type"])), str(o["server"]), port})
 		}
 		for k := range m {
 			if !slices.Contains(BasicKeys, k) && !slices.Contains([]string{"basic", "dns", "proxy-groups", "rules", "proxies"}, k) {

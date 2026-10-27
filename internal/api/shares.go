@@ -237,29 +237,20 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 				checkFormat = "xray"
 			}
 			if !client.Full && (endpoint.IsReality() && endpoint.Engine == "xray" || endpoint.Transport == "xhttp" || endpoint.Transport == "kcp" || endpoint.Transport == "httpupgrade") {
-				if r.URL.Query().Get("client") != "" {
-					excluded++
-					continue
-				}
-				return problem{422, "this transport/security combination requires complete native JSON"}
+				excluded++
+				continue
 			}
 			if err := endpoint.ClientFormat(checkFormat); err != nil {
-				if r.URL.Query().Get("client") != "" {
-					excluded++
-					continue
-				}
-				return problem{422, err.Error()}
+				excluded++
+				continue
 			}
 			sb, mh, uri, err := endpoint.Client(tag)
 			if err != nil {
 				return err
 			}
 			if uri == "" && !client.Full {
-				if r.URL.Query().Get("client") != "" {
-					excluded++
-					continue
-				}
-				return problem{422, "此协议没有兼容的 URI 导出，请选择完整配置"}
+				excluded++
+				continue
 			}
 			if format == "xray" {
 				xray = append(xray, endpoint.XrayClient(tag))
@@ -278,7 +269,7 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 		if excluded > 0 {
 			return problem{422, "所选客户端不兼容已授权的节点协议，请选择兼容客户端"}
 		}
-		return problem{503, "no freshly reported running services; verify agent and network"}
+		return problem{503, "没有可发布的运行中节点，请检查用户组授权、节点启用状态、部署结果与 Agent 在线状态"}
 	}
 	switch format {
 	case "sing-box", "":
