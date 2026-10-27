@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"embed"
 	"encoding/hex"
@@ -84,6 +85,9 @@ func (s *Server) bootstrapScript(w http.ResponseWriter, r *http.Request) {
 		name = "install.py"
 	}
 	b, _ := bootstrapFiles.ReadFile("bootstrap/" + name)
+	// Source checkouts and ZIP builders on Windows may use CRLF. A POSIX
+	// shell treats the CR as part of `set -eu`, so always serve portable LF.
+	b = bytes.ReplaceAll(b, []byte("\r\n"), []byte("\n"))
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")

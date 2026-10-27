@@ -29,7 +29,7 @@ def main():
             if check():return
             time.sleep(1)
         raise RuntimeError('Timeout: '+description)
-    assert api('session')['version']=='0.12.1'
+    assert api('session')['version']=='0.12.2'
     site=api('site');assert site['domain']=='' and site['ip_origin']=='http://127.0.0.1:18080'
     assert api('agent/releases/linux-amd64')['size']>1000000
     print('Fresh one-command control installation and no-domain IP access: PASS',flush=True)
@@ -57,7 +57,7 @@ def main():
     wait(lambda:all(not Path(path).exists() for path in paths),'Agent files and units fully removed',30)
     assert all(v['id']!=row['id'] for v in api('live'))
     api('agent/heartbeat',{},401,agent=credentials)
-    assert api('session')['version']=='0.12.1' and root.joinpath('control.env').exists()
+    assert api('session')['version']=='0.12.2' and root.joinpath('control.env').exists()
     subprocess.run(['docker','exec','starhub-control-db','pg_isready','-U','harbor','-d','harbor'],check=True,stdout=subprocess.DEVNULL)
     print('Remote Agent files and control-side deployment data removed; manager and database preserved: PASS',flush=True)
 if __name__=='__main__':main()
