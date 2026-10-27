@@ -24,10 +24,13 @@ type Group struct {
 	URL       string   `json:"url,omitempty" yaml:"url,omitempty"`
 	Interval  int      `json:"interval,omitempty" yaml:"interval,omitempty"`
 	Tolerance int      `json:"tolerance,omitempty" yaml:"tolerance,omitempty"`
+	Lazy      *bool    `json:"lazy,omitempty" yaml:"lazy,omitempty"`
 }
 type Policy struct {
-	Groups []Group  `json:"proxy-groups" yaml:"proxy-groups"`
-	Rules  []string `json:"rules" yaml:"rules"`
+	Basic  map[string]any `json:"basic,omitempty" yaml:"basic,omitempty"`
+	DNS    map[string]any `json:"dns,omitempty" yaml:"dns,omitempty"`
+	Groups []Group        `json:"proxy-groups" yaml:"proxy-groups"`
+	Rules  []string       `json:"rules" yaml:"rules"`
 }
 type Node struct {
 	ID       string `json:"id"`
@@ -38,6 +41,8 @@ type Node struct {
 	Tag      string `json:"tag"`
 }
 type Result struct {
+	Basic    map[string]any  `json:"basic,omitempty"`
+	DNS      map[string]any  `json:"dns,omitempty"`
 	Groups   []Group         `json:"groups"`
 	Rules    []string        `json:"rules"`
 	Warnings []string        `json:"warnings"`
@@ -75,6 +80,9 @@ func label(s string) bool {
 	return true
 }
 func (p Policy) Validate() error {
+	if e := ValidateSections(p.Basic, p.DNS); e != nil {
+		return e
+	}
 	if len(p.Groups) > 32 || len(p.Rules) > 512 {
 		return errors.New("最多 32 个策略组、512 条规则")
 	}
@@ -161,6 +169,9 @@ func SplitRule(line string) ([]string, error) {
 	case "RULE-SET":
 		return nil, errors.New("RULE-SET 需要客户端 rule-providers，请使用该客户端原生规则覆盖并显式提供规则集")
 	case "DOMAIN", "DOMAIN-SUFFIX", "DOMAIN-KEYWORD", "PROCESS-NAME", "PROCESS-PATH", "GEOSITE", "GEOIP":
+		if (a[0] == "GEOIP" || a[0] == "GEOSITE") && !geoCode.MatchString(a[1]) {
+			return nil, errors.New("Geo 数据类别无效")
+		}
 	case "IP-CIDR", "IP-CIDR6", "SRC-IP-CIDR":
 		if _, e := netip.ParsePrefix(a[1]); e != nil {
 			return nil, errors.New("IP 网段无效")
@@ -204,13 +215,20 @@ func (p Policy) References() []string {
 			r = append(r, a[target(a)])
 		}
 	}
+	for _, field := range []string{"nameserver", "direct-nameserver", "proxy-server-nameserver"} {
+		for _, v := range stringsOf(p.DNS[field]) {
+			if _, ref, ok := strings.Cut(v, "#"); ok {
+				r = append(r, ref)
+			}
+		}
+	}
 	return r
 }
 func Dynamic(ref string) bool {
 	return ref == "ALL" || ref == "DIRECT" || ref == "REJECT" || strings.HasPrefix(ref, "protocol:") || strings.HasPrefix(ref, "node:") || strings.HasPrefix(ref, "host:") || ref == "family:ipv4" || ref == "family:ipv6"
 }
 func (p Policy) Resolve(nodes []Node, bindings map[string]string) (Result, error) {
-	r := Result{Groups: []Group{}, Rules: []string{}, Warnings: []string{}, Blocked: map[string]bool{}}
+	r := Result{Basic: p.Basic, DNS: copyMap(p.DNS), Groups: []Group{}, Rules: []string{}, Warnings: []string{}, Blocked: map[string]bool{}}
 	if e := p.Validate(); e != nil {
 		return r, e
 	}
@@ -298,6 +316,33 @@ func (p Policy) Resolve(nodes []Node, bindings map[string]string) (Result, error
 	if len(r.Rules) == 0 || !strings.HasPrefix(r.Rules[len(r.Rules)-1], "MATCH,") {
 		r.Rules = append(r.Rules, "MATCH,PROXY")
 	}
+	for _, key := range []string{"nameserver", "direct-nameserver", "proxy-server-nameserver"} {
+		values := stringsOf(r.DNS[key])
+		if len(values) == 0 {
+			continue
+		}
+		for i, value := range values {
+			address, ref, ok := strings.Cut(value, "#")
+			if !ok {
+				continue
+			}
+			if ref == "REJECT" {
+				return r, errors.New("DNS 连接代理不能是 REJECT")
+			}
+			matched := expand(ref)
+			if len(matched) == 0 {
+				return r, fmt.Errorf("DNS 代理引用没有已授权节点: %s", ref)
+			}
+			chosen := matched[0]
+			if len(matched) > 1 {
+				sum := sha256.Sum256([]byte("dns:" + ref))
+				chosen = "@starhub/dns-" + hex.EncodeToString(sum[:4])
+				r.Groups = append(r.Groups, Group{Name: chosen, Type: "select", Proxies: matched})
+			}
+			values[i] = address + "#" + chosen
+		}
+		r.DNS[key] = values
+	}
 	return r, nil
 }
 
@@ -309,6 +354,9 @@ func (r Result) Apply(format string, base map[string]any) (map[string]any, []str
 		groups := []any{}
 		for _, g := range r.Groups {
 			v := map[string]any{"name": g.Name, "type": g.Type, "proxies": g.Proxies}
+			if g.Lazy != nil {
+				v["lazy"] = *g.Lazy
+			}
 			if g.Type != "select" {
 				v["url"] = g.URL
 				v["interval"] = g.Interval
@@ -320,7 +368,7 @@ func (r Result) Apply(format string, base map[string]any) (map[string]any, []str
 		}
 		base["proxy-groups"] = groups
 		base["rules"] = r.Rules
-		return base, warnings, nil
+		return r.ApplySections(format, base, warnings)
 	}
 	if format != "sing-box" && format != "xray" {
 		return nil, warnings, errors.New("节点列表格式无法携带策略组和路由规则；请选择完整 JSON/YAML")
@@ -381,7 +429,11 @@ func (r Result) Apply(format string, base map[string]any) (map[string]any, []str
 				return nil
 			}
 			if hasReject {
-				return fmt.Errorf("sing-box 不支持策略组 %s 内的 REJECT 选项，请改为独立拒绝规则或客户端专用策略", name)
+				warnings = append(warnings, "sing-box 策略组 "+name+" 含 REJECT：按默认首项转换，不提供拒绝/直连切换")
+				if g.Proxies[0] == "REJECT" || blocked[g.Proxies[0]] {
+					blocked[name] = true
+					return nil
+				}
 			}
 			kind := "selector"
 			if g.Type == "url-test" {
@@ -425,7 +477,8 @@ func (r Result) Apply(format string, base map[string]any) (map[string]any, []str
 		}
 		base["outbounds"] = out
 		base["route"] = map[string]any{"rules": rules, "final": final}
-		return base, warnings, nil
+		attachRuleSets(base, r.Rules)
+		return r.ApplySections(format, base, warnings)
 	}
 	groups := map[string]Group{}
 	for _, g := range r.Groups {
@@ -459,7 +512,9 @@ func (r Result) Apply(format string, base map[string]any) (map[string]any, []str
 			members := leaves(g.Name)
 			for _, m := range members {
 				if m != "block" && m != "direct" {
-					probes = append(probes, m)
+					if !slices.Contains(probes, m) {
+						probes = append(probes, m)
+					}
 				}
 			}
 			balancers = append(balancers, map[string]any{"tag": ref(g.Name), "selector": members, "strategy": map[string]any{"type": "leastPing"}})
@@ -496,11 +551,19 @@ func (r Result) Apply(format string, base map[string]any) (map[string]any, []str
 		rules = append(rules, v)
 	}
 	base["outbounds"] = out
-	base["routing"] = map[string]any{"domainStrategy": "IPIfNonMatch", "rules": rules, "balancers": balancers}
+	strategy := "IPIfNonMatch"
+	for _, line := range r.Rules {
+		if strings.HasSuffix(line, ",no-resolve") {
+			strategy = "AsIs"
+			warnings = append(warnings, "Xray 无逐条 no-resolve，使用全局 AsIs：IP 规则仅匹配已知 IP，不主动解析域名")
+			break
+		}
+	}
+	base["routing"] = map[string]any{"domainStrategy": strategy, "rules": rules, "balancers": balancers}
 	if len(probes) > 0 {
 		base["observatory"] = map[string]any{"subjectSelector": probes, "probeURL": "https://www.gstatic.com/generate_204", "probeInterval": "5m", "enableConcurrency": true}
 	}
-	return base, warnings, nil
+	return r.ApplySections(format, base, warnings)
 }
 func singRule(a []string) (map[string]any, error) {
 	v := map[string]any{}
@@ -540,8 +603,10 @@ func singRule(a []string) (map[string]any, error) {
 		if value == "private" || value == "LAN" {
 			v["ip_is_private"] = true
 		} else {
-			return nil, errors.New("GEOIP 需要 sing-box 专用 rule_set 数据，不能只改格式名称")
+			v["rule_set"] = []string{"geoip-" + strings.ToLower(value)}
 		}
+	case "GEOSITE":
+		v["rule_set"] = []string{"geosite-" + strings.ToLower(value)}
 	default:
 		return nil, fmt.Errorf("%s 需要客户端专用规则或规则集，未静默丢弃", a[0])
 	}
@@ -549,9 +614,6 @@ func singRule(a []string) (map[string]any, error) {
 }
 func xrayRule(a []string) (map[string]any, error) {
 	v := map[string]any{"type": "field"}
-	if len(a) == 4 {
-		return nil, errors.New("Xray 无等价 no-resolve 参数，请设置客户端专用规则")
-	}
 	if a[0] == "MATCH" {
 		v["network"] = "tcp,udp"
 		return v, nil
@@ -574,6 +636,10 @@ func xrayRule(a []string) (map[string]any, error) {
 		v["sourcePort"] = value
 	case "NETWORK":
 		v["network"] = strings.ToLower(value)
+	case "GEOIP":
+		v["ip"] = []string{"geoip:" + strings.ToLower(value)}
+	case "GEOSITE":
+		v["domain"] = []string{"geosite:" + strings.ToLower(value)}
 	default:
 		return nil, fmt.Errorf("%s 需要 Xray 专用路由数据/字段，未静默丢弃", a[0])
 	}

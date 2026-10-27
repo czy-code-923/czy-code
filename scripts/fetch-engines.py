@@ -71,13 +71,17 @@ def main():
             matches=[n for n in members if n.split('/')[-1]==wanted]
             if len(matches)!=1: raise ValueError('Ambiguous engine archive')
             output[wanted]=archive.read(matches[0]) if extension=='zip' else archive.extractfile(matches[0]).read()
+        if repo=='XTLS/Xray-core':
+            for wanted in ('geoip.dat','geosite.dat'):
+                matches=[n for n in archive.namelist() if n.split('/')[-1]==wanted]
+                if len(matches)==1:output[wanted]=archive.read(matches[0])
         archive.close()
         receipt[repo]={'version':version,'archive_sha256':digest,'url':url}
     dest.mkdir(mode=0o700)
     for name,data in output.items():
         path=dest/name
         with path.open('xb') as file: file.write(data)
-        path.chmod(0o644 if name in ('LICENSE.sing-box','sing-box-source.zip') else 0o755)
+        path.chmod(0o644 if name in ('LICENSE.sing-box','sing-box-source.zip','geoip.dat','geosite.dat') else 0o755)
     receipt['binaries']={name:hashlib.sha256(data).hexdigest() for name,data in output.items()}
     (dest/'receipt.json').write_text(json.dumps(receipt,indent=2),encoding='utf-8')
     print('Patched sing-box and verified official engines ready:',', '.join(output))

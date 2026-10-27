@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/jackc/pgx/v5"
 	"net/http"
-	"slices"
 	"strings"
 	"vps-control/internal/clientpolicy"
 	"vps-control/internal/live"
@@ -20,6 +19,7 @@ type clientInfo struct {
 }
 
 var clients = []clientInfo{
+	{"shadowrocket-config", "Shadowrocket 分流配置（配合节点订阅）", "shadowrocket-config", true, "转为 PROXY/DIRECT/REJECT 规则；节点另导入，不保留 Mihomo 交互组"},
 	{"naive-proxy", "NaiveProxy 专用 JSON", "naive", false, "仅一个 Naive 节点，不携带策略组；连接地址必须匹配证书域名"},
 	{"mihomo", "Mihomo / Clash Meta", "mihomo", true, "原生策略组与规则"},
 	{"clash-verge", "Clash Verge Rev", "mihomo", true, "Mihomo YAML"},
@@ -117,11 +117,11 @@ func (s *Server) policies(w http.ResponseWriter, r *http.Request) error {
 	if e != nil {
 		return bad(e.Error())
 	}
-	if len(b.Native) > 3 {
-		return bad("原生覆盖只支持 mihomo/sing-box/xray")
+	if len(b.Native) > 4 {
+		return bad("原生覆盖只支持 mihomo/sing-box/xray/shadowrocket-config")
 	}
 	for format, raw := range b.Native {
-		if !slices.Contains([]string{"mihomo", "sing-box", "xray"}, format) {
+		if !validPolicyNativeFormat(format) {
 			return bad("未知原生覆盖格式")
 		}
 		if e = validateClientOptions(format, raw); e != nil {
@@ -309,6 +309,8 @@ func selectedClient(r *http.Request, profile string) (clientInfo, error) {
 			id = "mihomo"
 		case strings.Contains(ua, "v2rayng"):
 			id = "v2rayng"
+		case strings.Contains(ua, "shadowrocket"):
+			id = "shadowrocket"
 		case strings.Contains(ua, "hiddify"):
 			id = "hiddify"
 		case strings.Contains(ua, "nekobox"):

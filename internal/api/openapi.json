@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "星枢 · VPS 多机管理 API",
-    "version": "0.13.0",
+    "version": "0.14.0",
     "description": "Self-workspace API for host agents, proxy protocols, user quotas and client subscriptions. Bearer administrator token or expiring scoped xs_ API key. No arbitrary shell; privileged gateway work and API key administration remain root-only."
   },
   "servers": [
@@ -5654,6 +5654,106 @@
           }
         }
       }
+    },
+    "/api/v1/client-policies/default": {
+      "get": {
+        "summary": "Get the credential-free four-section default template",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Structured result"
+          },
+          "400": {
+            "description": "Invalid or unsupported configuration"
+          }
+        }
+      }
+    },
+    "/api/v1/client-policies/import": {
+      "post": {
+        "summary": "Recognize full client configuration and return section drafts and node mappings",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Structured result"
+          },
+          "400": {
+            "description": "Invalid or unsupported configuration"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "source"
+                ],
+                "properties": {
+                  "source": {
+                    "type": "string",
+                    "maxLength": 131072
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/client-policies/preview": {
+      "post": {
+        "summary": "Compile client policy with nonfunctional node placeholders",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Structured result"
+          },
+          "400": {
+            "description": "Invalid or unsupported configuration"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "source"
+                ],
+                "properties": {
+                  "source": {
+                    "type": "string",
+                    "maxLength": 32768
+                  },
+                  "client_id": {
+                    "type": "string"
+                  },
+                  "native_options": {
+                    "type": "object"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -6693,7 +6793,8 @@
               "sing-box",
               "mihomo",
               "shadowrocket",
-              "xray"
+              "xray",
+              "shadowrocket-config"
             ]
           },
           "local_port": {
@@ -7054,6 +7155,34 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 100
+          }
+        }
+      },
+      "ClientPolicyDefinition": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "basic": {
+            "type": "object",
+            "description": "Client base options in Mihomo vocabulary; local management listens on loopback"
+          },
+          "dns": {
+            "type": "object",
+            "description": "DNS configuration independent of base options and routing"
+          },
+          "proxy-groups": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "type": "object"
+            }
+          },
+          "rules": {
+            "type": "array",
+            "maxItems": 512,
+            "items": {
+              "type": "string"
+            }
           }
         }
       }

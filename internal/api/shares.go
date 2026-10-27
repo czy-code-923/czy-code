@@ -128,7 +128,28 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 			w.Header().Set("X-Starhub-Policy-Warnings", fmt.Sprint(len(warnings)))
 		}
 		w.Header().Set("X-Starhub-Excluded-Nodes", fmt.Sprint(excluded))
-		return mergeClientOptions(config, extra)
+		if profileID != "" {
+			switch format {
+			case "mihomo":
+				config["mixed-port"] = profile.Port
+			case "sing-box", "xray":
+				if ins, ok := config["inbounds"].([]any); ok {
+					for _, value := range ins {
+						in := object(value)
+						key := "listen_port"
+						if format == "xray" {
+							key = "port"
+						}
+						in[key] = profile.Port
+					}
+				}
+			}
+		}
+		config, err = mergeClientOptions(config, extra)
+		if err != nil {
+			return nil, problem{422, err.Error()}
+		}
+		return config, nil
 	}
 	w.Header().Set("Subscription-Userinfo", fmt.Sprintf("upload=%d; download=%d; total=%d; expire=%d", upload, download, quota, expiry.Unix()))
 	w.Header().Set("Profile-Update-Interval", "1")
@@ -137,12 +158,15 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 	if format == "mihomo" {
 		ext = "yaml"
 	}
+	if format == "shadowrocket-config" {
+		ext = "conf"
+	}
 	if format == "shadowrocket" || format == "base64" {
 		ext = "txt"
 	}
 	w.Header().Set("Content-Disposition", "attachment; filename=\"starhub."+ext+"\"; filename*=UTF-8''"+strings.ReplaceAll(url.QueryEscape(name+"."+ext), "+", "%20"))
 
-	if format != "sing-box" && format != "mihomo" && format != "clash" && format != "shadowrocket" && format != "base64" && format != "xray" && format != "naive" {
+	if format != "sing-box" && format != "mihomo" && format != "clash" && format != "shadowrocket" && format != "base64" && format != "xray" && format != "naive" && format != "shadowrocket-config" {
 		return bad("unsupported client format")
 	}
 	if quotaReached {
@@ -206,6 +230,9 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 				tag += "-" + policyFamily(address)
 			}
 			checkFormat := format
+			if format == "shadowrocket-config" {
+				checkFormat = "shadowrocket"
+			}
 			if client.ID == "v2rayng-uri" {
 				checkFormat = "xray"
 			}
@@ -263,7 +290,7 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 		out = append(out, map[string]any{"type": "direct", "tag": "direct"})
 		config, err := apply(map[string]any{"log": map[string]any{"level": "warn"}, "inbounds": []any{map[string]any{"type": "mixed", "listen": "127.0.0.1", "listen_port": profile.Port}}, "outbounds": out, "dns": map[string]any{"servers": []any{map[string]any{"type": "local", "tag": "local"}}}, "route": map[string]any{"final": "proxy"}})
 		if err != nil {
-			return bad(err.Error())
+			return err
 		}
 		send(w, 200, config)
 	case "xray":
@@ -273,7 +300,7 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 		xray = append(xray, map[string]any{"protocol": "freedom", "tag": "direct"}, map[string]any{"protocol": "blackhole", "tag": "block"})
 		config, err := apply(map[string]any{"log": map[string]any{"loglevel": "warning"}, "inbounds": []any{map[string]any{"tag": "local", "listen": "127.0.0.1", "port": profile.Port, "protocol": "socks", "settings": map[string]any{"udp": true}}}, "outbounds": xray, "routing": map[string]any{"rules": []any{}}})
 		if err != nil {
-			return bad(err.Error())
+			return err
 		}
 		send(w, 200, config)
 	case "clash", "mihomo":
@@ -285,7 +312,7 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 		}
 		config, err := apply(map[string]any{"mixed-port": profile.Port, "allow-lan": false, "ipv6": true, "proxies": clash, "proxy-groups": []any{group}, "rules": []string{"MATCH,PROXY"}})
 		if err != nil {
-			return bad(err.Error())
+			return err
 		}
 		raw, err := yaml.Marshal(config)
 		if err != nil {
@@ -314,6 +341,35 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 			config["host-resolver-rules"] = naiveMap
 		}
 		send(w, 200, config)
+	case "shadowrocket-config":
+		p, bindings, native, _, err := s.selectedPolicy(r, user, client.ID)
+		if err != nil {
+			return err
+		}
+		if p == nil {
+			p = &clientpolicy.Policy{Groups: []clientpolicy.Group{{Name: "PROXY", Type: "select", Proxies: []string{"ALL"}}}, Rules: []string{"MATCH,PROXY"}}
+		}
+		resolved, err := p.Resolve(nodes, bindings)
+		if err != nil {
+			return problem{422, err.Error()}
+		}
+		config, notes, err := resolved.Shadowrocket()
+		if err != nil {
+			return problem{422, err.Error()}
+		}
+		raw := native[format]
+		if len(extra) > 0 {
+			raw = extra
+		}
+		config, err = shadowrocketOptions(config, raw)
+		if err != nil {
+			return problem{422, err.Error()}
+		}
+		w.Header().Set("X-Starhub-Policy-Warnings", fmt.Sprint(len(notes)))
+		w.Header().Set("X-Starhub-Excluded-Nodes", fmt.Sprint(excluded))
+		w.Header().Set("X-Starhub-Companion-Client", "shadowrocket")
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		fmt.Fprint(w, config)
 	case "base64", "shadowrocket":
 		policy, _, _, _, err := s.selectedPolicy(r, user, client.ID)
 		if err != nil {

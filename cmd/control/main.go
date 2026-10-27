@@ -56,6 +56,9 @@ func main() {
 		log.Fatal("MASTER_KEY must be 64 hexadecimal characters")
 	}
 	control := &api.Server{DB: db, AdminToken: token, MasterKey: key, AgentReleaseDir: os.Getenv("AGENT_RELEASE_DIR")}
+	if e := control.EnsureDefaultClientPolicy(startup); e != nil {
+		log.Fatal("cannot initialize client policy template: ", e)
+	}
 	go control.RunNotifications(ctx)
 	shareAddr := os.Getenv("SHARE_ADDR")
 	if shareAddr == "" {

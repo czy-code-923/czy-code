@@ -37,6 +37,9 @@ func parseClientText(text string) (json.RawMessage, error) {
 
 // Templates control client policy; generated identities and node lists remain authoritative.
 func validateClientOptions(format string, raw json.RawMessage) error {
+	if format == "shadowrocket-config" {
+		return validateShadowrocketOptions(raw)
+	}
 	if len(raw) == 0 {
 		return nil
 	}
@@ -50,9 +53,10 @@ func validateClientOptions(format string, raw json.RawMessage) error {
 		return bad("client options must be a JSON object")
 	}
 	allowed := map[string][]string{
-		"mihomo":   {"mode", "ipv6", "log-level", "unified-delay", "tcp-concurrent", "dns", "tun", "sniffer", "rules", "profile", "find-process-mode", "geodata-mode", "keep-alive-idle", "keep-alive-interval"},
-		"sing-box": {"log", "dns", "route", "inbounds", "experimental", "ntp"},
-		"xray":     {"log", "dns", "routing", "inbounds", "policy"},
+		"mihomo":              {"mixed-port", "port", "socks-port", "allow-lan", "bind-address", "external-controller", "geo-auto-update", "geo-update-interval", "mode", "ipv6", "log-level", "unified-delay", "tcp-concurrent", "dns", "tun", "sniffer", "rules", "profile", "find-process-mode", "geodata-mode", "keep-alive-idle", "keep-alive-interval"},
+		"sing-box":            {"log", "dns", "route", "inbounds", "experimental", "ntp"},
+		"xray":                {"log", "dns", "routing", "inbounds", "policy"},
+		"shadowrocket-config": {"general", "rules"},
 	}
 	var check func(any, int) error
 	nodes := 0
@@ -95,7 +99,7 @@ func validateClientOptions(format string, raw json.RawMessage) error {
 			return bad("client option is not editable for this format: " + k)
 		}
 		switch k {
-		case "dns", "route", "routing", "log", "experimental", "ntp", "tun", "sniffer", "profile", "policy":
+		case "dns", "route", "routing", "log", "experimental", "ntp", "tun", "sniffer", "profile", "policy", "general":
 			if _, ok := v.(map[string]any); !ok {
 				return bad(k + " must be an object")
 			}
@@ -154,6 +158,14 @@ func validateClientOptions(format string, raw json.RawMessage) error {
 		}
 	}
 	if format == "mihomo" {
+		if value, ok := m["external-controller"]; ok && value != "" {
+			host, _, e := net.SplitHostPort(fmt.Sprint(value))
+			ip := net.ParseIP(host)
+			if e != nil || ip == nil || !ip.IsLoopback() {
+				return bad("client management API must listen on loopback")
+			}
+		}
+
 		if mode, ok := m["mode"]; ok && !slices.Contains([]string{"rule", "global", "direct"}, fmt.Sprint(mode)) {
 			return bad("invalid Mihomo mode")
 		}
@@ -234,7 +246,7 @@ func validateClientReferences(base map[string]any) error {
 		switch x := v.(type) {
 		case map[string]any:
 			for k, v := range x {
-				if k == "outbound" || k == "outboundTag" || k == "final" {
+				if k == "outbound" || k == "outboundTag" || k == "final" || k == "detour" || k == "download_detour" {
 					if tag, ok := v.(string); ok && tag != "" && !tags[tag] {
 						return fmt.Errorf("client route references unavailable outbound: %s", tag)
 					}
@@ -263,6 +275,42 @@ func validateClientReferences(base map[string]any) error {
 	if e := check(base["routing"]); e != nil {
 		return e
 	}
+	if route := object(base["route"]); len(route) > 0 {
+		dns := object(base["dns"])
+		servers := map[string]bool{}
+		for _, v := range anySlice(dns["servers"]) {
+			m := object(v)
+			servers[text(m["tag"])] = true
+			if detour := text(m["detour"]); detour != "" && !tags[detour] {
+				return fmt.Errorf("DNS references unavailable outbound: %s", detour)
+			}
+		}
+		if final := text(dns["final"]); final != "" && !servers[final] {
+			return fmt.Errorf("DNS final references unavailable server: %s", final)
+		}
+		var checkDNSRules func(any) error
+		checkDNSRules = func(v any) error {
+			switch a := v.(type) {
+			case []any:
+				for _, v := range a {
+					if e := checkDNSRules(v); e != nil {
+						return e
+					}
+				}
+			case map[string]any:
+				if server := text(a["server"]); server != "" && !servers[server] {
+					return fmt.Errorf("DNS rule references unavailable server: %s", server)
+				}
+				if rules := a["rules"]; rules != nil {
+					return checkDNSRules(rules)
+				}
+			}
+			return nil
+		}
+		if e := checkDNSRules(dns["rules"]); e != nil {
+			return e
+		}
+	}
 	if rules, ok := base["rules"].([]any); ok {
 		for _, line := range rules {
 			parts := strings.Split(text(line), ",")
@@ -283,3 +331,5 @@ func validateClientReferences(base map[string]any) error {
 	}
 	return nil
 }
+
+func anySlice(v any) []any { a, _ := v.([]any); return a }

@@ -193,7 +193,7 @@ func (s *Server) apiSession(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 func (s *Server) apiCapabilities(w http.ResponseWriter, r *http.Request) error {
-	send(w, 200, map[string]any{"version": buildinfo.Version, "scopes": apiScopes, "openapi": "/api/v1/openapi", "features": []string{"protocol_layers", "telegram_notifications", "configuration_inspect", "firewall_versions", "protocol_batch", "rolling_monthly", "client_json_templates", "subscription_usage", "scoped_api_keys", "client_policies", "dual_stack_endpoints", "host_retirement", "independent_share_domain"}})
+	send(w, 200, map[string]any{"version": buildinfo.Version, "scopes": apiScopes, "openapi": "/api/v1/openapi", "features": []string{"policy_workspace", "client_configuration_import", "shadowrocket_rules", "protocol_layers", "telegram_notifications", "configuration_inspect", "firewall_versions", "protocol_batch", "rolling_monthly", "client_json_templates", "subscription_usage", "scoped_api_keys", "client_policies", "dual_stack_endpoints", "host_retirement", "independent_share_domain"}})
 	return nil
 }
 func (s *Server) keys(w http.ResponseWriter, r *http.Request) error {

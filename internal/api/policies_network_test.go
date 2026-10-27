@@ -143,6 +143,11 @@ func TestPoliciesNetworksAndRetirement(t *testing.T) {
 		t.Fatal("v2rayNG custom JSON needs routing")
 	}
 	request("?client=hiddify", 200)
+	sr := request("?client=shadowrocket-config", 200)
+	if !strings.Contains(sr.Body.String(), "[Rule]") || !strings.Contains(sr.Body.String(), "FINAL,PROXY") || strings.Contains(sr.Body.String(), "vmess://") {
+		t.Fatal("Shadowrocket rules configuration invalid")
+	}
+
 	request("?client=shadowrocket", 422)
 	request("?client=shadowrocket&policy=nodes-only", 200)
 	// An explicit user/client policy overrides global routing and is editable with optimistic locking.

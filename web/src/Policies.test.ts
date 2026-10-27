@@ -4,8 +4,8 @@ import {mount,flushPromises} from '@vue/test-utils'
 import Policies from './Policies.vue'
 import NetworkFields from './NetworkFields.vue'
 it('keeps the user/client scope and version when editing a routing policy',async()=>{
- const source='rules:\n  - MATCH,DIRECT\n',api=vi.fn(async(p:string,m='GET')=>{
-  if(p==='client-policies/parse')return {policy:{'proxy-groups':[],rules:['MATCH,DIRECT']},source}
+ const source='rules:\n  - MATCH,DIRECT\n',api=vi.fn(async(p:string,m='GET',body?:any)=>{
+  if(p==='client-policies/parse')return {policy:{'proxy-groups':[],rules:['MATCH,DIRECT']},source:body?.source??source}
   if(m!=='GET')return {}
   if(p==='client-policies')return [{id:'p',name:'Netflix',user_id:'u',client_id:'mihomo',source,version:3,native_options:{}}]
   if(p==='proxy-users')return [{id:'u',name:'Alice'}]

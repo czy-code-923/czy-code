@@ -1,0 +1,4 @@
+Go 1.27.3 / govulncheck v1.1.4 ./...: No vulnerabilities found.
+No frontend dependency additions in 0.14.
+Default template checked for embedded identities from the supplied Mihomo file: none present.
+This is bounded verification, not a guarantee that all application logic, OS packages, third-party engines or future rule data are vulnerability-free.

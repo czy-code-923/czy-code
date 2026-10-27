@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"time"
 	"vps-control/internal/live"
 )
@@ -22,6 +23,9 @@ func sendBlockedClient(w http.ResponseWriter, format string, port int) error {
 		w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
 		_, e = w.Write(raw)
 		return e
+	case "shadowrocket-config":
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		fmt.Fprint(w, "[General]\n[Rule]\nFINAL,REJECT\n")
 	case "sing-box":
 		send(w, 200, map[string]any{"inbounds": []any{map[string]any{"type": "mixed", "listen": "127.0.0.1", "listen_port": port}}, "route": map[string]any{"rules": []any{map[string]any{"action": "reject"}}}})
 	case "xray":
@@ -117,13 +121,19 @@ func (s *Server) inspectSubscription(w http.ResponseWriter, r *http.Request) err
 		return e
 	}
 	var config any
+	if query.Get("client") == "shadowrocket-config" && strings.Contains(recorder.Body.String(), "[Rule]") {
+		config = recorder.Body.String()
+	}
+
 	content := recorder.Header().Get("Content-Type")
-	if content == "application/yaml; charset=utf-8" {
+	if config != nil {
+		// Shadowrocket routing text has no embedded node identities.
+	} else if content == "application/yaml; charset=utf-8" {
 		e = yaml.Unmarshal(recorder.Body.Bytes(), &config)
 	} else {
 		e = json.Unmarshal(recorder.Body.Bytes(), &config)
 	}
-	if e != nil {
+	if config == nil && e != nil {
 		config = "URI 订阅包含凭据，请通过下载链接导入客户端。"
 	} else {
 		config = redactLive(config)
