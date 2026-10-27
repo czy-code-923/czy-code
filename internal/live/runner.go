@@ -28,6 +28,7 @@ type Report struct {
 	State   string `json:"state"`
 }
 type process struct {
+	rejected []Report
 	meter    *kernelMeter
 	members  []Work
 	engine   string
@@ -138,6 +139,7 @@ func (r *Runner) Reports() []Report {
 		} else {
 			reports = append(reports, Report{id, p.version, p.state})
 		}
+		reports = append(reports, p.rejected...)
 	}
 	return reports
 }
@@ -168,6 +170,7 @@ func (r *Runner) Reconcile(ctx context.Context, work []Work) error {
 		}
 		if !w.Enabled {
 			stopProcess(p)
+			p.rejected = nil
 			p.version = w.Version
 			p.state = "stopped"
 			p.members = w.Members
@@ -191,6 +194,7 @@ func (r *Runner) Reconcile(ctx context.Context, work []Work) error {
 			continue
 		}
 		if p.cmd != nil && p.sum == sum {
+			p.rejected = nil
 			p.version = w.Version
 			p.members = w.Members
 			continue
@@ -241,6 +245,10 @@ func (r *Runner) Reconcile(ctx context.Context, work []Work) error {
 		abs := filepath.Join(r.root.Name(), filepath.FromSlash(dir))
 		v := executor.NativeValidator{Binaries: r.binary}
 		if e = v.Check(ctx, abs, []manifest.Artifact{{Name: "config.json", Engine: engine, Content: files["config.json"]}}); e != nil {
+			if p.cmd != nil && canRetainMembers(p.members, w.Members) {
+				rejectAdditive(p, w.Members)
+				continue
+			}
 			if len(w.Members) > 0 {
 				stopProcess(p)
 				p.members = w.Members
@@ -250,8 +258,26 @@ func (r *Runner) Reconcile(ctx context.Context, work []Work) error {
 			}
 			continue
 		}
+		if len(w.Members) > 0 {
+			old := []Work{}
+			if p.cmd != nil {
+				old = p.members
+			}
+			if e = preflightAdditional(old, w.Members); e != nil {
+				if p.cmd != nil && canRetainMembers(p.members, w.Members) {
+					rejectAdditive(p, w.Members)
+				} else {
+					stopProcess(p)
+					p.members = w.Members
+					p.version = w.Version
+					p.state = "failed"
+				}
+				continue
+			}
+		}
 		// Native candidate must pass before interrupting a previously running revision.
 		stopProcess(p)
+		p.rejected = nil
 		p.version = w.Version
 		p.state = "failed"
 		p.members = w.Members

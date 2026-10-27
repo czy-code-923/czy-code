@@ -17,9 +17,11 @@ import (
 )
 
 func TLSProxy(kind string) bool {
-	return kind == "vless" || kind == "hysteria2" || kind == "tuic" || kind == "trojan" || kind == "vmess" || kind == "anytls"
+	return kind == "vless" || kind == "hysteria2" || kind == "tuic" || kind == "trojan" || kind == "vmess" || kind == "anytls" || kind == "hysteria" || kind == "naive" || kind == "http"
 }
-func Proxy(kind string) bool { return kind == "shadowsocks" || kind == "snell" || TLSProxy(kind) }
+func Proxy(kind string) bool {
+	return kind == "shadowsocks" || kind == "snell" || BasicProxy(kind) || TLSProxy(kind)
+}
 func UUID() string {
 	b := make([]byte, 16)
 	if _, e := rand.Read(b); e != nil {
@@ -74,6 +76,9 @@ func (s Spec) validateProxy() error {
 	return nil
 }
 func (s Spec) renderProxy() (string, map[string][]byte, error) {
+	if extraProtocol(s.Kind) && s.Engine != "xray" {
+		return s.renderExtra()
+	}
 	if s.Engine == "xray" {
 		return s.renderXray()
 	}
@@ -105,6 +110,9 @@ func (s Spec) renderProxy() (string, map[string][]byte, error) {
 		if s.IsReality() {
 			r := s.Reality
 			inbound["tls"] = map[string]any{"enabled": true, "server_name": s.ServerName, "reality": map[string]any{"enabled": true, "handshake": map[string]any{"server": r.Target, "server_port": r.Port}, "private_key": r.PrivateKey, "short_id": []string{r.ShortID}}}
+		}
+		if tr := s.singTransport(); tr != nil {
+			inbound["transport"] = tr
 		}
 		if s.Transport == "grpc" {
 			inbound["transport"] = map[string]any{"type": "grpc", "service_name": s.ServiceName}
@@ -172,6 +180,9 @@ func (s Spec) renderProxy() (string, map[string][]byte, error) {
 func (s Spec) Client(tag string) (map[string]any, map[string]any, string, error) {
 	if !Proxy(s.Kind) {
 		return nil, nil, "", errors.New("not a proxy endpoint")
+	}
+	if extraProtocol(s.Kind) {
+		return s.extraClient(tag)
 	}
 	sb := map[string]any{"type": s.Kind, "tag": tag, "server": s.Address, "server_port": s.Port}
 	mh := map[string]any{"type": s.Kind, "name": tag, "server": s.Address, "port": s.Port, "udp": true}
@@ -328,8 +339,29 @@ func (s Spec) Client(tag string) (map[string]any, map[string]any, string, error)
 			mh["ws-opts"].(map[string]any)["headers"] = headers
 		}
 	}
+	if s.Transport == "httpupgrade" || s.Transport == "http" || s.Transport == "xhttp" || s.Transport == "kcp" {
+		q.Set("type", s.Transport)
+		if s.Path != "" {
+			q.Set("path", s.Path)
+		}
+		if t := s.singTransport(); t != nil {
+			sb["transport"] = t
+		}
+		if s.Transport == "http" {
+			mh["network"] = "h2"
+			mh["h2-opts"] = map[string]any{"path": s.Path}
+			if s.WSHost != "" {
+				mh["h2-opts"].(map[string]any)["host"] = []string{s.WSHost}
+			}
+		}
+	}
 	if s.Kind == "vmess" {
-		payload := map[string]any{"v": "2", "ps": tag, "add": s.Address, "port": s.Port, "id": s.UUID, "aid": "0", "scy": "aes-128-gcm", "net": "tcp", "type": "none", "tls": "", "sni": s.ServerName, "path": s.Path}
+		payload := map[string]any{"v": "2", "ps": tag, "add": s.Address, "port": s.Port, "id": s.UUID, "aid": "0", "scy": "aes-128-gcm", "net": func() string {
+			if s.Transport != "" {
+				return s.Transport
+			}
+			return "tcp"
+		}(), "type": "none", "tls": "", "sni": s.ServerName, "path": s.Path}
 		if s.UsesTLS() {
 			payload["tls"] = "tls"
 		}

@@ -27,6 +27,7 @@ type Server struct {
 	MasterKey       []byte
 	AdminToken      string
 	AgentReleaseDir string
+	telegramClient  *http.Client
 	keyRates        keyLimiter
 }
 type problem struct {
@@ -125,6 +126,12 @@ func (s *Server) agent(f func(http.ResponseWriter, *http.Request, string) error)
 }
 func (s *Server) Handler() http.Handler {
 	m := http.NewServeMux()
+	m.HandleFunc("POST /api/v1/configuration/inspect", s.admin(s.inspectConfiguration))
+	m.HandleFunc("GET /api/v1/notifications/telegram", s.admin(s.notifications))
+	m.HandleFunc("PUT /api/v1/notifications/telegram", s.admin(s.notifications))
+	m.HandleFunc("DELETE /api/v1/notifications/telegram", s.admin(s.notifications))
+	m.HandleFunc("POST /api/v1/notifications/telegram/test", s.admin(s.notificationTest))
+	m.HandleFunc("GET /api/v1/notifications/log", s.admin(s.notificationLog))
 	m.HandleFunc("GET /api/v1/hosts/{id}/retirement", s.admin(s.retirement))
 	m.HandleFunc("POST /api/v1/hosts/{id}/retirement", s.admin(s.retirement))
 	m.HandleFunc("POST /api/v1/agent/retirement/{action}", s.agent(s.retirementAgent))
@@ -227,6 +234,8 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("POST /api/v1/hosts/{id}/firewalls", s.admin(s.createFirewall))
 	m.HandleFunc("GET /api/v1/firewalls/{id}/preview", s.admin(s.firewallPreview))
 	m.HandleFunc("POST /api/v1/firewalls/{id}/archive", s.admin(s.archiveFirewall))
+	m.HandleFunc("PUT /api/v1/firewalls/{id}", s.admin(s.editFirewall))
+	m.HandleFunc("DELETE /api/v1/firewalls/{id}", s.admin(s.deleteFirewall))
 	m.HandleFunc("POST /api/v1/tasks/{id}/cancel", s.admin(s.cancelTask))
 	m.HandleFunc("PATCH /api/v1/{kind}/{id}", s.admin(s.updateResource))
 	m.HandleFunc("DELETE /api/v1/{kind}/{id}", s.admin(s.deleteResource))
@@ -239,7 +248,7 @@ func audit(ctx context.Context, tx pgx.Tx, actor, action, id string) error {
 func (s *Server) list(w http.ResponseWriter, r *http.Request) error {
 	// SQL identifiers are selected solely from this fixed allowlist.
 	tables := map[string]string{"hosts": "SELECT tenant_id,id,name,provider,address,last_seen,COALESCE(last_seen>now()-interval '90 seconds',false) online,agent_mode,agent_version,platform,reported_addresses,retire_state,retire_requested_at,cleanup_capable,created_at FROM hosts", "nodes": "SELECT * FROM nodes", "instances": "SELECT * FROM instances", "tunnels": "SELECT * FROM tunnels", "configs": "SELECT * FROM configs", "tasks": "SELECT tenant_id,id,instance_id,config_id,request_key,state,attempts,lease_until,result,created_at,updated_at,mode,operation,artifact_checksum FROM tasks", "audit": "SELECT * FROM audit", "routes": "SELECT * FROM route_plans"}
-	tables["firewalls"] = "SELECT tenant_id,id,host_id,name,version,checksum,archived_at,created_at FROM firewall_policies"
+	tables["firewalls"] = "SELECT tenant_id,id,host_id,name,version,checksum,archived_at,deleted_at,created_at FROM firewall_policies"
 	q, ok := tables[r.PathValue("kind")]
 	if !ok {
 		return problem{404, "unknown collection"}
@@ -262,6 +271,12 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) error {
 	filter := ""
 	if r.PathValue("kind") == "hosts" {
 		filter = " AND deleted_at IS NULL"
+	}
+	if r.PathValue("kind") == "firewalls" {
+		filter = " AND deleted_at IS NULL"
+		if r.URL.Query().Get("trash") == "1" {
+			filter = " AND deleted_at IS NOT NULL"
+		}
 	}
 	var data json.RawMessage
 	e := s.DB.QueryRow(r.Context(), "SELECT COALESCE(jsonb_agg(to_jsonb(x)),'[]'::jsonb) FROM ("+q+" WHERE tenant_id=$1"+filter+" ORDER BY created_at DESC LIMIT $2 OFFSET $3) x", tenant, limit, offset).Scan(&data)

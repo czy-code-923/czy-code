@@ -142,7 +142,7 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 	}
 	w.Header().Set("Content-Disposition", "attachment; filename=\"starhub."+ext+"\"; filename*=UTF-8''"+strings.ReplaceAll(url.QueryEscape(name+"."+ext), "+", "%20"))
 
-	if format != "sing-box" && format != "mihomo" && format != "clash" && format != "shadowrocket" && format != "base64" && format != "xray" {
+	if format != "sing-box" && format != "mihomo" && format != "clash" && format != "shadowrocket" && format != "base64" && format != "xray" && format != "naive" {
 		return bad("unsupported client format")
 	}
 	if quotaReached {
@@ -158,6 +158,7 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 	clash := []any{}
 	tags := []string{}
 	uris := []string{}
+	naiveMap := ""
 	for rows.Next() {
 		var service, name, hostID string
 		var sealed []byte
@@ -180,6 +181,7 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 				return problem{403, "this inbound requires a user subscription"}
 			}
 			spec.UUID = account.UUID
+			spec.Username = account.Name
 			spec.Password = account.Password
 		} else if user != "" && !sharedGroupProtocol(spec) {
 			return problem{403, "user group references an unmanaged inbound"}
@@ -192,6 +194,13 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 		for _, address := range addresses {
 			endpoint := spec
 			endpoint.Address = address
+			if format == "naive" && net.ParseIP(address) != nil && address != spec.ServerName {
+				target := address
+				if strings.Contains(address, ":") {
+					target = "[" + address + "]"
+				}
+				naiveMap = "MAP " + spec.ServerName + " " + target
+			}
 			tag := name + "-" + service[:8]
 			if len(addresses) > 1 {
 				tag += "-" + policyFamily(address)
@@ -199,6 +208,13 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 			checkFormat := format
 			if client.ID == "v2rayng-uri" {
 				checkFormat = "xray"
+			}
+			if !client.Full && (endpoint.IsReality() && endpoint.Engine == "xray" || endpoint.Transport == "xhttp" || endpoint.Transport == "kcp" || endpoint.Transport == "httpupgrade") {
+				if r.URL.Query().Get("client") != "" {
+					excluded++
+					continue
+				}
+				return problem{422, "this transport/security combination requires complete native JSON"}
 			}
 			if err := endpoint.ClientFormat(checkFormat); err != nil {
 				if r.URL.Query().Get("client") != "" {
@@ -281,6 +297,23 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 		if err != nil {
 			return err
 		}
+	case "naive":
+		policy, _, _, _, err := s.selectedPolicy(r, user, client.ID)
+		if err != nil {
+			return err
+		}
+		if policy != nil && r.URL.Query().Get("policy") != "nodes-only" {
+			return problem{422, "NaiveProxy does not support routing groups; add policy=nodes-only"}
+		}
+		if len(uris) != 1 {
+			return problem{422, "NaiveProxy requires exactly one authorized compatible node"}
+		}
+		w.Header().Set("X-Starhub-Excluded-Nodes", fmt.Sprint(excluded))
+		config := map[string]any{"listen": fmt.Sprintf("socks://127.0.0.1:%d", profile.Port), "proxy": uris[0]}
+		if naiveMap != "" {
+			config["host-resolver-rules"] = naiveMap
+		}
+		send(w, 200, config)
 	case "base64", "shadowrocket":
 		policy, _, _, _, err := s.selectedPolicy(r, user, client.ID)
 		if err != nil {

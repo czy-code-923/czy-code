@@ -182,6 +182,9 @@ func mergeClientOptions(base map[string]any, raw json.RawMessage) (map[string]an
 		}
 	}
 	merge(base, extra)
+	if e := validateClientReferences(base); e != nil {
+		return nil, e
+	}
 	// Catch common routing mistakes rather than emitting a client that cannot select a generated group.
 	if route, ok := base["route"].(map[string]any); ok {
 		if final, ok := route["final"].(string); ok {
@@ -197,4 +200,86 @@ func mergeClientOptions(base map[string]any, raw json.RawMessage) (map[string]an
 		}
 	}
 	return base, nil
+}
+
+func validateClientReferences(base map[string]any) error {
+	tags := map[string]bool{}
+	groups := map[string]bool{}
+	for _, key := range []string{"outbounds", "proxies", "proxy-groups"} {
+		items, _ := base[key].([]any)
+		for _, item := range items {
+			m := object(item)
+			tag := text(m["tag"])
+			if tag == "" {
+				tag = text(m["name"])
+			}
+			if tag != "" {
+				tags[tag] = true
+			}
+		}
+	}
+	if _, mihomo := base["proxies"]; mihomo {
+		tags["DIRECT"] = true
+		tags["REJECT"] = true
+		tags["REJECT-DROP"] = true
+	}
+	routing := object(base["routing"])
+	if b, ok := routing["balancers"].([]any); ok {
+		for _, v := range b {
+			groups[text(object(v)["tag"])] = true
+		}
+	}
+	var check func(any) error
+	check = func(v any) error {
+		switch x := v.(type) {
+		case map[string]any:
+			for k, v := range x {
+				if k == "outbound" || k == "outboundTag" || k == "final" {
+					if tag, ok := v.(string); ok && tag != "" && !tags[tag] {
+						return fmt.Errorf("client route references unavailable outbound: %s", tag)
+					}
+				}
+				if k == "balancerTag" {
+					if !groups[text(v)] {
+						return errors.New("client route references unavailable balancer")
+					}
+				}
+				if e := check(v); e != nil {
+					return e
+				}
+			}
+		case []any:
+			for _, v := range x {
+				if e := check(v); e != nil {
+					return e
+				}
+			}
+		}
+		return nil
+	}
+	if e := check(base["route"]); e != nil {
+		return e
+	}
+	if e := check(base["routing"]); e != nil {
+		return e
+	}
+	if rules, ok := base["rules"].([]any); ok {
+		for _, line := range rules {
+			parts := strings.Split(text(line), ",")
+			if len(parts) < 2 {
+				return errors.New("invalid client rule")
+			}
+			target := strings.TrimSpace(parts[len(parts)-1])
+			if target == "no-resolve" && len(parts) > 2 {
+				target = strings.TrimSpace(parts[len(parts)-2])
+			}
+			if !tags[target] {
+				return fmt.Errorf("client rule references unavailable group/node: %s", target)
+			}
+			if strings.HasPrefix(text(line), "RULE-SET,") {
+				return errors.New("manual RULE-SET requires provisioned providers; use supported canonical rules")
+			}
+		}
+	}
+	return nil
 }

@@ -20,6 +20,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"vps-control/internal/buildinfo"
 	"vps-control/internal/executor"
 	"vps-control/internal/manifest"
 )
@@ -124,7 +125,7 @@ func run(ctx context.Context) error {
 					}
 				}
 			}
-			data, _, err := call(ctx, "heartbeat", map[string]any{"cleanup_capable": os.Getenv("RETIRE_MARKER") != "", "mode": mode, "version": "0.12.0", "platform": runtime.GOOS + "/" + runtime.GOARCH, "addresses": addresses})
+			data, _, err := call(ctx, "heartbeat", map[string]any{"cleanup_capable": os.Getenv("RETIRE_MARKER") != "", "mode": mode, "version": buildinfo.Version, "platform": runtime.GOOS + "/" + runtime.GOARCH, "addresses": addresses})
 			e = err
 			if e == nil && os.Getenv("RETIRE_MARKER") != "" {
 				var retirement struct {

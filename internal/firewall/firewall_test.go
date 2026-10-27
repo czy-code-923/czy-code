@@ -29,6 +29,24 @@ func TestCompileProtectsManagement(t *testing.T) {
 		t.Fatal("peer guard")
 	}
 }
+
+func TestOwnedRemovalRequiresConfirmationAndCanRollback(t *testing.T) {
+	ctx := context.Background()
+	b := &fakeBackend{current: "original owned table", exists: true}
+	scheduler := &fakeScheduler{backend: b}
+	m, e := OpenManager(t.TempDir(), b, scheduler)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer m.Close()
+	r, e := m.StartRemoval(ctx, sample().HostID, time.Minute)
+	if e != nil || !scheduler.armed || b.exists {
+		t.Fatal(r, e, b.exists)
+	}
+	if e = m.Rollback(ctx, r.ID); e != nil || !b.exists || !strings.Contains(b.current, "original owned table") {
+		t.Fatal("removal did not restore owned snapshot", e)
+	}
+}
 func TestRejectUnsafePolicy(t *testing.T) {
 	for _, name := range []string{"admin-public", "injection", "protected-port", "ssh-web", "duplicate", "range", "noncanonical"} {
 		t.Run(name, func(t *testing.T) {

@@ -60,6 +60,17 @@ func Secret() string {
 	}
 	return base64.StdEncoding.EncodeToString(b)
 }
+func CipherSecret(method string) string {
+	n := 32
+	if method == "2022-blake3-aes-128-gcm" {
+		n = 16
+	}
+	b := make([]byte, n)
+	if _, e := rand.Read(b); e != nil {
+		panic(e)
+	}
+	return base64.StdEncoding.EncodeToString(b)
+}
 func Seal(key, plain []byte) ([]byte, error) {
 	b, e := aes.NewCipher(key)
 	if e != nil {
@@ -118,6 +129,7 @@ type Spec struct {
 	TLSMode      string    `json:"tls_mode,omitempty"`
 	Outbound     *Spec     `json:"outbound,omitempty"`
 	Engine       string    `json:"engine,omitempty"`
+	Username     string    `json:"username,omitempty"`
 	UUID         string    `json:"uuid,omitempty"`
 	ServerName   string    `json:"server_name,omitempty"`
 	Kind         string    `json:"kind"`

@@ -22,9 +22,12 @@ func main() {
 }
 func run() error {
 	if len(os.Args) < 2 {
-		return fmt.Errorf("usage: harbor-firewall preview|check|apply|confirm|rollback [flags]")
+		return fmt.Errorf("usage: harbor-firewall preview|check|apply|remove|confirm|rollback|cancel [flags]")
 	}
 	op := os.Args[1]
+	if op == "cancel" {
+		op = "rollback"
+	}
 	flags := flag.NewFlagSet(op, flag.ContinueOnError)
 	file := flags.String("file", "", "typed exported policy JSON")
 	state := flags.String("state-dir", "/var/lib/harbor-firewall", "private root-owned state directory")
@@ -33,11 +36,38 @@ func run() error {
 	window := flags.Int("timeout", 60, "rollback timeout seconds (30-300)")
 	id := flags.String("id", "", "transaction ID")
 	token := flags.String("token", "", "one-time confirm token")
+	host := flags.String("host-id", "", "host ID of the owned table to remove")
 	if e := flags.Parse(os.Args[2:]); e != nil {
 		return e
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()
+	if op == "remove" {
+		if e := securePaths(*state, *nft); e != nil {
+			return e
+		}
+		executable, e := os.Executable()
+		if e != nil {
+			return e
+		}
+		executable, e = filepath.EvalSymlinks(executable)
+		if e != nil {
+			return e
+		}
+		if e = secureBinary(executable); e != nil {
+			return e
+		}
+		m, e := firewall.OpenManager(*state, firewall.Native{Path: *nft}, firewall.SystemdScheduler{Executable: executable, StateDir: *state, NftPath: *nft})
+		if e != nil {
+			return e
+		}
+		defer m.Close()
+		receipt, e := m.StartRemoval(ctx, *host, time.Duration(*window)*time.Second)
+		if e != nil {
+			return e
+		}
+		return json.NewEncoder(os.Stdout).Encode(receipt)
+	}
 	if op == "preview" || op == "check" || op == "apply" {
 		f, e := os.Open(*file)
 		if e != nil {

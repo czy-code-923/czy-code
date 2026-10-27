@@ -72,7 +72,7 @@ func redactLive(value any) any {
 	case map[string]any:
 		for k, x := range v {
 			switch strings.ToLower(k) {
-			case "password", "uuid", "id", "psk", "key", "token", "privatekey", "private_key", "hy2_obfs_password":
+			case "password", "uuid", "id", "psk", "key", "token", "privatekey", "private_key", "hy2_obfs_password", "hysteria_obfs_password", "auth_str", "auth", "proxy":
 				v[k] = "[已隐藏]"
 			default:
 				v[k] = redactLive(x)
@@ -107,6 +107,7 @@ func (s *Server) liveDetail(w http.ResponseWriter, r *http.Request) error {
 		return e
 	}
 	spec.HY2Obfs = ""
+	spec.HysteriaObfs = ""
 	spec.Password = ""
 	spec.UUID = ""
 	spec.PrivateKey = ""
@@ -169,6 +170,12 @@ func (s *Server) liveUpdate(w http.ResponseWriter, r *http.Request) error {
 	if e = json.Unmarshal(raw, &spec); e != nil {
 		return e
 	}
+	if b.ClearHysteriaObfs {
+		b.HysteriaObfs = ""
+	}
+	if !b.ClearHysteriaObfs && b.HysteriaObfs == "" && b.Kind == "hysteria" {
+		b.HysteriaObfs = spec.HysteriaObfs
+	}
 	if b.ClearHY2Obfs {
 		b.HY2Obfs = ""
 	}
@@ -205,6 +212,9 @@ func (s *Server) liveUpdate(w http.ResponseWriter, r *http.Request) error {
 	}
 	if b.RotateCredentials {
 		spec.Password = live.Secret()
+		if kind == "shadowsocks" {
+			spec.Password = live.CipherSecret(spec.SSMethod())
+		}
 		if kind == "vless" || kind == "tuic" || kind == "vmess" {
 			spec.UUID = live.UUID()
 		}
@@ -253,6 +263,9 @@ func (s *Server) liveUpdate(w http.ResponseWriter, r *http.Request) error {
 	if e = tx.QueryRow(r.Context(), "SELECT agent_version FROM hosts WHERE tenant_id=$1 AND id=$2 FOR UPDATE", tenant, host).Scan(&av); e != nil {
 		return e
 	}
+	if spec.RequiresV13() && !live.V13Capable(av) {
+		return problem{409, "upgrade host to Agent 0.13.0 for this protocol/transport"}
+	}
 	if spec.RequiresOptions() && !live.OptionsCapable(av) {
 		return problem{409, "upgrade host to Agent 0.9.0 for protocol options"}
 	}
@@ -282,6 +295,10 @@ func (s *Server) liveUpdate(w http.ResponseWriter, r *http.Request) error {
 		if e = rows.Scan(&data, &parentVersion); e != nil {
 			rows.Close()
 			return e
+		}
+		if spec.RequiresV13() && !live.V13Capable(parentVersion) {
+			rows.Close()
+			return problem{409, "upgrade dependent chain hosts to Agent 0.13.0"}
 		}
 		if spec.RequiresOptions() && !live.OptionsCapable(parentVersion) {
 			rows.Close()

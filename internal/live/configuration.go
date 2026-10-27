@@ -1,8 +1,11 @@
 package live
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -11,33 +14,33 @@ func EngineSupports(engine, kind string) bool {
 	if engine == "" || engine == "sing-box" {
 		return Proxy(kind) || kind == "frps" || kind == "frpc"
 	}
-	return engine == "xray" && (kind == "shadowsocks" || kind == "vless" || kind == "trojan" || kind == "vmess")
+	return engine == "xray" && (kind == "shadowsocks" || kind == "vless" || kind == "trojan" || kind == "vmess" || kind == "http" || kind == "socks")
 }
 func (s Spec) UsesTLS() bool {
-	return TLSProxy(s.Kind) && !(s.Kind == "vmess" && s.TLSMode == "none") && !s.IsReality()
+	return TLSProxy(s.Kind) && !(s.Kind == "http" && s.TLSMode != "tls") && !(s.Kind == "vmess" && s.TLSMode == "none") && !s.IsReality()
 }
 func (s Spec) validateRouting() error {
 	if e := s.validateSecurity(false); e != nil {
 		return e
 	}
-	if s.TLSMode != "" && s.TLSMode != "tls" && s.TLSMode != "reality" && !(s.Kind == "vmess" && s.TLSMode == "none") {
-		return errors.New("unsupported transport security")
+	if !s.validLayer() {
+		return errors.New("unsupported protocol/transport/security combination for this core")
 	}
-	if s.Transport != "" && s.Transport != "tcp" && s.Transport != "ws" && s.Transport != "grpc" {
-		return errors.New("supported transports: tcp, ws")
+	if e := s.validateExtra(); e != nil {
+		return e
 	}
-	if s.Transport == "ws" || s.Transport == "grpc" {
-		if s.Kind != "vless" && s.Kind != "vmess" && s.Kind != "trojan" {
-			return errors.New("WebSocket not supported for this protocol")
-		}
-		if s.Transport == "ws" && (!strings.HasPrefix(s.Path, "/") || len(s.Path) > 200 || strings.ContainsAny(s.Path, "\r\n\t #?\\")) {
-			return errors.New("valid WebSocket path required")
-		}
-	} else if s.Path != "" {
-		return errors.New("path only valid for WebSocket")
+	pathTransport := slices.Contains([]string{"ws", "httpupgrade", "http", "xhttp"}, s.Transport)
+	if pathTransport && (!strings.HasPrefix(s.Path, "/") || len(s.Path) > 200 || strings.ContainsAny(s.Path, "\r\n\t #?\\")) {
+		return errors.New("valid transport path required")
+	}
+	if !pathTransport && s.Path != "" {
+		return errors.New("path requires HTTP/WebSocket/XHTTP transport")
 	}
 	if s.Outbound != nil {
 		next := *s.Outbound
+		if next.Kind == "naive" {
+			return errors.New("bundled sing-box cannot dial Naive; use an external NaiveProxy client")
+		}
 		if !Proxy(s.Kind) || !Proxy(next.Kind) || next.Outbound != nil || next.Peer != nil || s.Peer != nil {
 			return errors.New("invalid referenced outbound")
 		}
@@ -45,9 +48,9 @@ func (s Spec) validateRouting() error {
 			return e
 		}
 		if s.Engine != "xray" && next.Engine == "xray" && next.IsReality() {
-			return errors.New("pinned sing-box 1.14.3 cannot dial Xray 26.10.21 REALITY; choose a sing-box REALITY next hop")
+			return errors.New("pinned sing-box 1.14.4-harbor.1 cannot dial Xray 26.10.21 REALITY; choose a sing-box REALITY next hop")
 		}
-		if s.Engine == "xray" && next.Kind != "shadowsocks" && next.Kind != "vless" && next.Kind != "vmess" && next.Kind != "trojan" {
+		if s.Engine == "xray" && next.Kind != "shadowsocks" && next.Kind != "vless" && next.Kind != "vmess" && next.Kind != "trojan" && next.Kind != "http" && next.Kind != "socks" {
 			return errors.New("selected Xray outbound protocol unsupported")
 		}
 	}
@@ -57,6 +60,8 @@ func (s Spec) xrayOutbound(tag string) map[string]any {
 	user := map[string]any{}
 	settings := map[string]any{}
 	switch s.Kind {
+	case "http", "socks":
+		settings["servers"] = []any{map[string]any{"address": s.Address, "port": s.Port, "users": []any{map[string]any{"user": s.username(), "pass": s.Password}}}}
 	case "shadowsocks":
 		settings["servers"] = []any{map[string]any{"address": s.Address, "port": s.Port, "method": s.SSMethod(), "password": s.Password}}
 	case "trojan":
@@ -77,6 +82,17 @@ func (s Spec) xrayOutbound(tag string) map[string]any {
 }
 func (s Spec) xrayStream(server bool) map[string]any {
 	stream := map[string]any{"network": "tcp", "security": "none"}
+	if s.Transport == "httpupgrade" || s.Transport == "xhttp" {
+		stream["network"] = s.Transport
+		stream[s.Transport+"Settings"] = map[string]any{"path": s.Path}
+		if s.WSHost != "" {
+			stream[s.Transport+"Settings"].(map[string]any)["host"] = s.WSHost
+		}
+	}
+	if s.Transport == "kcp" {
+		stream["network"] = "kcp"
+		stream["kcpSettings"] = map[string]any{"header": map[string]any{"type": "none"}}
+	}
 	if s.Transport == "ws" {
 		stream["network"] = "ws"
 		stream["wsSettings"] = map[string]any{"path": s.Path}
@@ -85,7 +101,7 @@ func (s Spec) xrayStream(server bool) map[string]any {
 		stream["network"] = "grpc"
 		stream["grpcSettings"] = map[string]any{"serviceName": s.ServiceName}
 	}
-	if s.WSHost != "" {
+	if s.WSHost != "" && s.Transport == "ws" {
 		stream["wsSettings"].(map[string]any)["headers"] = map[string]any{"Host": s.WSHost}
 	}
 	if s.IsReality() {
@@ -121,14 +137,36 @@ func (s Spec) renderXray() (string, map[string][]byte, error) {
 	if s.Flow != "" {
 		user["flow"] = s.Flow
 	}
-	if s.Kind == "shadowsocks" {
+	if BasicProxy(s.Kind) {
+		accounts := []any{}
+		if s.ManagedUsers {
+			for _, a := range s.Accounts {
+				username := a.Name
+				if a.Name == "harbor-chain" {
+					username = s.username()
+				}
+				accounts = append(accounts, map[string]any{"user": username, "pass": a.Password})
+			}
+			if len(accounts) == 0 {
+				sum := sha256.Sum256([]byte(s.Password + "/starhub-unassigned"))
+				accounts = append(accounts, map[string]any{"user": "_starhub_unassigned", "pass": hex.EncodeToString(sum[:])})
+			}
+		} else {
+			accounts = append(accounts, map[string]any{"user": s.username(), "pass": s.Password})
+		}
+		settings["accounts"] = accounts
+		if s.Kind == "socks" {
+			settings["auth"] = "password"
+			settings["udp"] = false
+		}
+	} else if s.Kind == "shadowsocks" {
 		settings["method"] = s.SSMethod()
 		settings["password"] = s.Password
 		settings["network"] = "tcp,udp"
 	} else {
 		settings["users"] = []any{user}
 	}
-	if s.ManagedUsers {
+	if s.ManagedUsers && !BasicProxy(s.Kind) {
 		users := []any{}
 		for _, a := range s.Accounts {
 			u := map[string]any{"email": a.Name}

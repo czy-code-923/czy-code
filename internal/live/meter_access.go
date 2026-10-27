@@ -3,6 +3,8 @@ package live
 import (
 	"bytes"
 	"fmt"
+	"net"
+	"net/url"
 	"regexp"
 	"strings"
 	"sync"
@@ -58,18 +60,42 @@ func (w *accessWriter) line(line string) {
 		return
 	}
 	source := prefix[len(prefix)-1]
+	if strings.HasPrefix(source, "tcp:") || strings.HasPrefix(source, "udp:") {
+		source = source[4:]
+	}
 	tail := strings.Fields(line[i+len(" accepted "):])
 	if len(tail) == 0 {
 		return
 	}
-	parts := strings.SplitN(tail[0], ":", 2)
-	if len(parts) != 2 {
-		return
+	network, destination := "", ""
+	if strings.HasPrefix(tail[0], "//") {
+		network = "tcp"
+		destination = strings.TrimPrefix(tail[0], "//")
+	} else if strings.HasPrefix(tail[0], "http://") || strings.HasPrefix(tail[0], "https://") {
+		u, e := url.Parse(tail[0])
+		if e != nil {
+			return
+		}
+		network = "tcp"
+		destination = u.Host
+		if u.Port() == "" {
+			port := "80"
+			if u.Scheme == "https" {
+				port = "443"
+			}
+			destination = net.JoinHostPort(u.Hostname(), port)
+		}
+	} else {
+		parts := strings.SplitN(tail[0], ":", 2)
+		if len(parts) != 2 {
+			return
+		}
+		network, destination = parts[0], parts[1]
 	}
 	user := ""
 	if u := accessUser.FindStringSubmatch(line); len(u) == 2 {
 		user = u[1]
 	}
 	w.sequence++
-	w.meter.store.observe(fmt.Sprint(w.meter.secret, w.sequence), user, in[1], source, parts[1], "", parts[0])
+	w.meter.store.observe(fmt.Sprint(w.meter.secret, w.sequence), user, in[1], source, destination, "", network)
 }

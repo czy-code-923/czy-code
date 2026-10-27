@@ -56,6 +56,7 @@ func main() {
 		log.Fatal("MASTER_KEY must be 64 hexadecimal characters")
 	}
 	control := &api.Server{DB: db, AdminToken: token, MasterKey: key, AgentReleaseDir: os.Getenv("AGENT_RELEASE_DIR")}
+	go control.RunNotifications(ctx)
 	shareAddr := os.Getenv("SHARE_ADDR")
 	if shareAddr == "" {
 		shareAddr = "127.0.0.1:8091"

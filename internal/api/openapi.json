@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "星枢 · VPS 多机管理 API",
-    "version": "0.12.2",
+    "version": "0.13.0",
     "description": "Self-workspace API for host agents, proxy protocols, user quotas and client subscriptions. Bearer administrator token or expiring scoped xs_ API key. No arbitrary shell; privileged gateway work and API key administration remain root-only."
   },
   "servers": [
@@ -2622,7 +2622,12 @@
                       "trojan",
                       "snell",
                       "vmess",
-                      "anytls"
+                      "anytls",
+                      "http",
+                      "socks",
+                      "mixed",
+                      "hysteria",
+                      "naive"
                     ]
                   },
                   "address": {
@@ -2714,7 +2719,12 @@
                       "",
                       "tcp",
                       "ws",
-                      "grpc"
+                      "grpc",
+                      "http",
+                      "httpupgrade",
+                      "xhttp",
+                      "kcp",
+                      "quic"
                     ]
                   },
                   "path": {
@@ -2768,6 +2778,19 @@
                     "type": "string"
                   },
                   "managed_users": {
+                    "type": "boolean"
+                  },
+                  "username": {
+                    "type": "string",
+                    "maxLength": 128,
+                    "description": "HTTP/SOCKS/Mixed/Naive template login; managed users use the stable user ID."
+                  },
+                  "hysteria_obfs_password": {
+                    "type": "string",
+                    "writeOnly": true,
+                    "maxLength": 256
+                  },
+                  "clear_hysteria_obfs": {
                     "type": "boolean"
                   }
                 }
@@ -3473,7 +3496,12 @@
                       "trojan",
                       "snell",
                       "vmess",
-                      "anytls"
+                      "anytls",
+                      "http",
+                      "socks",
+                      "mixed",
+                      "hysteria",
+                      "naive"
                     ]
                   },
                   "address": {
@@ -3565,7 +3593,12 @@
                       "",
                       "tcp",
                       "ws",
-                      "grpc"
+                      "grpc",
+                      "http",
+                      "httpupgrade",
+                      "xhttp",
+                      "kcp",
+                      "quic"
                     ]
                   },
                   "path": {
@@ -3626,6 +3659,19 @@
                     "minimum": 1
                   },
                   "rotate_credentials": {
+                    "type": "boolean"
+                  },
+                  "username": {
+                    "type": "string",
+                    "maxLength": 128,
+                    "description": "HTTP/SOCKS/Mixed/Naive template login; managed users use the stable user ID."
+                  },
+                  "hysteria_obfs_password": {
+                    "type": "string",
+                    "writeOnly": true,
+                    "maxLength": 256
+                  },
+                  "clear_hysteria_obfs": {
                     "type": "boolean"
                   }
                 }
@@ -4520,7 +4566,7 @@
                   "items": {
                     "type": "array",
                     "minItems": 1,
-                    "maxItems": 8,
+                    "maxItems": 16,
                     "items": {
                       "$ref": "#/components/schemas/LiveInput"
                     }
@@ -5064,6 +5110,547 @@
           },
           "409": {
             "description": "Conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/notifications/telegram": {
+      "get": {
+        "summary": "Read redacted Telegram binding and worker status",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Invalid configuration"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Insufficient API key scope"
+          },
+          "409": {
+            "description": "Stale version or conflict"
+          }
+        },
+        "description": "Requires notifications:read or notifications:write. Commands are read-only, exact-chat and user-allowlisted, recent and rate-bounded. Defaults disabled; no webhook or public port."
+      },
+      "put": {
+        "summary": "Bind or update Telegram notifications with expected version",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Invalid configuration"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Insufficient API key scope"
+          },
+          "409": {
+            "description": "Stale version or conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TelegramSettings"
+              }
+            }
+          }
+        },
+        "description": "Requires notifications:read or notifications:write. Commands are read-only, exact-chat and user-allowlisted, recent and rate-bounded. Defaults disabled; no webhook or public port."
+      },
+      "delete": {
+        "summary": "Unbind and erase encrypted token; retain audit/delivery history",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Invalid configuration"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Insufficient API key scope"
+          },
+          "409": {
+            "description": "Stale version or conflict"
+          }
+        },
+        "description": "Requires notifications:read or notifications:write. Commands are read-only, exact-chat and user-allowlisted, recent and rate-bounded. Defaults disabled; no webhook or public port."
+      }
+    },
+    "/api/v1/notifications/telegram/test": {
+      "post": {
+        "summary": "Preview without network or send an explicit test to configured chat",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Invalid configuration"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Insufficient API key scope"
+          },
+          "409": {
+            "description": "Stale version or conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "preview": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Requires notifications:read or notifications:write. Commands are read-only, exact-chat and user-allowlisted, recent and rate-bounded. Defaults disabled; no webhook or public port."
+      }
+    },
+    "/api/v1/notifications/log": {
+      "get": {
+        "summary": "Read 100 recent sanitized delivery records; 7-day/500-record retention",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Invalid configuration"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Insufficient API key scope"
+          },
+          "409": {
+            "description": "Stale version or conflict"
+          }
+        },
+        "description": "Requires notifications:read or notifications:write. Commands are read-only, exact-chat and user-allowlisted, recent and rate-bounded. Defaults disabled; no webhook or public port."
+      }
+    },
+    "/api/v1/configuration/inspect": {
+      "post": {
+        "summary": "Inspect bounded server JSON/YAML into reviewable fields; no deployment or file reads",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Invalid configuration"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Insufficient API key scope"
+          },
+          "409": {
+            "description": "Stale version or conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "source"
+                ],
+                "properties": {
+                  "source": {
+                    "type": "string",
+                    "maxLength": 32768
+                  },
+                  "format": {
+                    "enum": [
+                      "auto",
+                      "sing-box",
+                      "xray",
+                      "starhub",
+                      "mihomo"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/firewalls/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "put": {
+        "summary": "Create immutable edited version and archive the current policy; no remote apply",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Invalid configuration"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Insufficient API key scope"
+          },
+          "409": {
+            "description": "Stale version or conflict"
+          },
+          "201": {
+            "description": "New immutable policy version created"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "version",
+                  "policy"
+                ],
+                "properties": {
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "policy": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Move draft to recoverable trash; does not remove applied host rules",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Invalid configuration"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Insufficient API key scope"
+          },
+          "409": {
+            "description": "Stale version or conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/agent/retirement/{action}": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "action",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "begin",
+              "ack"
+            ]
+          }
+        }
+      ],
+      "post": {
+        "summary": "Authenticate fixed Agent retirement action; no arbitrary commands",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "202": {
+            "description": "Cleanup requested"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "409": {
+            "description": "Dependency/version conflict"
+          }
+        },
+        "security": [
+          {
+            "AgentToken": [],
+            "HostID": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "retire_id": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/subscriptions/{id}/{view}": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "view",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "usage",
+              "config"
+            ]
+          }
+        }
+      ],
+      "get": {
+        "summary": "Inspect subscription usage or redacted generated config",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "202": {
+            "description": "Cleanup requested"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "409": {
+            "description": "Dependency/version conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/{kind}/{id}": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "kind",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "hosts",
+              "nodes",
+              "instances",
+              "tunnels",
+              "routes"
+            ]
+          }
+        },
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "patch": {
+        "summary": "Edit bounded inventory labels and host address; topology checks apply",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "202": {
+            "description": "Cleanup requested"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "409": {
+            "description": "Dependency/version conflict"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete supported inventory resource; host deletion uses acknowledged Agent retirement",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "202": {
+            "description": "Cleanup requested"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "409": {
+            "description": "Dependency/version conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/{kind}": {
+      "parameters": [
+        {
+          "name": "kind",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "hosts",
+              "nodes",
+              "instances",
+              "tunnels",
+              "configs",
+              "tasks",
+              "audit",
+              "routes",
+              "firewalls"
+            ]
+          }
+        }
+      ],
+      "get": {
+        "summary": "Read a bounded inventory collection (limit 1-200, offset 0-1000000)",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Collection"
+          },
+          "403": {
+            "description": "Insufficient collection permission"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a supported typed inventory resource; host credentials need hosts:enroll",
+        "description": "Creation supports hosts, nodes, instances, tunnels and routes. Other collection names are read-only. Unknown input fields are rejected.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created"
+          },
+          "400": {
+            "description": "Invalid fields"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "409": {
+            "description": "Dependency or resource conflict"
           }
         }
       }
@@ -6172,7 +6759,12 @@
               "trojan",
               "snell",
               "vmess",
-              "anytls"
+              "anytls",
+              "http",
+              "socks",
+              "mixed",
+              "hysteria",
+              "naive"
             ]
           },
           "address": {
@@ -6264,7 +6856,12 @@
               "",
               "tcp",
               "ws",
-              "grpc"
+              "grpc",
+              "http",
+              "httpupgrade",
+              "xhttp",
+              "kcp",
+              "quic"
             ]
           },
           "path": {
@@ -6355,6 +6952,108 @@
           "clear_hy2_obfs": {
             "type": "boolean",
             "description": "Explicitly disable stored Hysteria2 obfuscation"
+          },
+          "username": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "HTTP/SOCKS/Mixed/Naive template login; managed users use the stable user ID."
+          },
+          "hysteria_obfs_password": {
+            "type": "string",
+            "writeOnly": true,
+            "maxLength": 256
+          },
+          "clear_hysteria_obfs": {
+            "type": "boolean"
+          }
+        }
+      },
+      "TelegramSettings": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "version",
+          "enabled",
+          "chat_id",
+          "quota_percent"
+        ],
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "bot_token": {
+            "type": "string",
+            "writeOnly": true,
+            "description": "Empty preserves existing encrypted token; never returned."
+          },
+          "token_configured": {
+            "type": "boolean"
+          },
+          "chat_id": {
+            "type": "string",
+            "pattern": "^-?[1-9][0-9]{0,18}$"
+          },
+          "command_polling": {
+            "type": "boolean"
+          },
+          "allowed_user_ids": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          "commands": {
+            "type": "array",
+            "maxItems": 5,
+            "items": {
+              "enum": [
+                "status",
+                "hosts",
+                "traffic",
+                "users",
+                "help"
+              ]
+            }
+          },
+          "events": {
+            "type": "array",
+            "maxItems": 4,
+            "items": {
+              "enum": [
+                "host_offline",
+                "host_online",
+                "quota",
+                "certificate"
+              ]
+            }
+          },
+          "report_minutes": {
+            "type": "integer",
+            "description": "0 disabled; otherwise 15-10080 minutes"
+          },
+          "report_sections": {
+            "type": "array",
+            "maxItems": 4,
+            "items": {
+              "enum": [
+                "status",
+                "hosts",
+                "traffic",
+                "users"
+              ]
+            }
+          },
+          "quota_percent": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
           }
         }
       }

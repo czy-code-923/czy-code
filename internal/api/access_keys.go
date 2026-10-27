@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"vps-control/internal/buildinfo"
 )
 
 type apiIdentity struct {
@@ -26,6 +27,7 @@ type scopeInfo struct {
 }
 
 var apiScopes = []scopeInfo{
+	{"notifications:read", "查看通知设置与结果", true}, {"notifications:write", "绑定通知机器人与授权查询", true},
 	{"hosts:uninstall", "卸载远端 Agent 并删除主机部署数据", true}, {"hosts:read", "查看主机", false}, {"hosts:write", "修改与删除主机", true}, {"hosts:enroll", "主机接入与凭据", true},
 	{"nodes:read", "查看协议与内核配置", false}, {"nodes:write", "修改、部署与启停协议", true},
 	{"users:read", "查看用户", false}, {"users:write", "修改用户及额度", true}, {"groups:read", "查看用户组", false}, {"groups:write", "修改用户授权", true},
@@ -58,6 +60,10 @@ func requiredScopes(r *http.Request) []string {
 		mode = ":write"
 	}
 	switch a[0] {
+	case "configuration":
+		return []string{"nodes:write"}
+	case "notifications":
+		return []string{"notifications" + mode}
 	case "session", "api-capabilities", "openapi":
 		if !write {
 			return []string{}
@@ -183,11 +189,11 @@ func (s *Server) authenticateAPI(r *http.Request) (apiIdentity, error) {
 
 func (s *Server) apiSession(w http.ResponseWriter, r *http.Request) error {
 	identity, _ := r.Context().Value(identityContext{}).(apiIdentity)
-	send(w, 200, map[string]any{"root": identity.Root, "key_id": identity.ID, "scopes": identity.Scopes, "expires_at": identity.Expires, "version": "0.12.2"})
+	send(w, 200, map[string]any{"root": identity.Root, "key_id": identity.ID, "scopes": identity.Scopes, "expires_at": identity.Expires, "version": buildinfo.Version})
 	return nil
 }
 func (s *Server) apiCapabilities(w http.ResponseWriter, r *http.Request) error {
-	send(w, 200, map[string]any{"version": "0.12.2", "scopes": apiScopes, "openapi": "/api/v1/openapi", "features": []string{"protocol_batch", "rolling_monthly", "client_json_templates", "subscription_usage", "scoped_api_keys", "client_policies", "dual_stack_endpoints", "host_retirement", "independent_share_domain"}})
+	send(w, 200, map[string]any{"version": buildinfo.Version, "scopes": apiScopes, "openapi": "/api/v1/openapi", "features": []string{"protocol_layers", "telegram_notifications", "configuration_inspect", "firewall_versions", "protocol_batch", "rolling_monthly", "client_json_templates", "subscription_usage", "scoped_api_keys", "client_policies", "dual_stack_endpoints", "host_retirement", "independent_share_domain"}})
 	return nil
 }
 func (s *Server) keys(w http.ResponseWriter, r *http.Request) error {

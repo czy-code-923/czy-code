@@ -20,6 +20,7 @@ type clientInfo struct {
 }
 
 var clients = []clientInfo{
+	{"naive-proxy", "NaiveProxy 专用 JSON", "naive", false, "仅一个 Naive 节点，不携带策略组；连接地址必须匹配证书域名"},
 	{"mihomo", "Mihomo / Clash Meta", "mihomo", true, "原生策略组与规则"},
 	{"clash-verge", "Clash Verge Rev", "mihomo", true, "Mihomo YAML"},
 	{"stash", "Stash", "mihomo", true, "使用 Clash 风格配置；协议能力取决于客户端版本"},

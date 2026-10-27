@@ -1,311 +1,395 @@
 [
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.3",
+    "pinned_version": "1.14.4-harbor.1",
     "protocol": "anytls",
     "inbound": true,
     "outbound": true,
     "managed": true,
-    "status": "已实现受限模板",
+    "status": "已适配；组合以协议层矩阵为准",
     "source": "https://sing-box.sagernet.org/configuration/",
-    "checked_at": "2026-10-26"
+    "checked_at": "2026-10-27",
+    "platform_inbound": true,
+    "platform_outbound": true,
+    "category": "proxy"
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.3",
+    "pinned_version": "1.14.4-harbor.1",
     "protocol": "block",
     "inbound": false,
     "outbound": true,
     "managed": false,
-    "status": "官方文档能力；尚未集成或需版本/构建验证",
+    "status": "当前平台未适配，不会下发或伪装导出",
     "source": "https://sing-box.sagernet.org/configuration/",
-    "checked_at": "2026-10-23"
+    "checked_at": "2026-10-27",
+    "platform_inbound": false,
+    "platform_outbound": false,
+    "category": "core capability"
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.3",
+    "pinned_version": "1.14.4-harbor.1",
     "protocol": "bridge",
     "inbound": false,
     "outbound": true,
     "managed": false,
-    "status": "官方文档能力；尚未集成或需版本/构建验证",
+    "status": "当前平台未适配，不会下发或伪装导出",
     "source": "https://sing-box.sagernet.org/configuration/",
-    "checked_at": "2026-10-23"
+    "checked_at": "2026-10-27",
+    "platform_inbound": false,
+    "platform_outbound": false,
+    "category": "core capability"
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.3",
+    "pinned_version": "1.14.4-harbor.1",
     "protocol": "cloudflared",
     "inbound": true,
     "outbound": false,
     "managed": false,
-    "status": "官方文档能力；尚未集成或需版本/构建验证",
+    "status": "隧道/网络设备能力，需独立权限与模型；不作为普通代理协议模板",
     "source": "https://sing-box.sagernet.org/configuration/",
-    "checked_at": "2026-10-23"
+    "checked_at": "2026-10-27",
+    "platform_inbound": false,
+    "platform_outbound": false,
+    "category": "tunnel/endpoint"
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.3",
+    "pinned_version": "1.14.4-harbor.1",
     "protocol": "direct",
     "inbound": true,
     "outbound": true,
     "managed": false,
-    "status": "官方文档能力；尚未集成或需版本/构建验证",
+    "status": "当前平台未适配，不会下发或伪装导出",
     "source": "https://sing-box.sagernet.org/configuration/",
-    "checked_at": "2026-10-23"
+    "checked_at": "2026-10-27",
+    "platform_inbound": false,
+    "platform_outbound": false,
+    "category": "core capability"
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.3",
+    "pinned_version": "1.14.4-harbor.1",
     "protocol": "dns",
     "inbound": false,
     "outbound": true,
     "managed": false,
-    "status": "官方文档能力；尚未集成或需版本/构建验证",
+    "status": "当前平台未适配，不会下发或伪装导出",
     "source": "https://sing-box.sagernet.org/configuration/",
-    "checked_at": "2026-10-23"
+    "checked_at": "2026-10-27",
+    "platform_inbound": false,
+    "platform_outbound": false,
+    "category": "core capability"
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.3",
+    "pinned_version": "1.14.4-harbor.1",
     "protocol": "http",
     "inbound": true,
     "outbound": true,
-    "managed": false,
-    "status": "官方文档能力；尚未集成或需版本/构建验证",
+    "managed": true,
+    "status": "已适配；组合以协议层矩阵为准",
     "source": "https://sing-box.sagernet.org/configuration/",
-    "checked_at": "2026-10-23"
+    "checked_at": "2026-10-27",
+    "platform_inbound": true,
+    "platform_outbound": true,
+    "category": "proxy"
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.3",
+    "pinned_version": "1.14.4-harbor.1",
     "protocol": "hysteria",
     "inbound": true,
     "outbound": true,
-    "managed": false,
-    "status": "官方文档能力；尚未集成或需版本/构建验证",
+    "managed": true,
+    "status": "已适配；组合以协议层矩阵为准",
     "source": "https://sing-box.sagernet.org/configuration/",
-    "checked_at": "2026-10-23"
+    "checked_at": "2026-10-27",
+    "platform_inbound": true,
+    "platform_outbound": true,
+    "category": "proxy"
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.3",
+    "pinned_version": "1.14.4-harbor.1",
     "protocol": "hysteria2",
     "inbound": true,
     "outbound": true,
     "managed": true,
-    "status": "已实现受限模板",
+    "status": "已适配；组合以协议层矩阵为准",
     "source": "https://sing-box.sagernet.org/configuration/",
-    "checked_at": "2026-10-26"
+    "checked_at": "2026-10-27",
+    "platform_inbound": true,
+    "platform_outbound": true,
+    "category": "proxy"
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.3",
+    "pinned_version": "1.14.4-harbor.1",
     "protocol": "mixed",
     "inbound": true,
     "outbound": false,
-    "managed": false,
-    "status": "官方文档能力；尚未集成或需版本/构建验证",
+    "managed": true,
+    "status": "已适配；组合以协议层矩阵为准",
     "source": "https://sing-box.sagernet.org/configuration/",
-    "checked_at": "2026-10-23"
+    "checked_at": "2026-10-27",
+    "platform_inbound": true,
+    "platform_outbound": false,
+    "category": "proxy"
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.3",
+    "pinned_version": "1.14.4-harbor.1",
     "protocol": "naive",
     "inbound": true,
     "outbound": true,
-    "managed": false,
-    "status": "官方文档能力；尚未集成或需版本/构建验证",
+    "managed": true,
+    "status": "Naive 服务端 + 专用 NaiveProxy JSON；捆绑内核无 Naive 出站",
     "source": "https://sing-box.sagernet.org/configuration/",
-    "checked_at": "2026-10-23"
+    "checked_at": "2026-10-27",
+    "platform_inbound": true,
+    "platform_outbound": false,
+    "category": "proxy"
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.3",
+    "pinned_version": "1.14.4-harbor.1",
     "protocol": "redirect",
     "inbound": true,
     "outbound": false,
     "managed": false,
-    "status": "官方文档能力；尚未集成或需版本/构建验证",
+    "status": "隧道/网络设备能力，需独立权限与模型；不作为普通代理协议模板",
     "source": "https://sing-box.sagernet.org/configuration/",
-    "checked_at": "2026-10-23"
+    "checked_at": "2026-10-27",
+    "platform_inbound": false,
+    "platform_outbound": false,
+    "category": "tunnel/endpoint"
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.3",
+    "pinned_version": "1.14.4-harbor.1",
     "protocol": "selector",
     "inbound": false,
     "outbound": true,
     "managed": false,
-    "status": "官方文档能力；尚未集成或需版本/构建验证",
+    "status": "当前平台未适配，不会下发或伪装导出",
     "source": "https://sing-box.sagernet.org/configuration/",
-    "checked_at": "2026-10-23"
+    "checked_at": "2026-10-27",
+    "platform_inbound": false,
+    "platform_outbound": false,
+    "category": "core capability"
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.3",
+    "pinned_version": "1.14.4-harbor.1",
     "protocol": "shadowsocks",
     "inbound": true,
     "outbound": true,
     "managed": true,
-    "status": "已实现受限模板",
+    "status": "已适配；组合以协议层矩阵为准",
     "source": "https://sing-box.sagernet.org/configuration/",
-    "checked_at": "2026-10-26"
+    "checked_at": "2026-10-27",
+    "platform_inbound": true,
+    "platform_outbound": true,
+    "category": "proxy"
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.3",
+    "pinned_version": "1.14.4-harbor.1",
     "protocol": "shadowtls",
     "inbound": true,
     "outbound": true,
     "managed": false,
-    "status": "官方文档能力；尚未集成或需版本/构建验证",
+    "status": "TLS 包装层，需与内层协议组合；尚无受控部署适配",
     "source": "https://sing-box.sagernet.org/configuration/",
-    "checked_at": "2026-10-23"
+    "checked_at": "2026-10-27",
+    "platform_inbound": false,
+    "platform_outbound": false,
+    "category": "wrapper"
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.3",
+    "pinned_version": "1.14.4-harbor.1",
     "protocol": "snell",
     "inbound": true,
     "outbound": true,
     "managed": true,
-    "status": "已实现受限模板",
+    "status": "已适配；组合以协议层矩阵为准",
     "source": "https://sing-box.sagernet.org/configuration/",
-    "checked_at": "2026-10-26"
+    "checked_at": "2026-10-27",
+    "platform_inbound": true,
+    "platform_outbound": true,
+    "category": "proxy"
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.3",
+    "pinned_version": "1.14.4-harbor.1",
     "protocol": "socks",
     "inbound": true,
     "outbound": true,
-    "managed": false,
-    "status": "官方文档能力；尚未集成或需版本/构建验证",
+    "managed": true,
+    "status": "已适配；组合以协议层矩阵为准",
     "source": "https://sing-box.sagernet.org/configuration/",
-    "checked_at": "2026-10-23"
+    "checked_at": "2026-10-27",
+    "platform_inbound": true,
+    "platform_outbound": true,
+    "category": "proxy"
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.3",
+    "pinned_version": "1.14.4-harbor.1",
     "protocol": "ssh",
     "inbound": false,
     "outbound": true,
     "managed": false,
-    "status": "官方文档能力；尚未集成或需版本/构建验证",
+    "status": "当前平台未适配，不会下发或伪装导出",
     "source": "https://sing-box.sagernet.org/configuration/",
-    "checked_at": "2026-10-23"
+    "checked_at": "2026-10-27",
+    "platform_inbound": false,
+    "platform_outbound": false,
+    "category": "core capability"
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.3",
+    "pinned_version": "1.14.4-harbor.1",
     "protocol": "tailcat",
     "inbound": true,
     "outbound": true,
     "managed": false,
-    "status": "官方文档能力；尚未集成或需版本/构建验证",
+    "status": "当前平台未适配，不会下发或伪装导出",
     "source": "https://sing-box.sagernet.org/configuration/",
-    "checked_at": "2026-10-23"
+    "checked_at": "2026-10-27",
+    "platform_inbound": false,
+    "platform_outbound": false,
+    "category": "core capability"
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.3",
+    "pinned_version": "1.14.4-harbor.1",
     "protocol": "tor",
     "inbound": false,
     "outbound": true,
     "managed": false,
-    "status": "官方文档能力；尚未集成或需版本/构建验证",
+    "status": "当前平台未适配，不会下发或伪装导出",
     "source": "https://sing-box.sagernet.org/configuration/",
-    "checked_at": "2026-10-23"
+    "checked_at": "2026-10-27",
+    "platform_inbound": false,
+    "platform_outbound": false,
+    "category": "core capability"
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.3",
+    "pinned_version": "1.14.4-harbor.1",
     "protocol": "tproxy",
     "inbound": true,
     "outbound": false,
     "managed": false,
-    "status": "官方文档能力；尚未集成或需版本/构建验证",
+    "status": "隧道/网络设备能力，需独立权限与模型；不作为普通代理协议模板",
     "source": "https://sing-box.sagernet.org/configuration/",
-    "checked_at": "2026-10-23"
+    "checked_at": "2026-10-27",
+    "platform_inbound": false,
+    "platform_outbound": false,
+    "category": "tunnel/endpoint"
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.3",
+    "pinned_version": "1.14.4-harbor.1",
     "protocol": "trojan",
     "inbound": true,
     "outbound": true,
     "managed": true,
-    "status": "已实现受限模板",
+    "status": "已适配；组合以协议层矩阵为准",
     "source": "https://sing-box.sagernet.org/configuration/",
-    "checked_at": "2026-10-26"
+    "checked_at": "2026-10-27",
+    "platform_inbound": true,
+    "platform_outbound": true,
+    "category": "proxy"
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.3",
+    "pinned_version": "1.14.4-harbor.1",
     "protocol": "tuic",
     "inbound": true,
     "outbound": true,
     "managed": true,
-    "status": "已实现受限模板",
+    "status": "已适配；组合以协议层矩阵为准",
     "source": "https://sing-box.sagernet.org/configuration/",
-    "checked_at": "2026-10-26"
+    "checked_at": "2026-10-27",
+    "platform_inbound": true,
+    "platform_outbound": true,
+    "category": "proxy"
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.3",
+    "pinned_version": "1.14.4-harbor.1",
     "protocol": "tun",
     "inbound": true,
     "outbound": false,
     "managed": false,
-    "status": "官方文档能力；尚未集成或需版本/构建验证",
+    "status": "隧道/网络设备能力，需独立权限与模型；不作为普通代理协议模板",
     "source": "https://sing-box.sagernet.org/configuration/",
-    "checked_at": "2026-10-23"
+    "checked_at": "2026-10-27",
+    "platform_inbound": false,
+    "platform_outbound": false,
+    "category": "tunnel/endpoint"
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.3",
+    "pinned_version": "1.14.4-harbor.1",
     "protocol": "urltest",
     "inbound": false,
     "outbound": true,
     "managed": false,
-    "status": "官方文档能力；尚未集成或需版本/构建验证",
+    "status": "当前平台未适配，不会下发或伪装导出",
     "source": "https://sing-box.sagernet.org/configuration/",
-    "checked_at": "2026-10-23"
+    "checked_at": "2026-10-27",
+    "platform_inbound": false,
+    "platform_outbound": false,
+    "category": "core capability"
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.3",
+    "pinned_version": "1.14.4-harbor.1",
     "protocol": "vless",
     "inbound": true,
     "outbound": true,
     "managed": true,
-    "status": "已实现受限模板",
+    "status": "已适配；组合以协议层矩阵为准",
     "source": "https://sing-box.sagernet.org/configuration/",
-    "checked_at": "2026-10-26"
+    "checked_at": "2026-10-27",
+    "platform_inbound": true,
+    "platform_outbound": true,
+    "category": "proxy"
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.3",
+    "pinned_version": "1.14.4-harbor.1",
     "protocol": "vmess",
     "inbound": true,
     "outbound": true,
     "managed": true,
-    "status": "已实现受限模板",
+    "status": "已适配；组合以协议层矩阵为准",
     "source": "https://sing-box.sagernet.org/configuration/",
-    "checked_at": "2026-10-26"
+    "checked_at": "2026-10-27",
+    "platform_inbound": true,
+    "platform_outbound": true,
+    "category": "proxy"
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.3",
+    "pinned_version": "1.14.4-harbor.1",
     "protocol": "wireguard",
     "inbound": false,
     "outbound": true,
     "managed": false,
-    "status": "官方文档能力；尚未集成或需版本/构建验证",
+    "status": "隧道/网络设备能力，需独立权限与模型；不作为普通代理协议模板",
     "source": "https://sing-box.sagernet.org/configuration/",
-    "checked_at": "2026-10-23"
+    "checked_at": "2026-10-27",
+    "platform_inbound": false,
+    "platform_outbound": false,
+    "category": "tunnel/endpoint"
   },
   {
     "engine": "xray",
@@ -314,9 +398,12 @@
     "inbound": false,
     "outbound": true,
     "managed": false,
-    "status": "官方文档能力；尚未集成或需版本/构建验证",
+    "status": "当前平台未适配，不会下发或伪装导出",
     "source": "https://xtls.github.io/en/config/",
-    "checked_at": "2026-10-23"
+    "checked_at": "2026-10-27",
+    "platform_inbound": false,
+    "platform_outbound": false,
+    "category": "core capability"
   },
   {
     "engine": "xray",
@@ -325,9 +412,12 @@
     "inbound": false,
     "outbound": true,
     "managed": false,
-    "status": "官方文档能力；尚未集成或需版本/构建验证",
+    "status": "当前平台未适配，不会下发或伪装导出",
     "source": "https://xtls.github.io/en/config/",
-    "checked_at": "2026-10-23"
+    "checked_at": "2026-10-27",
+    "platform_inbound": false,
+    "platform_outbound": false,
+    "category": "core capability"
   },
   {
     "engine": "xray",
@@ -336,9 +426,12 @@
     "inbound": false,
     "outbound": true,
     "managed": false,
-    "status": "官方文档能力；尚未集成或需版本/构建验证",
+    "status": "当前平台未适配，不会下发或伪装导出",
     "source": "https://xtls.github.io/en/config/",
-    "checked_at": "2026-10-23"
+    "checked_at": "2026-10-27",
+    "platform_inbound": false,
+    "platform_outbound": false,
+    "category": "core capability"
   },
   {
     "engine": "xray",
@@ -346,10 +439,13 @@
     "protocol": "http",
     "inbound": true,
     "outbound": true,
-    "managed": false,
-    "status": "官方文档能力；尚未集成或需版本/构建验证",
+    "managed": true,
+    "status": "已适配；组合以协议层矩阵为准",
     "source": "https://xtls.github.io/en/config/",
-    "checked_at": "2026-10-23"
+    "checked_at": "2026-10-27",
+    "platform_inbound": true,
+    "platform_outbound": true,
+    "category": "proxy"
   },
   {
     "engine": "xray",
@@ -358,9 +454,12 @@
     "inbound": true,
     "outbound": true,
     "managed": false,
-    "status": "官方文档能力；尚未集成或需版本/构建验证",
+    "status": "当前平台未适配，不会下发或伪装导出",
     "source": "https://xtls.github.io/en/config/",
-    "checked_at": "2026-10-23"
+    "checked_at": "2026-10-27",
+    "platform_inbound": false,
+    "platform_outbound": false,
+    "category": "core capability"
   },
   {
     "engine": "xray",
@@ -369,9 +468,12 @@
     "inbound": false,
     "outbound": true,
     "managed": false,
-    "status": "官方文档能力；尚未集成或需版本/构建验证",
+    "status": "当前平台未适配，不会下发或伪装导出",
     "source": "https://xtls.github.io/en/config/",
-    "checked_at": "2026-10-23"
+    "checked_at": "2026-10-27",
+    "platform_inbound": false,
+    "platform_outbound": false,
+    "category": "core capability"
   },
   {
     "engine": "xray",
@@ -380,9 +482,12 @@
     "inbound": true,
     "outbound": true,
     "managed": false,
-    "status": "官方文档能力；尚未集成或需版本/构建验证",
+    "status": "当前平台未适配，不会下发或伪装导出",
     "source": "https://xtls.github.io/en/config/",
-    "checked_at": "2026-10-23"
+    "checked_at": "2026-10-27",
+    "platform_inbound": false,
+    "platform_outbound": false,
+    "category": "core capability"
   },
   {
     "engine": "xray",
@@ -391,9 +496,12 @@
     "inbound": true,
     "outbound": true,
     "managed": true,
-    "status": "已实现 AEAD / 2022 单用户模板",
+    "status": "已适配；组合以协议层矩阵为准",
     "source": "https://xtls.github.io/en/config/",
-    "checked_at": "2026-10-26"
+    "checked_at": "2026-10-27",
+    "platform_inbound": true,
+    "platform_outbound": true,
+    "category": "proxy"
   },
   {
     "engine": "xray",
@@ -401,10 +509,13 @@
     "protocol": "socks",
     "inbound": true,
     "outbound": true,
-    "managed": false,
-    "status": "官方文档能力；尚未集成或需版本/构建验证",
+    "managed": true,
+    "status": "已适配；组合以协议层矩阵为准",
     "source": "https://xtls.github.io/en/config/",
-    "checked_at": "2026-10-23"
+    "checked_at": "2026-10-27",
+    "platform_inbound": true,
+    "platform_outbound": true,
+    "category": "proxy"
   },
   {
     "engine": "xray",
@@ -413,9 +524,12 @@
     "inbound": true,
     "outbound": true,
     "managed": true,
-    "status": "已实现受限模板",
+    "status": "已适配；组合以协议层矩阵为准",
     "source": "https://xtls.github.io/en/config/",
-    "checked_at": "2026-10-26"
+    "checked_at": "2026-10-27",
+    "platform_inbound": true,
+    "platform_outbound": true,
+    "category": "proxy"
   },
   {
     "engine": "xray",
@@ -424,9 +538,12 @@
     "inbound": true,
     "outbound": false,
     "managed": false,
-    "status": "官方文档能力；尚未集成或需版本/构建验证",
+    "status": "隧道/网络设备能力，需独立权限与模型；不作为普通代理协议模板",
     "source": "https://xtls.github.io/en/config/",
-    "checked_at": "2026-10-23"
+    "checked_at": "2026-10-27",
+    "platform_inbound": false,
+    "platform_outbound": false,
+    "category": "tunnel/endpoint"
   },
   {
     "engine": "xray",
@@ -435,9 +552,12 @@
     "inbound": true,
     "outbound": false,
     "managed": false,
-    "status": "官方文档能力；尚未集成或需版本/构建验证",
+    "status": "当前平台未适配，不会下发或伪装导出",
     "source": "https://xtls.github.io/en/config/",
-    "checked_at": "2026-10-23"
+    "checked_at": "2026-10-27",
+    "platform_inbound": false,
+    "platform_outbound": false,
+    "category": "core capability"
   },
   {
     "engine": "xray",
@@ -446,9 +566,12 @@
     "inbound": true,
     "outbound": true,
     "managed": true,
-    "status": "已实现受限模板",
+    "status": "已适配；组合以协议层矩阵为准",
     "source": "https://xtls.github.io/en/config/",
-    "checked_at": "2026-10-26"
+    "checked_at": "2026-10-27",
+    "platform_inbound": true,
+    "platform_outbound": true,
+    "category": "proxy"
   },
   {
     "engine": "xray",
@@ -457,9 +580,12 @@
     "inbound": true,
     "outbound": true,
     "managed": true,
-    "status": "已实现受限模板",
+    "status": "已适配；组合以协议层矩阵为准",
     "source": "https://xtls.github.io/en/config/",
-    "checked_at": "2026-10-26"
+    "checked_at": "2026-10-27",
+    "platform_inbound": true,
+    "platform_outbound": true,
+    "category": "proxy"
   },
   {
     "engine": "xray",
@@ -468,8 +594,11 @@
     "inbound": true,
     "outbound": true,
     "managed": false,
-    "status": "官方文档能力；尚未集成或需版本/构建验证",
+    "status": "隧道/网络设备能力，需独立权限与模型；不作为普通代理协议模板",
     "source": "https://xtls.github.io/en/config/",
-    "checked_at": "2026-10-23"
+    "checked_at": "2026-10-27",
+    "platform_inbound": false,
+    "platform_outbound": false,
+    "category": "tunnel/endpoint"
   }
 ]

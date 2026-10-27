@@ -431,16 +431,25 @@ func (r Result) Apply(format string, base map[string]any) (map[string]any, []str
 	for _, g := range r.Groups {
 		groups[g.Name] = g
 	}
+	leafCache := map[string][]string{}
 	var leaves func(string) []string
 	leaves = func(name string) []string {
+		if cached, ok := leafCache[name]; ok {
+			return cached
+		}
 		g, ok := groups[name]
 		if !ok {
 			return []string{ref(name)}
 		}
 		v := []string{}
 		for _, child := range g.Proxies {
-			v = append(v, leaves(child)...)
+			for _, leaf := range leaves(child) {
+				if !slices.Contains(v, leaf) {
+					v = append(v, leaf)
+				}
+			}
 		}
+		leafCache[name] = v
 		return v
 	}
 	balancers := []any{}

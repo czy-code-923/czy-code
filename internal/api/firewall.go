@@ -23,7 +23,7 @@ func (s *Server) createFirewall(w http.ResponseWriter, r *http.Request) error {
 	defer tx.Rollback(ctx)
 	host := r.PathValue("id")
 	var locked string
-	if e = tx.QueryRow(ctx, "SELECT id FROM hosts WHERE tenant_id=$1 AND id=$2 FOR UPDATE", tenant, host).Scan(&locked); e != nil {
+	if e = tx.QueryRow(ctx, "SELECT id FROM hosts WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL AND retire_state='' FOR UPDATE", tenant, host).Scan(&locked); e != nil {
 		return e
 	}
 	var version int
@@ -49,7 +49,7 @@ func (s *Server) createFirewall(w http.ResponseWriter, r *http.Request) error {
 func (s *Server) firewallPreview(w http.ResponseWriter, r *http.Request) error {
 	var raw json.RawMessage
 	var host, sum string
-	if e := s.DB.QueryRow(r.Context(), "SELECT host_id,spec,checksum FROM firewall_policies WHERE tenant_id=$1 AND id=$2", tenant, r.PathValue("id")).Scan(&host, &raw, &sum); e != nil {
+	if e := s.DB.QueryRow(r.Context(), "SELECT host_id,spec,checksum FROM firewall_policies WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL", tenant, r.PathValue("id")).Scan(&host, &raw, &sum); e != nil {
 		return e
 	}
 	canonical, e := manifest.Canonical(raw)
@@ -84,7 +84,7 @@ func (s *Server) archiveFirewall(w http.ResponseWriter, r *http.Request) error {
 		return e
 	}
 	defer tx.Rollback(ctx)
-	tag, e := tx.Exec(ctx, "UPDATE firewall_policies SET archived_at=CASE WHEN $3 THEN now() ELSE NULL END WHERE tenant_id=$1 AND id=$2", tenant, r.PathValue("id"), *b.Archived)
+	tag, e := tx.Exec(ctx, "UPDATE firewall_policies SET archived_at=CASE WHEN $3 THEN now() ELSE NULL END,deleted_at=CASE WHEN $3 THEN deleted_at ELSE NULL END WHERE tenant_id=$1 AND id=$2", tenant, r.PathValue("id"), *b.Archived)
 	if e != nil {
 		return e
 	}
@@ -125,5 +125,85 @@ func (s *Server) cancelTask(w http.ResponseWriter, r *http.Request) error {
 		return e
 	}
 	send(w, 200, map[string]string{"state": "cancelled"})
+	return nil
+}
+
+// Edit creates an immutable replacement and archives the previous draft.
+func (s *Server) editFirewall(w http.ResponseWriter, r *http.Request) error {
+	var b struct {
+		Version int             `json:"version"`
+		Policy  firewall.Policy `json:"policy"`
+	}
+	if e := decode(w, r, &b); e != nil {
+		return e
+	}
+	if e := b.Policy.Validate(); e != nil {
+		return bad(e.Error())
+	}
+	tx, e := s.DB.Begin(r.Context())
+	if e != nil {
+		return e
+	}
+	defer tx.Rollback(r.Context())
+	if e = graphLock(r, tx); e != nil {
+		return e
+	}
+	var host string
+	var old int
+	var archived bool
+	if e = tx.QueryRow(r.Context(), `SELECT host_id,version,archived_at IS NOT NULL FROM firewall_policies WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL FOR UPDATE`, tenant, r.PathValue("id")).Scan(&host, &old, &archived); e != nil {
+		return e
+	}
+	if archived {
+		return problem{409, "restore archived policy before editing"}
+	}
+	if old != b.Version {
+		return problem{409, "firewall version changed; refresh first"}
+	}
+	if e = tx.QueryRow(r.Context(), `SELECT id FROM hosts WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL AND retire_state='' FOR UPDATE`, tenant, host).Scan(&host); e != nil {
+		return e
+	}
+	var version int
+	if e = tx.QueryRow(r.Context(), `SELECT COALESCE(max(version),0)+1 FROM firewall_policies WHERE tenant_id=$1 AND host_id=$2`, tenant, host).Scan(&version); e != nil {
+		return e
+	}
+	raw, _ := json.Marshal(b.Policy)
+	raw, _ = manifest.Canonical(raw)
+	id := ID()
+	if _, e = tx.Exec(r.Context(), `INSERT INTO firewall_policies(tenant_id,id,host_id,name,version,spec,checksum) VALUES($1,$2,$3,$4,$5,$6,$7)`, tenant, id, host, b.Policy.Name, version, raw, manifest.Digest(raw)); e != nil {
+		return e
+	}
+	if _, e = tx.Exec(r.Context(), `UPDATE firewall_policies SET archived_at=now() WHERE tenant_id=$1 AND id=$2`, tenant, r.PathValue("id")); e != nil {
+		return e
+	}
+	if e = audit(r.Context(), tx, "admin", "firewall.version.edit", id); e != nil {
+		return e
+	}
+	if e = tx.Commit(r.Context()); e != nil {
+		return e
+	}
+	send(w, 201, map[string]any{"id": id, "version": version, "state": "draft", "applied": false})
+	return nil
+}
+func (s *Server) deleteFirewall(w http.ResponseWriter, r *http.Request) error {
+	tx, e := s.DB.Begin(r.Context())
+	if e != nil {
+		return e
+	}
+	defer tx.Rollback(r.Context())
+	tag, e := tx.Exec(r.Context(), `UPDATE firewall_policies SET deleted_at=now(),archived_at=COALESCE(archived_at,now()) WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL`, tenant, r.PathValue("id"))
+	if e != nil {
+		return e
+	}
+	if tag.RowsAffected() == 0 {
+		return problem{404, "policy not found"}
+	}
+	if e = audit(r.Context(), tx, "admin", "firewall.draft.delete", r.PathValue("id")); e != nil {
+		return e
+	}
+	if e = tx.Commit(r.Context()); e != nil {
+		return e
+	}
+	send(w, 200, map[string]any{"deleted": true, "remote_changed": false, "notice": "后台策略已移入回收站；主机已应用的规则需用本机受控 remove 命令移除，保留回滚。"})
 	return nil
 }

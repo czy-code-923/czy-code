@@ -216,3 +216,66 @@ func (m *Manager) Rollback(ctx context.Context, id string) error {
 	}
 	return m.restore(ctx, j)
 }
+
+// StartRemoval removes only this host's owned table, with the same independent
+// rollback timer as apply. Provider, Docker and unrelated nft tables are untouched.
+func (m *Manager) StartRemoval(ctx context.Context, host string, window time.Duration) (Receipt, error) {
+	var receipt Receipt
+	if !manifest.ValidID(host) || window < 30*time.Second || window > 300*time.Second || m.scheduler == nil {
+		return receipt, errors.New("valid host and 30-300 second rollback scheduler required")
+	}
+	unlock, e := m.lock(ctx)
+	if e != nil {
+		return receipt, e
+	}
+	defer unlock()
+	if raw, e := m.root.ReadFile("active"); e == nil {
+		j, e := m.read(string(raw))
+		if e != nil {
+			return receipt, e
+		}
+		if j.Status == "pending" {
+			return receipt, errors.New("confirm or cancel the pending transaction first")
+		}
+	} else if !os.IsNotExist(e) {
+		return receipt, e
+	}
+	old, exists, e := m.backend.Snapshot(ctx, host)
+	if e != nil {
+		return receipt, e
+	}
+	if !exists {
+		return receipt, errors.New("owned firewall table is not applied")
+	}
+	batch := "delete table inet " + Table(host) + "\n"
+	if e = m.backend.Check(ctx, batch); e != nil {
+		return receipt, e
+	}
+	random := make([]byte, 32)
+	if _, e = rand.Read(random); e != nil {
+		return receipt, e
+	}
+	id := hex.EncodeToString(random[:16])
+	token := hex.EncodeToString(random[16:])
+	j := Journal{ID: id, HostID: host, Original: old, Existed: true, Status: "pending", Deadline: time.Now().Add(window), TokenHash: manifest.Digest([]byte(token))}
+	if e = m.save(j); e != nil {
+		return receipt, e
+	}
+	if e = m.root.WriteFile("active", []byte(id), 0600); e != nil {
+		return receipt, e
+	}
+	if e = m.scheduler.Arm(ctx, id, window); e != nil {
+		j.Status = "aborted"
+		_ = m.save(j)
+		return receipt, errors.New("rollback timer could not be armed; no changes made")
+	}
+	if e = m.backend.Apply(ctx, batch); e != nil {
+		recovery, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if e = m.restore(recovery, j); e != nil {
+			return receipt, errors.New("removal failed; rollback remains armed")
+		}
+		return receipt, errors.New("removal failed; original restored")
+	}
+	return Receipt{ID: id, ConfirmToken: token, Deadline: j.Deadline}, nil
+}

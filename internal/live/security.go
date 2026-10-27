@@ -6,7 +6,9 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -26,6 +28,28 @@ type Account struct {
 }
 
 func (s Spec) ClientFormat(format string) error {
+	if s.Transport == "xhttp" || s.Transport == "kcp" {
+		if format != "xray" {
+			return errors.New("XHTTP/mKCP export requires verified Xray JSON")
+		}
+	}
+	if s.Transport == "httpupgrade" && format != "sing-box" && format != "xray" {
+		return errors.New("HTTPUpgrade has no verified Mihomo adapter; use sing-box/Xray")
+	}
+	if s.Transport == "http" && format == "xray" {
+		return errors.New("sing-box HTTP transport is not Xray XHTTP")
+	}
+	if s.Kind == "naive" {
+		if format != "naive" {
+			return errors.New("bundled sing-box has no Naive outbound; choose dedicated NaiveProxy JSON")
+		}
+		if s.Address != s.ServerName && net.ParseIP(s.Address) == nil {
+			return errors.New("NaiveProxy export requires the connection address to equal its certificate domain")
+		}
+	} else if format == "naive" {
+		return errors.New("NaiveProxy only supports Naive endpoints")
+	}
+
 	if s.Kind == "snell" && s.snellVersion() == 6 && format != "sing-box" {
 		return errors.New("Snell v6 is verified only with sing-box 1.14+ JSON; use Snell v4-compatible mode for Mihomo")
 	}
@@ -58,11 +82,11 @@ func (s Spec) validateSecurity(client bool) error {
 	if e := s.validateOptions(); e != nil {
 		return e
 	}
-	if s.Flow != "" && (s.Kind != "vless" || s.Flow != "xtls-rprx-vision" || s.Transport == "ws" || s.Transport == "grpc" || (!s.UsesTLS() && !s.IsReality())) {
+	if s.Flow != "" && (s.Kind != "vless" || s.Flow != "xtls-rprx-vision" || s.Transport != "" && s.Transport != "tcp" || (!s.UsesTLS() && !s.IsReality())) {
 		return errors.New("Vision requires VLESS over TCP with TLS or REALITY")
 	}
 	if s.IsReality() {
-		if s.Kind != "vless" || (s.Transport != "" && s.Transport != "tcp") || s.Reality == nil || !Address(s.ServerName) || s.Certificate != "" || s.PrivateKey != "" {
+		if !(s.Kind == "vless" || s.Engine == "xray" && (s.Kind == "trojan" || s.Kind == "vmess")) || !s.validLayer() || s.Reality == nil || !Address(s.ServerName) || s.Certificate != "" || s.PrivateKey != "" {
 			return errors.New("REALITY template requires VLESS TCP, SNI and keypair; no CA certificate")
 		}
 		r := s.Reality
@@ -117,7 +141,7 @@ func (s Spec) validateSecurity(client bool) error {
 	if s.Kind == "tuic" && len(s.ALPN) > 0 && (len(s.ALPN) != 1 || s.ALPN[0] != "h3") {
 		return errors.New("TUIC template uses h3 ALPN")
 	}
-	if s.WSHost != "" && (s.Transport != "ws" || !Address(s.WSHost)) {
+	if s.WSHost != "" && (!slices.Contains([]string{"ws", "httpupgrade", "http", "xhttp"}, s.Transport) || !Address(s.WSHost)) {
 		return errors.New("WebSocket Host requires WebSocket and a valid host")
 	}
 	if s.Transport == "grpc" {
@@ -164,6 +188,17 @@ func (s Spec) congestion() string {
 }
 func (s Spec) validateCredential() error {
 	if s.Kind == "vless" || s.Kind == "vmess" {
+		return nil
+	}
+	if s.Kind == "shadowsocks" && strings.HasPrefix(s.SSMethod(), "2022-") {
+		n := 32
+		if s.SSMethod() == "2022-blake3-aes-128-gcm" {
+			n = 16
+		}
+		raw, e := base64.StdEncoding.DecodeString(s.Password)
+		if e != nil || len(raw) != n {
+			return fmt.Errorf("SS 2022 cipher requires a %d-byte base64 key", n)
+		}
 		return nil
 	}
 	if s.Kind == "shadowsocks" && s.SSMethod() != Method {

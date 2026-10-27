@@ -15,6 +15,7 @@ type ProtocolOptions struct {
 	SnellHost    string `json:"snell_host,omitempty"`
 	SnellMode    string `json:"snell_mode,omitempty"`
 	HY2Obfs      string `json:"hy2_obfs_password,omitempty"`
+	HysteriaObfs string `json:"hysteria_obfs_password,omitempty"`
 	UpMbps       int    `json:"up_mbps,omitempty"`
 	DownMbps     int    `json:"down_mbps,omitempty"`
 }
@@ -47,10 +48,16 @@ func OptionsCapable(version string) bool {
 	return major > 0 || minor >= 9
 }
 func (s Spec) validateOptions() error {
+	if s.HysteriaObfs != "" && (s.Kind != "hysteria" || len(s.HysteriaObfs) < 8 || len(s.HysteriaObfs) > 256 || strings.ContainsAny(s.HysteriaObfs, "\r\n\x00")) {
+		return errors.New("Hysteria v1 obfuscation requires 8-256 bytes and its own protocol")
+	}
+	if s.HY2Obfs != "" && s.Kind != "hysteria2" {
+		return errors.New("Salamander requires Hysteria2; Hysteria v1 uses hysteria_obfs_password")
+	}
 	if s.Cipher != "" && s.Kind != "shadowsocks" {
 		return errors.New("cipher selection requires Shadowsocks")
 	}
-	if s.Kind == "shadowsocks" && s.SSMethod() != Method && s.SSMethod() != "aes-128-gcm" && s.SSMethod() != "aes-256-gcm" && s.SSMethod() != "chacha20-ietf-poly1305" {
+	if s.Kind == "shadowsocks" && s.SSMethod() != Method && s.SSMethod() != "2022-blake3-aes-128-gcm" && s.SSMethod() != "2022-blake3-chacha20-poly1305" && s.SSMethod() != "aes-128-gcm" && s.SSMethod() != "aes-256-gcm" && s.SSMethod() != "chacha20-ietf-poly1305" {
 		return errors.New("unsupported Shadowsocks cipher")
 	}
 	if s.Kind != "snell" && (s.SnellVersion != 0 || s.SnellObfs != "" || s.SnellHost != "" || s.SnellMode != "") {
@@ -77,7 +84,7 @@ func (s Spec) validateOptions() error {
 			return errors.New("traffic shaping mode requires Snell v6")
 		}
 	}
-	if s.Kind != "hysteria2" && (s.HY2Obfs != "" || s.UpMbps != 0 || s.DownMbps != 0) {
+	if s.Kind != "hysteria2" && s.Kind != "hysteria" && (s.HY2Obfs != "" || s.UpMbps != 0 || s.DownMbps != 0) {
 		return errors.New("bandwidth and salamander options require Hysteria2")
 	}
 	if s.UpMbps < 0 || s.DownMbps < 0 || s.UpMbps > 100000 || s.DownMbps > 100000 {

@@ -10,6 +10,7 @@ func applySecurity(s *live.Spec, b liveInput) error {
 	s.WSHost = b.WSHost
 	s.ServiceName = b.ServiceName
 	s.ManagedUsers = b.ManagedUsers
+	s.Username = b.Username
 	if s.IsReality() {
 		if b.CertificateID != "" || b.Certificate != "" || b.PrivateKey != "" {
 			return bad("REALITY uses its X25519 keypair, not a CA certificate")

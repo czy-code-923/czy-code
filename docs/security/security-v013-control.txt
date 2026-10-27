@@ -1,0 +1,3 @@
+Go 1.27.3 / govulncheck v1.1.4 ./...: No vulnerabilities found.
+Frontend production dependencies: npm audit --omit=dev --registry=https://registry.npmjs.org: found 0 vulnerabilities.
+This is dependency reachability evidence, not a guarantee that all application logic, OS packages or third-party engines are vulnerability-free.

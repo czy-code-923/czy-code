@@ -23,8 +23,8 @@ func (s *Server) liveBatch(w http.ResponseWriter, r *http.Request) error {
 	if e := decodeBounded(w, r, &b, 512<<10); e != nil {
 		return e
 	}
-	if len(b.Items) < 1 || len(b.Items) > 8 {
-		return bad("select 1-8 proxy protocols")
+	if len(b.Items) < 1 || len(b.Items) > 16 {
+		return bad("select 1-16 proxy protocols")
 	}
 	if b.StartPort == 0 {
 		b.StartPort = 20000

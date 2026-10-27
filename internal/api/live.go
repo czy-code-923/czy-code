@@ -205,6 +205,7 @@ type liveInput struct {
 	EndpointAddresses *[]string `json:"endpoint_addresses"`
 	EgressFamilies    *[]string `json:"egress_families"`
 	live.ProtocolOptions
+	ClearHysteriaObfs bool          `json:"clear_hysteria_obfs"`
 	ClearHY2Obfs      bool          `json:"clear_hy2_obfs"`
 	Reality           *live.Reality `json:"reality"`
 	Flow              string        `json:"flow"`
@@ -214,6 +215,7 @@ type liveInput struct {
 	ServiceName       string        `json:"service_name"`
 	ManagedUsers      bool          `json:"managed_users"`
 	Password          string        `json:"password"`
+	Username          string        `json:"username"`
 	UUID              string        `json:"uuid"`
 	Engine            string        `json:"engine"`
 	Name              string        `json:"name"`
@@ -359,6 +361,9 @@ func (s *Server) createLiveTx(r *http.Request, tx pgx.Tx, b liveInput, created *
 		spec.Outbound = &next
 	}
 
+	if b.Kind == "shadowsocks" && b.Password == "" {
+		spec.Password = live.CipherSecret(spec.SSMethod())
+	}
 	if b.Password != "" {
 		spec.Password = b.Password
 	}
@@ -399,6 +404,9 @@ func (s *Server) createLiveTx(r *http.Request, tx pgx.Tx, b liveInput, created *
 		var version string
 		if e = tx.QueryRow(ctx, "SELECT agent_version FROM hosts WHERE tenant_id=$1 AND id=$2", tenant, host).Scan(&version); e != nil {
 			return e
+		}
+		if spec.RequiresV13() && !live.V13Capable(version) {
+			return problem{409, "upgrade host to Agent 0.13.0 for this protocol/transport"}
 		}
 		if spec.RequiresOptions() && !live.OptionsCapable(version) {
 			return problem{409, "upgrade host to Agent 0.9.0 for protocol options"}
@@ -503,6 +511,9 @@ func (s *Server) liveToggle(w http.ResponseWriter, r *http.Request) error {
 			spec, err := s.loadSpec(r, r.PathValue("id"))
 			if err != nil {
 				return err
+			}
+			if spec.RequiresV13() && !live.V13Capable(version) {
+				return problem{409, "upgrade host to Agent 0.13.0 for this protocol/transport"}
 			}
 			if spec.RequiresOptions() && !live.OptionsCapable(version) {
 				return problem{409, "upgrade host to Agent 0.9.0 for protocol options"}
@@ -667,6 +678,9 @@ func (s *Server) liveSync(w http.ResponseWriter, r *http.Request, host string) e
 			rows.Close()
 			return e
 		}
+		if v.Spec.RequiresV13() && !live.V13Capable(agentVersion) {
+			v.Enabled = false
+		}
 		if v.Spec.RequiresOptions() && !live.OptionsCapable(agentVersion) {
 			v.Enabled = false
 		}
@@ -702,6 +716,9 @@ func (s *Server) liveSync(w http.ResponseWriter, r *http.Request, host string) e
 			var next live.Spec
 			if e = json.Unmarshal(raw, &next); e != nil {
 				return e
+			}
+			if next.RequiresV13() && !live.V13Capable(agentVersion) {
+				work[i].Enabled = false
 			}
 			next.EndpointAddresses = nil
 			next.EgressFamilies = nil

@@ -13,6 +13,9 @@ class EngineInstallerTests(unittest.TestCase):
         self.save()
         original=Path(__file__).with_name('fetch-engines.py');spec=importlib.util.spec_from_file_location('engine_fetch',original);self.m=importlib.util.module_from_spec(spec);spec.loader.exec_module(self.m)
         self.m.__file__=str(self.root/'scripts/fetch-engines.py')
+        # platform.machine() may invoke Windows ver through subprocess.run;
+        # keep OS discovery separate from the compiler prohibition below.
+        p=patch.object(self.m.platform,'machine',return_value='amd64');p.start();self.addCleanup(p.stop)
         self.argv=patch.object(sys,'argv',['fetch-engines.py','--os','linux','--arch','amd64']);self.argv.start();self.addCleanup(self.argv.stop)
         self.archives={}
         for repo,names,archive_name in [('frp',['frps','frpc'],'frp_0.71.1_linux_amd64.zip'),('Xray-core',['xray'],'Xray-linux-64.zip')]:
