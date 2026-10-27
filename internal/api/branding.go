@@ -11,6 +11,6 @@ func (s *Server) branding(w http.ResponseWriter, r *http.Request) error {
 	if e != nil && e != pgx.ErrNoRows {
 		return e
 	}
-	send(w, 200, map[string]string{"title": title, "subtitle": "VPS 多机管理", "version": "0.12.0"})
+	send(w, 200, map[string]string{"title": title, "subtitle": "VPS 多机管理", "version": "0.12.1"})
 	return nil
 }

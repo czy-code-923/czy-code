@@ -157,6 +157,7 @@ func TestPoliciesNetworksAndRetirement(t *testing.T) {
 	// A host uninstall is pending until authenticated remote acknowledgement; data is retained until then.
 	retire := object(call("POST", "hosts/"+hid+"/retirement", map[string]any{}, 202, nil))
 	receipt := map[string]any{"retire_id": retire["retire_id"]}
+	call("POST", "hosts/"+hid+"/rotate-agent-token", map[string]any{}, 404, nil)
 	request("?client=mihomo", 503)
 	call("POST", "agent/retirement/ack", map[string]any{"retire_id": ID()}, 409, h)
 	call("POST", "agent/retirement/begin", receipt, 200, h)

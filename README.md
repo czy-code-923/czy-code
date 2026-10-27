@@ -1,4 +1,4 @@
-# 星枢 · VPS 多机管理 0.12.0
+# 星枢 · VPS 多机管理 0.12.1
 
 Vue 3 / TypeScript / Go / PostgreSQL 的个人 VPS 控制面。主流程：**连接主机 → 配置内核与协议入站 → 分配用户 / 用户组 → 客户端策略与规则 → 分享客户端订阅**。首页显示真实流量、额度、主机状态及连接元数据。
 
@@ -11,18 +11,22 @@ Vue 3 / TypeScript / Go / PostgreSQL 的个人 VPS 控制面。主流程：**连
 Linux（Debian / Ubuntu / Rocky / Alma / Fedora / openSUSE 等 systemd 系统）：
 
 ```bash
-curl -fL https://github.com/czy-code-923/czy-code/releases/download/v0.12.0-distribution/install-starhub.sh -o /tmp/install-starhub.sh && sudo sh /tmp/install-starhub.sh --public
+curl -fL https://github.com/czy-code-923/czy-code/releases/download/v0.12.1-distribution/install-starhub.sh -o /tmp/install-starhub.sh && sudo sh /tmp/install-starhub.sh --public
 ```
 
 Windows PowerShell：
 
 ```powershell
-Invoke-WebRequest https://github.com/czy-code-923/czy-code/releases/download/v0.12.0-distribution/install-starhub.ps1 -OutFile "$env:TEMP/install-starhub.ps1"; & "$env:TEMP/install-starhub.ps1" -Public
+Invoke-WebRequest https://github.com/czy-code-923/czy-code/releases/download/v0.12.1-distribution/install-starhub.ps1 -OutFile "$env:TEMP/install-starhub.ps1"; & "$env:TEMP/install-starhub.ps1" -Public
 ```
 
 `--public` / `-Public` 明确启用 IP:18080 的认证网页入口；HTTP 不加密，建议设置 HTTPS 网关。省略此参数则只监听回环。内部 8080 API、8091 分享处理器和 PostgreSQL 均不暴露公网。管理员令牌保存在本机私有 control.env，不打印、不上传。Windows 安装当前用户登录任务，退出登录后不保证运行；Alpine/OpenRC 用包内 `python3 scripts/quickstart.py --foreground` 配置自己的进程监督器。依赖安装与 HTTPS 网关、离线、源码、Compose 方式见 [安装文档](docs/INSTALL.md)。
 
-完整源码请下载 Release 附件 **harbor-0.12.0-source.zip**；GitHub 自动生成的 Source code 归档对应标签所指提交，可能早于分发附件。
+完整源码请下载 Release 附件 **harbor-0.12.1-source.zip**；GitHub 自动生成的 Source code 归档对应标签所指提交，可能早于分发附件。
+
+## 0.12.1 修正
+
+卸载进行中拒绝轮换 Agent 凭据，保证清理回执可幂等重试；增加相应集成测试。Agent 仍为 0.12.0，已有接入无需重复安装。
 
 ## 0.12 新增
 

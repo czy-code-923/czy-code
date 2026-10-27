@@ -183,11 +183,11 @@ func (s *Server) authenticateAPI(r *http.Request) (apiIdentity, error) {
 
 func (s *Server) apiSession(w http.ResponseWriter, r *http.Request) error {
 	identity, _ := r.Context().Value(identityContext{}).(apiIdentity)
-	send(w, 200, map[string]any{"root": identity.Root, "key_id": identity.ID, "scopes": identity.Scopes, "expires_at": identity.Expires, "version": "0.12.0"})
+	send(w, 200, map[string]any{"root": identity.Root, "key_id": identity.ID, "scopes": identity.Scopes, "expires_at": identity.Expires, "version": "0.12.1"})
 	return nil
 }
 func (s *Server) apiCapabilities(w http.ResponseWriter, r *http.Request) error {
-	send(w, 200, map[string]any{"version": "0.12.0", "scopes": apiScopes, "openapi": "/api/v1/openapi", "features": []string{"protocol_batch", "rolling_monthly", "client_json_templates", "subscription_usage", "scoped_api_keys", "client_policies", "dual_stack_endpoints", "host_retirement", "independent_share_domain"}})
+	send(w, 200, map[string]any{"version": "0.12.1", "scopes": apiScopes, "openapi": "/api/v1/openapi", "features": []string{"protocol_batch", "rolling_monthly", "client_json_templates", "subscription_usage", "scoped_api_keys", "client_policies", "dual_stack_endpoints", "host_retirement", "independent_share_domain"}})
 	return nil
 }
 func (s *Server) keys(w http.ResponseWriter, r *http.Request) error {

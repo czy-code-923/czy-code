@@ -10,7 +10,7 @@ func (s *Server) rotate(w http.ResponseWriter, r *http.Request) error {
 	}
 	defer tx.Rollback(ctx)
 	token := ID() + ID()
-	tag, e := tx.Exec(ctx, "UPDATE hosts SET agent_hash=$3 WHERE tenant_id=$1 AND id=$2", tenant, r.PathValue("id"), Hash(token))
+	tag, e := tx.Exec(ctx, "UPDATE hosts SET agent_hash=$3 WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL AND retire_state=''", tenant, r.PathValue("id"), Hash(token))
 	if e != nil {
 		return e
 	}

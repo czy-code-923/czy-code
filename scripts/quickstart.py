@@ -57,7 +57,7 @@ def main():
     distribution=json.loads((source/'scripts/quickstart-distribution.json').read_text(encoding='utf-8'))
     with urllib.request.urlopen(distribution['agent_url'],timeout=180) as response:archive=response.read(200<<20)
     if len(archive)!=distribution['agent_size'] or hashlib.sha256(archive).hexdigest()!=distribution['agent_sha256']:raise ValueError('Agent package verification failed; no services started')
-    agent_dir=root/'agent-releases';agent_dir.mkdir(mode=0o755)
+    agent_dir=root/'agent-releases';agent_dir.mkdir(mode=0o755);agent_dir.chmod(0o755)
     with zipfile.ZipFile(io.BytesIO(archive)) as z:
         if set(z.namelist())!={'manifest.json','linux-amd64.zip','linux-arm64.zip'}:raise ValueError('Unexpected Agent release archive')
         for name in z.namelist():(agent_dir/name).write_bytes(z.read(name));(agent_dir/name).chmod(0o644)
