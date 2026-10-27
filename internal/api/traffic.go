@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/netip"
+	"strconv"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -176,8 +177,16 @@ func (s *Server) accessRecords(w http.ResponseWriter, r *http.Request) error {
 	if user != "" && !manifest.ValidID(user) || host != "" && !manifest.ValidID(host) {
 		return bad("invalid record filter")
 	}
+	limit := 200
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		v, e := strconv.Atoi(raw)
+		if e != nil || v < 1 || v > 200 {
+			return bad("record limit must be 1-200")
+		}
+		limit = v
+	}
 	var data json.RawMessage
-	e := s.DB.QueryRow(r.Context(), `SELECT COALESCE(jsonb_agg(x),'[]') FROM (SELECT a.event_id,a.host_id,a.user_id,a.service_id,host(a.source_ip) source_ip,a.destination,a.destination_port,a.network,a.observed_at,u.name user_name,l.name service_name,h.name host_name FROM access_observations a JOIN hosts h ON (h.tenant_id,h.id)=(a.tenant_id,a.host_id) LEFT JOIN proxy_users u ON (u.tenant_id,u.id)=(a.tenant_id,a.user_id) LEFT JOIN live_services l ON (l.tenant_id,l.id)=(a.tenant_id,a.service_id) WHERE a.tenant_id=$1 AND ($2='' OR a.user_id=$2) AND ($3='' OR a.host_id=$3) AND a.observed_at>now()-interval '7 days' ORDER BY a.observed_at DESC LIMIT 200) x`, tenant, user, host).Scan(&data)
+	e := s.DB.QueryRow(r.Context(), `SELECT COALESCE(jsonb_agg(x),'[]') FROM (SELECT a.event_id,a.host_id,a.user_id,a.service_id,host(a.source_ip) source_ip,a.destination,a.destination_port,a.network,a.observed_at,u.name user_name,l.name service_name,h.name host_name FROM access_observations a JOIN hosts h ON (h.tenant_id,h.id)=(a.tenant_id,a.host_id) LEFT JOIN proxy_users u ON (u.tenant_id,u.id)=(a.tenant_id,a.user_id) LEFT JOIN live_services l ON (l.tenant_id,l.id)=(a.tenant_id,a.service_id) WHERE a.tenant_id=$1 AND ($2='' OR a.user_id=$2) AND ($3='' OR a.host_id=$3) AND a.observed_at>now()-interval '7 days' ORDER BY a.observed_at DESC LIMIT $4) x`, tenant, user, host, limit).Scan(&data)
 	if e != nil {
 		return e
 	}
@@ -186,22 +195,36 @@ func (s *Server) accessRecords(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) error {
+	user := r.URL.Query().Get("user_id")
+	if user != "" && !manifest.ValidID(user) {
+		return bad("invalid user filter")
+	}
 	var data json.RawMessage
 	e := s.DB.QueryRow(r.Context(), `SELECT jsonb_build_object(
+ 'server_time',now(),
+ 'remaining_bytes',(SELECT COALESCE(sum(GREATEST(quota_bytes-used_bytes,0)),0) FROM proxy_users WHERE tenant_id=$1 AND quota_bytes>0),
+ 'finite_used_bytes',(SELECT COALESCE(sum(used_bytes),0) FROM proxy_users WHERE tenant_id=$1 AND quota_bytes>0),
+ 'unlimited_users',(SELECT count(*) FROM proxy_users WHERE tenant_id=$1 AND quota_bytes=0),
+ 'active_users',(SELECT count(*) FROM proxy_users WHERE tenant_id=$1 AND enabled AND expires_at>now() AND (quota_bytes=0 OR used_bytes<quota_bytes)),
+ 'enabled_inbounds',(SELECT count(*) FROM live_services WHERE tenant_id=$1 AND enabled),
+ 'today_uplink',(SELECT COALESCE(sum(uplink),0) FROM traffic_daily WHERE tenant_id=$1 AND subject_kind='service' AND day=(now() AT TIME ZONE 'Asia/Shanghai')::date),
+ 'today_downlink',(SELECT COALESCE(sum(downlink),0) FROM traffic_daily WHERE tenant_id=$1 AND subject_kind='service' AND day=(now() AT TIME ZONE 'Asia/Shanghai')::date),
+ 'user_today_bytes',(SELECT COALESCE(sum(uplink+downlink),0) FROM traffic_daily WHERE tenant_id=$1 AND subject_kind='user' AND ($2='' OR subject_id=$2) AND day=(now() AT TIME ZONE 'Asia/Shanghai')::date),
+ 'user_daily',(SELECT COALESCE(jsonb_agg(x),'[]') FROM (SELECT to_char(d.day,'YYYY-MM-DD') AS day,COALESCE(sum(t.uplink),0) uplink,COALESCE(sum(t.downlink),0) downlink FROM generate_series((now() AT TIME ZONE 'Asia/Shanghai')::date-13,(now() AT TIME ZONE 'Asia/Shanghai')::date,interval '1 day') d(day) LEFT JOIN traffic_daily t ON t.tenant_id=$1 AND t.subject_kind='user' AND ($2='' OR t.subject_id=$2) AND t.day=d.day::date GROUP BY d.day ORDER BY d.day) x),
  'hosts',(SELECT count(*) FROM hosts WHERE tenant_id=$1 AND deleted_at IS NULL),
  'online_hosts',(SELECT count(*) FROM hosts WHERE tenant_id=$1 AND deleted_at IS NULL AND last_seen>now()-interval '90 seconds'),
  'users',(SELECT count(*) FROM proxy_users WHERE tenant_id=$1),
- 'online_users',(SELECT count(*) FROM proxy_users WHERE tenant_id=$1 AND last_active_at>now()-interval '60 seconds'),
+ 'online_users',(SELECT count(*) FROM proxy_users WHERE tenant_id=$1 AND enabled AND expires_at>now() AND (quota_bytes=0 OR used_bytes<quota_bytes) AND last_active_at>now()-interval '60 seconds'),
  'running_inbounds',(SELECT count(*) FROM live_services WHERE tenant_id=$1 AND enabled AND version=reported_version AND state='running' AND reported_at>now()-interval '45 seconds'),
  'limited_users',(SELECT count(*) FROM proxy_users WHERE tenant_id=$1 AND quota_bytes>0 AND used_bytes>=quota_bytes),
  'allocated_bytes',(SELECT COALESCE(sum(quota_bytes),0) FROM proxy_users WHERE tenant_id=$1),
  'used_bytes',(SELECT COALESCE(sum(used_bytes),0) FROM proxy_users WHERE tenant_id=$1),
  'today_bytes',(SELECT COALESCE(sum(uplink+downlink),0) FROM traffic_daily WHERE tenant_id=$1 AND subject_kind='service' AND day=(now() AT TIME ZONE 'Asia/Shanghai')::date),
  'inbound_usage',(SELECT COALESCE(jsonb_agg(x),'[]') FROM (SELECT l.id,l.name,l.kind,l.engine,h.name host_name,COALESCE(sum(c.uplink),0) uplink,COALESCE(sum(c.downlink),0) downlink FROM live_services l JOIN hosts h ON (h.tenant_id,h.id)=(l.tenant_id,l.host_id) LEFT JOIN traffic_cursors c ON c.tenant_id=l.tenant_id AND c.host_id=l.host_id AND c.subject_kind='service' AND c.subject_id=l.id WHERE l.tenant_id=$1 AND l.kind NOT IN ('frps','frpc') GROUP BY l.id,l.name,l.kind,l.engine,h.name ORDER BY COALESCE(sum(c.uplink+c.downlink),0) DESC LIMIT 64) x),
- 'daily',(SELECT COALESCE(jsonb_agg(x),'[]') FROM (SELECT day,sum(uplink) uplink,sum(downlink) downlink FROM traffic_daily WHERE tenant_id=$1 AND subject_kind='service' AND day>=(now() AT TIME ZONE 'Asia/Shanghai')::date-13 GROUP BY day ORDER BY day) x),
+ 'daily',(SELECT COALESCE(jsonb_agg(x),'[]') FROM (SELECT to_char(d.day,'YYYY-MM-DD') AS day,COALESCE(sum(t.uplink),0) uplink,COALESCE(sum(t.downlink),0) downlink FROM generate_series((now() AT TIME ZONE 'Asia/Shanghai')::date-13,(now() AT TIME ZONE 'Asia/Shanghai')::date,interval '1 day') d(day) LEFT JOIN traffic_daily t ON t.tenant_id=$1 AND t.subject_kind='service' AND t.day=d.day::date GROUP BY d.day ORDER BY d.day) x),
  'top_users',(SELECT COALESCE(jsonb_agg(x),'[]') FROM (SELECT id,name,quota_bytes,used_bytes,lifetime_bytes,reset_strategy,last_active_at FROM proxy_users WHERE tenant_id=$1 ORDER BY used_bytes DESC LIMIT 10) x),
  'telemetry',(SELECT COALESCE(jsonb_agg(x),'[]') FROM (SELECT t.*,h.name host_name,(t.state='collecting' AND t.reported_at>now()-interval '45 seconds') fresh FROM telemetry_status t JOIN hosts h ON (t.tenant_id,t.host_id)=(h.tenant_id,h.id) WHERE t.tenant_id=$1 AND h.deleted_at IS NULL) x)
- )`, tenant).Scan(&data)
+ )`, tenant, user).Scan(&data)
 	if e != nil {
 		return e
 	}

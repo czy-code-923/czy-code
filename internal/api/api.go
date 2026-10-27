@@ -131,6 +131,8 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("PUT /api/v1/notifications/telegram", s.admin(s.notifications))
 	m.HandleFunc("DELETE /api/v1/notifications/telegram", s.admin(s.notifications))
 	m.HandleFunc("POST /api/v1/notifications/telegram/test", s.admin(s.notificationTest))
+ m.HandleFunc("POST /api/v1/notifications/telegram/diagnose", s.admin(s.notificationDiagnose))
+ m.HandleFunc("POST /api/v1/notifications/telegram/commands", s.admin(s.notificationCommands))
 	m.HandleFunc("GET /api/v1/notifications/log", s.admin(s.notificationLog))
 	m.HandleFunc("GET /api/v1/hosts/{id}/retirement", s.admin(s.retirement))
 	m.HandleFunc("POST /api/v1/hosts/{id}/retirement", s.admin(s.retirement))

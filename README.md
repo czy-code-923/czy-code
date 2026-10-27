@@ -2,7 +2,10 @@
 
 0.14 新增四分区客户端工作区：基础、DNS、策略组与规则。默认模板基于提供的 Mihomo Max（21 组 / 186 规则），无服务器凭据。支持配置识别、节点映射、单项编辑、客户端转换预览和 Shadowrocket 配套节点/分流链接。具体转换差异见 [0.14 使用说明](docs/WORKFLOW-v014.md)。
 
-# 星枢 · VPS 多机管理 0.14.1
+# 星枢 · VPS 多机管理 0.15.0
+
+0.15 修复 Telegram 命令接收与 VPS 时钟偏差，发送和接收状态分开显示。机器人查询须启用长轮询并授权用户 ID；私聊可在通知设置中填入当前绑定用户后保存。策略页统一管理客户端配置，等宽列表独立滚动；订阅页只管理分享，历史输出覆盖在策略页高级区域保留。首页显示有限余额、完整日期趋势与用户范围统计，访问记录按需加载。详见 [本版行为与边界](docs/WORKFLOW-v015.md)。
+
 
 Vue 3 / TypeScript / Go / PostgreSQL 的个人 VPS 控制面。主流程：**连接主机 → 配置内核与协议入站 → 分配用户 / 用户组 → 客户端策略与规则 → 分享客户端订阅**。首页显示真实流量、额度、主机状态及连接元数据。
 
@@ -15,18 +18,18 @@ Vue 3 / TypeScript / Go / PostgreSQL 的个人 VPS 控制面。主流程：**连
 Linux（Debian / Ubuntu / Rocky / Alma / Fedora / openSUSE 等 systemd 系统）：
 
 ```bash
-curl -fL https://github.com/czy-code-923/czy-code/releases/download/v0.14.1-distribution/install-starhub.sh -o /tmp/install-starhub.sh && sudo sh /tmp/install-starhub.sh --public
+curl -fL https://github.com/czy-code-923/czy-code/releases/download/v0.15.0-distribution/install-starhub.sh -o /tmp/install-starhub.sh && sudo sh /tmp/install-starhub.sh --public
 ```
 
 Windows PowerShell：
 
 ```powershell
-Invoke-WebRequest https://github.com/czy-code-923/czy-code/releases/download/v0.14.1-distribution/install-starhub.ps1 -OutFile "$env:TEMP/install-starhub.ps1"; & "$env:TEMP/install-starhub.ps1" -Public
+Invoke-WebRequest https://github.com/czy-code-923/czy-code/releases/download/v0.15.0-distribution/install-starhub.ps1 -OutFile "$env:TEMP/install-starhub.ps1"; & "$env:TEMP/install-starhub.ps1" -Public
 ```
 
 `--public` / `-Public` 明确启用 IP:18080 的认证网页入口；HTTP 不加密，建议设置 HTTPS 网关。省略此参数则只监听回环。内部 8080 API、8091 分享处理器和 PostgreSQL 均不暴露公网。管理员令牌保存在本机私有 control.env，不打印、不上传。Windows 安装当前用户登录任务，退出登录后不保证运行；Alpine/OpenRC 用包内 `python3 scripts/quickstart.py --foreground` 配置自己的进程监督器。依赖安装与 HTTPS 网关、离线、源码、Compose 方式见 [安装文档](docs/INSTALL.md)。
 
-完整源码请下载 Release 附件 **harbor-0.14.1-source.zip**；GitHub 自动生成的 Source code 归档对应标签所指提交，可能早于分发附件。
+完整源码请下载 Release 附件 **harbor-0.15.0-source.zip**；GitHub 自动生成的 Source code 归档对应标签所指提交，可能早于分发附件。
 
 ## 0.13 新增与修正
 
@@ -35,7 +38,7 @@ Invoke-WebRequest https://github.com/czy-code-923/czy-code/releases/download/v0.
 - 防火墙版本编辑、回收站删除/恢复、本机受控移除和取消，保留独立回滚。
 - 原生配置识别草稿、客户端路由引用检查、可视化规则自动同步、嵌套组展开去重。
 - 空授权账号不再可能变为免认证；新增端口失败时保留完全未变的有效入站。补齐扩展协议的用户流量与访问日志解析。
-- 控制面与 Agent 均为 **0.14.1**；新功能需升级 Agent。
+- 控制面与 Agent 均为 **0.15.0**；新功能需升级 Agent。
 - [0.13 功能、配置、通知与兼容边界](docs/WORKFLOW-v013.md)。
 
 ## 0.12 新增

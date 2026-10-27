@@ -122,7 +122,7 @@ func (s *Server) notifications(w http.ResponseWriter, r *http.Request) error {
 		var lastPoll, lastSend *time.Time
 		var lastError string
 		_ = s.DB.QueryRow(r.Context(), `SELECT last_poll_at,last_send_at,last_error FROM notification_settings WHERE tenant_id=$1`, tenant).Scan(&lastPoll, &lastSend, &lastError)
-		send(w, 200, map[string]any{"config": c, "last_poll_at": lastPoll, "last_send_at": lastSend, "last_error": lastError, "commands": []string{"status", "hosts", "traffic", "users", "help"}})
+		send(w, 200, map[string]any{"config": c, "last_poll_at": lastPoll, "last_send_at": lastSend, "last_error": lastError, "commands": []string{"status", "hosts", "traffic", "users", "help"}, "health": s.notificationHealth(r.Context(), c)})
 		return nil
 	}
 	if r.Method == "DELETE" {
@@ -187,7 +187,7 @@ func (s *Server) notifications(w http.ResponseWriter, r *http.Request) error {
 	c.TokenConfigured = true
 	c.Version = oldVersion + 1
 	raw, _ := json.Marshal(c)
-	_, e = tx.Exec(r.Context(), `INSERT INTO notification_settings(tenant_id,settings,sealed,next_report_at) VALUES($1,$2,$3,now()+($5::int*interval '1 minute')) ON CONFLICT(tenant_id) DO UPDATE SET settings=excluded.settings,sealed=excluded.sealed,version=notification_settings.version+1,offset_id=CASE WHEN $4 THEN 0 ELSE notification_settings.offset_id END,next_report_at=now()+($5::int*interval '1 minute'),next_alert_at=now(),last_error='',updated_at=now()`, tenant, raw, sealed, rotate, c.ReportMinutes)
+	_, e = tx.Exec(r.Context(), `INSERT INTO notification_settings(tenant_id,settings,sealed,next_report_at) VALUES($1,$2,$3,now()+($5::int*interval '1 minute')) ON CONFLICT(tenant_id) DO UPDATE SET settings=excluded.settings,sealed=excluded.sealed,version=notification_settings.version+1,offset_id=CASE WHEN $4 THEN 0 ELSE notification_settings.offset_id END,next_report_at=now()+($5::int*interval '1 minute'),next_alert_at=now(),last_error='',last_poll_error='',last_send_error='',updated_at=now()`, tenant, raw, sealed, rotate, c.ReportMinutes)
 	if e != nil {
 		return e
 	}
@@ -221,12 +221,29 @@ func (s *Server) telegram(ctx context.Context, token, method string, body any, r
 		return errors.New("Telegram response invalid")
 	}
 	var envelope struct {
-		OK        bool            `json:"ok"`
-		Result    json.RawMessage `json:"result"`
-		ErrorCode int             `json:"error_code"`
+		OK         bool            `json:"ok"`
+		Result     json.RawMessage `json:"result"`
+		ErrorCode  int             `json:"error_code"`
+		Parameters struct {
+			RetryAfter int `json:"retry_after"`
+		} `json:"parameters"`
 	}
 	if json.Unmarshal(b, &envelope) != nil || !envelope.OK || res.StatusCode != 200 {
-		return fmt.Errorf("Telegram API rejected request (HTTP %d, code %d); check token/chat, bot start and webhook conflicts", res.StatusCode, envelope.ErrorCode)
+		code := envelope.ErrorCode
+		if code == 0 {
+			code = res.StatusCode
+		}
+		return telegramAPIError{Code: code, RetryAfter: envelope.Parameters.RetryAfter}
+	}
+	if batch, ok := result.(*telegramUpdateBatch); ok {
+		if e := json.Unmarshal(envelope.Result, &batch.Updates); e != nil {
+			return errors.New("Telegram result invalid")
+		}
+		batch.Now = time.Now()
+		if clock, e := http.ParseTime(res.Header.Get("Date")); e == nil {
+			batch.Now = clock
+		}
+		return nil
 	}
 	if result != nil && json.Unmarshal(envelope.Result, result) != nil {
 		return errors.New("Telegram result invalid")
@@ -246,10 +263,10 @@ func (s *Server) notificationSummary(ctx context.Context, command string) (strin
 		e := s.DB.QueryRow(ctx, `SELECT (SELECT count(*) FROM hosts WHERE tenant_id=$1 AND deleted_at IS NULL),(SELECT count(*) FROM hosts WHERE tenant_id=$1 AND deleted_at IS NULL AND last_seen>now()-interval '90 seconds'),(SELECT count(*) FROM live_services WHERE tenant_id=$1),(SELECT count(*) FROM live_services WHERE tenant_id=$1 AND enabled AND state='running' AND reported_version=version AND reported_at>now()-interval '45 seconds')`, tenant).Scan(&hosts, &online, &services, &running)
 		return fmt.Sprintf("星枢 · 状态\n在线主机 %d/%d\n正常运行入站 %d/%d", online, hosts, running, services), e
 	case "traffic":
-		var used, quota int64
+		var used, quota, remaining, up, down int64
 		var users int
-		e := s.DB.QueryRow(ctx, `SELECT COALESCE(sum(used_bytes),0),COALESCE(sum(quota_bytes),0),count(*) FROM proxy_users WHERE tenant_id=$1`, tenant).Scan(&used, &quota, &users)
-		return fmt.Sprintf("星枢 · 用户流量\n用户 %d\n本期合计 %.2f GiB\n有限额度合计 %.2f GiB\n共享密钥入口不计入个人账单", users, float64(used)/(1<<30), float64(quota)/(1<<30)), e
+		e := s.DB.QueryRow(ctx, `SELECT COALESCE(sum(used_bytes),0),COALESCE(sum(quota_bytes),0),COALESCE(sum(GREATEST(quota_bytes-used_bytes,0)) FILTER(WHERE quota_bytes>0),0),COALESCE(sum(upload_bytes),0),COALESCE(sum(download_bytes),0),count(*) FROM proxy_users WHERE tenant_id=$1`, tenant).Scan(&used, &quota, &remaining, &up, &down, &users)
+		return fmt.Sprintf("星枢 · 用户流量\n用户 %d\n本期已用 %.2f GiB（上传 %.2f / 下载 %.2f）\n有限额度合计 %.2f GiB\n有限额度剩余 %.2f GiB\n无限额度用户不扣减有限余额；共享密钥入口不计入个人账单", users, float64(used)/(1<<30), float64(up)/(1<<30), float64(down)/(1<<30), float64(quota)/(1<<30), float64(remaining)/(1<<30)), e
 	case "hosts", "users":
 		query := `SELECT name,CASE WHEN last_seen>now()-interval '90 seconds' THEN '在线' ELSE '离线/未接入' END FROM hosts WHERE tenant_id=$1 AND deleted_at IS NULL ORDER BY name LIMIT 30`
 		if command == "users" {
@@ -313,6 +330,11 @@ func (s *Server) notificationLog(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+type telegramUpdateBatch struct {
+	Updates []telegramUpdate
+	Now     time.Time
+}
+
 type telegramUpdate struct {
 	ID      int64 `json:"update_id"`
 	Message *struct {
@@ -330,7 +352,7 @@ type telegramUpdate struct {
 
 func allowedTelegramCommand(c notificationConfig, u telegramUpdate, now time.Time) string {
 	m := u.Message
-	if m == nil || m.From.Bot || strconv.FormatInt(m.Chat.ID, 10) != c.ChatID || !slices.Contains(c.AllowedUsers, m.From.ID) || m.Date < now.Add(-2*time.Minute).Unix() || m.Date > now.Add(time.Minute).Unix() {
+	if m == nil || m.From.Bot || strconv.FormatInt(m.Chat.ID, 10) != c.ChatID || !slices.Contains(c.AllowedUsers, m.From.ID) || m.Date < now.Add(-2*time.Minute).Unix() || m.Date > now.Add(5*time.Minute).Unix() {
 		return ""
 	}
 	parts := strings.Fields(m.Text)
@@ -338,6 +360,9 @@ func allowedTelegramCommand(c notificationConfig, u telegramUpdate, now time.Tim
 		return ""
 	}
 	cmd := strings.Split(strings.TrimPrefix(parts[0], "/"), "@")[0]
+	if cmd == "start" {
+		cmd = "help"
+	}
 	if !strings.HasPrefix(parts[0], "/") || !slices.Contains(c.Commands, cmd) {
 		return ""
 	}

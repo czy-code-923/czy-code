@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/jackc/pgx/v5"
 	"slices"
@@ -13,6 +14,7 @@ import (
 // One outbound long poll, no webhook/listening port, no worker when disabled.
 // A session advisory lock prevents multiple control processes polling one bot.
 func (s *Server) RunNotifications(ctx context.Context) {
+	failures := 0
 	for ctx.Err() == nil {
 		delay := 15 * time.Second
 		if len(s.MasterKey) == 32 {
@@ -26,6 +28,16 @@ func (s *Server) RunNotifications(ctx context.Context) {
 					e = conn.QueryRow(ctx, `SELECT pg_try_advisory_lock(717014)`).Scan(&locked)
 					if e == nil && locked {
 						e = s.notificationStep(ctx)
+						if e != nil {
+							failures++
+							delay = time.Duration(15*min(failures, 20)) * time.Second
+							var apiErr telegramAPIError
+							if errors.As(e, &apiErr) && apiErr.RetryAfter > 0 {
+								delay = time.Duration(min(apiErr.RetryAfter, 3600)) * time.Second
+							}
+						} else {
+							failures = 0
+						}
 						unlock, cancel := context.WithTimeout(context.Background(), time.Second)
 						_, _ = conn.Exec(unlock, `SELECT pg_advisory_unlock(717014)`)
 						cancel()
@@ -64,25 +76,31 @@ func (s *Server) logNotification(ctx context.Context, event string, e error) {
 		detail = e.Error()
 	}
 	_, _ = s.DB.Exec(ctx, `INSERT INTO notification_log(tenant_id,event,state,detail) VALUES($1,$2,$3,$4)`, tenant, event, state, detail)
-	_, _ = s.DB.Exec(ctx, `UPDATE notification_settings SET last_error=$2,last_send_at=CASE WHEN $2='' THEN now() ELSE last_send_at END WHERE tenant_id=$1`, tenant, detail)
+	_, _ = s.DB.Exec(ctx, `UPDATE notification_settings SET last_error=CASE WHEN last_poll_error<>'' THEN last_poll_error ELSE $2 END,last_send_error=$2,last_send_at=CASE WHEN $2='' THEN now() ELSE last_send_at END WHERE tenant_id=$1`, tenant, detail)
 }
 func (s *Server) notificationStep(ctx context.Context) error {
 	c, token, offset, e := s.loadNotifications(ctx)
 	if e != nil || !c.Enabled {
 		return e
 	}
+	var pollError error
 	if c.CommandPolling {
-		var updates []telegramUpdate
-		e = s.telegram(ctx, token, "getUpdates", map[string]any{"offset": offset, "limit": 10, "timeout": 20, "allowed_updates": []string{"message"}}, &updates)
+		var batch telegramUpdateBatch
+		e = s.telegram(ctx, token, "getUpdates", map[string]any{"offset": offset, "limit": 3, "timeout": 20, "allowed_updates": []string{"message"}}, &batch)
 		if e != nil {
-			s.logNotification(ctx, "poll", e)
-			return e
+			s.notificationPollingState(ctx, e)
+			pollError = e
 		}
 		if !s.notificationCurrent(ctx, c) {
 			return nil
 		}
-		sent := 0
-		for _, update := range updates {
+		if e == nil {
+			skew := int(time.Until(batch.Now).Seconds())
+			_, _ = s.DB.Exec(ctx, `UPDATE notification_settings SET telegram_clock_skew_seconds=$2 WHERE tenant_id=$1 AND version=$3`, tenant, skew, c.Version)
+		}
+		var username string
+		_ = s.DB.QueryRow(ctx, `SELECT bot_username FROM notification_settings WHERE tenant_id=$1`, tenant).Scan(&username)
+		for _, update := range batch.Updates {
 			if update.ID < offset {
 				continue
 			}
@@ -91,11 +109,28 @@ func (s *Server) notificationStep(ctx context.Context) error {
 			if _, e = s.DB.Exec(ctx, `UPDATE notification_settings SET offset_id=GREATEST(offset_id,$2),last_poll_at=now() WHERE tenant_id=$1 AND version=$3`, tenant, offset, c.Version); e != nil {
 				return e
 			}
-			command := allowedTelegramCommand(c, update, time.Now())
-			if command == "" || sent >= 3 {
+			command := allowedTelegramCommand(c, update, batch.Now)
+			if command == "" {
+				if update.Message != nil && strings.HasPrefix(update.Message.Text, "/") && fmt.Sprint(update.Message.Chat.ID) == c.ChatID {
+					reason := "命令未授权、格式无效或已超过 2 分钟"
+					if !slices.Contains(c.AllowedUsers, update.Message.From.ID) {
+						reason = "发送用户未被授权"
+					}
+					s.logIgnoredCommand(ctx, reason)
+				}
+				continue
+			}
+			if username != "" && strings.Contains(strings.Fields(update.Message.Text)[0], "@") && !strings.EqualFold(strings.Split(strings.Fields(update.Message.Text)[0], "@")[1], username) {
 				continue
 			}
 			text, e := s.notificationSummary(ctx, command)
+			if command == "help" {
+				allowed := []string{}
+				for _, v := range c.Commands {
+					allowed = append(allowed, "/"+v)
+				}
+				text = "星枢 · 可用查询命令\n" + strings.Join(allowed, " ") + "\n仅当前绑定聊天和授权用户可查询。"
+			}
 			if e != nil {
 				return e
 			}
@@ -104,12 +139,16 @@ func (s *Server) notificationStep(ctx context.Context) error {
 			}
 			e = s.sendTelegram(ctx, c, token, text)
 			s.logNotification(ctx, "command."+command, e)
+			if e == nil {
+				_, _ = s.DB.Exec(ctx, `UPDATE notification_settings SET last_command_at=now(),last_command=$2 WHERE tenant_id=$1`, tenant, command)
+			}
 			if e != nil {
 				return e
 			}
-			sent++
 		}
-		_, _ = s.DB.Exec(ctx, `UPDATE notification_settings SET last_poll_at=now(),last_error='' WHERE tenant_id=$1 AND version=$2`, tenant, c.Version)
+		if pollError == nil {
+			s.notificationPollingState(ctx, nil)
+		}
 	}
 	if !s.notificationCurrent(ctx, c) {
 		return nil
@@ -146,7 +185,7 @@ func (s *Server) notificationStep(ctx context.Context) error {
 	}
 	_, _ = s.DB.Exec(ctx, `DELETE FROM notification_log WHERE tenant_id=$1 AND (created_at<now()-interval '7 days' OR id NOT IN (SELECT id FROM notification_log WHERE tenant_id=$1 ORDER BY id DESC LIMIT 500))`, tenant)
 	_, _ = s.DB.Exec(ctx, `DELETE FROM notification_state WHERE tenant_id=$1 AND updated_at<now()-interval '30 days'`, tenant)
-	return nil
+	return pollError
 }
 func (s *Server) notificationAlerts(ctx context.Context, c notificationConfig, token string) error {
 	type item struct{ Key, Name, State, Event string }
@@ -241,7 +280,6 @@ func (s *Server) notificationAlerts(ctx context.Context, c notificationConfig, t
 			if e != nil {
 				return e
 			}
-			sent++
 		}
 		if _, e := s.DB.Exec(ctx, `INSERT INTO notification_state(tenant_id,resource,state) VALUES($1,$2,$3) ON CONFLICT(tenant_id,resource) DO UPDATE SET state=excluded.state,updated_at=now()`, tenant, i.Key, i.State); e != nil {
 			return e

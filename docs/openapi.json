@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "星枢 · VPS 多机管理 API",
-    "version": "0.14.1",
+    "version": "0.15.0",
     "description": "Self-workspace API for host agents, proxy protocols, user quotas and client subscriptions. Bearer administrator token or expiring scoped xs_ API key. No arbitrary shell; privileged gateway work and API key administration remain root-only."
   },
   "servers": [
@@ -4312,7 +4312,17 @@
           "409": {
             "description": "Referenced / protected resource"
           }
-        }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "user_id",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional user daily-series filter. Inventory and aggregate totals remain global."
+          }
+        ]
       }
     },
     "/api/v1/access-records": {
@@ -4331,7 +4341,19 @@
           "409": {
             "description": "Referenced / protected resource"
           }
-        }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 200
+            }
+          }
+        ]
       }
     },
     "/api/v1/proxy-users/{id}/reset-traffic": {
@@ -5753,6 +5775,93 @@
             }
           }
         }
+      }
+    },
+    "/api/v1/notifications/telegram/diagnose": {
+      "post": {
+        "summary": "Diagnose bot, webhook and commands without consuming updates",
+        "security": [
+          {
+            "AdminToken": []
+          },
+          {
+            "ScopedAPIKey": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Redacted bot diagnostic or chat command synchronization result"
+          },
+          "400": {
+            "description": "Binding or Telegram error"
+          },
+          "409": {
+            "description": "Settings version changed"
+          }
+        },
+        "x-required-scopes": [
+          "notifications:write"
+        ]
+      }
+    },
+    "/api/v1/notifications/telegram/commands": {
+      "post": {
+        "summary": "Sync saved commands only to the bound chat",
+        "security": [
+          {
+            "AdminToken": []
+          },
+          {
+            "ScopedAPIKey": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "required": [
+                  "version"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Redacted bot diagnostic or chat command synchronization result"
+          },
+          "400": {
+            "description": "Binding or Telegram error"
+          },
+          "409": {
+            "description": "Settings version changed"
+          }
+        },
+        "x-required-scopes": [
+          "notifications:write"
+        ]
       }
     }
   },
