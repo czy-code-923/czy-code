@@ -1,0 +1,43 @@
+name: Import verified Starhub 0.13 source
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Verify and import the published source archive
+        shell: python
+        run: |
+          import hashlib,io,pathlib,subprocess,urllib.request,zipfile
+          url='https://github.com/czy-code-923/czy-code/releases/download/v0.13.0-distribution/harbor-0.13.0-source.zip'
+          with urllib.request.urlopen(url,timeout=90) as response:data=response.read(2<<20)
+          assert hashlib.sha256(data).hexdigest()=='2c768b8bb8029b4336ebeb38291b532ba58e23611400fd2b196341b99a772778'
+          root=pathlib.Path.cwd().resolve();files={}
+          with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            for item in archive.infolist():
+              name=pathlib.PurePosixPath(item.filename)
+              assert name.parts[0]=='harbor-0.13.0' and '..' not in name.parts and not name.is_absolute()
+              relative=pathlib.Path(*name.parts[1:])
+              if not name.parts[1:] or item.is_dir() or relative.as_posix().startswith('.github/workflows/'):continue
+              destination=(root/relative).resolve();assert destination.is_relative_to(root) and '.git' not in relative.parts
+              files[relative.as_posix()]=archive.read(item)
+          tracked=subprocess.check_output(['git','ls-files','-z']).decode().split('\0')
+          for name in tracked:
+            if not name or name.startswith('.github/workflows/') or name in files:continue
+            target=(root/name).resolve();assert target.is_relative_to(root)
+            target.unlink(missing_ok=True)
+          for name,body in files.items():
+            target=root/name;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(body)
+          print('Imported verified source files:',len(files))
+      - name: Commit the reviewed source to this repository
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add --all -- . ':!.github/workflows'
+          git diff --cached --quiet || git commit -m 'Publish Starhub 0.13 protocol layers, notifications and validated installers'
+          git push origin HEAD:main
+          git tag -f v0.13.0-distribution HEAD
+          git push origin refs/tags/v0.13.0-distribution --force
