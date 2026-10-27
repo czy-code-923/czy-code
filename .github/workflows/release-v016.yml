@@ -10,7 +10,30 @@ concurrency:
   group: starhub-release-016
   cancel-in-progress: false
 jobs:
+  existing:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      published: ${{ steps.release.outputs.published }}
+    steps:
+      - name: Preserve an existing release and its installation checksums
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh api repos/${{ github.repository }}/releases/tags/v0.16.0-distribution >/tmp/existing-release.json 2>/tmp/release-lookup-error; then
+            echo 'published=true' >> "$GITHUB_OUTPUT"
+            echo 'This version already exists. Keeping its tag, assets and installation checksums unchanged.'
+          elif grep -q 'HTTP 404' /tmp/release-lookup-error; then
+            echo 'published=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'Release lookup failed; refusing to rebuild without a reliable result.' >&2
+            exit 1
+          fi
   publish:
+    needs: existing
+    if: needs.existing.outputs.published != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 35
     services:
