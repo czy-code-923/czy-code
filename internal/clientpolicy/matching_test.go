@@ -9,9 +9,9 @@ func TestImportedAliasRequiresPreciseIdentity(t *testing.T) {
 		want  string
 	}{
 		{Alias{Name: "same", Protocol: "trojan"}, ""},
-		{Alias{Name: "old", Protocol: "trojan", Server: "192.0.2.1", Port: 443}, "node:a"},
+		{Alias{Name: "old", Protocol: "trojan", Server: "192.0.2.1", Port: 443}, "endpoint:a:ipv4"},
 		{Alias{Name: "same", Protocol: "trojan", Server: "192.0.2.9", Port: 443}, ""},
-		{Alias{Name: "old", Protocol: "trojan", Server: "[2001:0db8::1]", Port: 443}, "node:a"},
+		{Alias{Name: "old", Protocol: "trojan", Server: "[2001:0db8::1]", Port: 443}, "endpoint:a:ipv6"},
 		{Alias{Name: "same", Protocol: "trojan", Server: "192.0.2.1", Port: 8443}, ""},
 	} {
 		if got, _ := MatchAlias(c.alias, nodes); got != c.want {

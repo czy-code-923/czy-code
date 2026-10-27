@@ -77,7 +77,7 @@ bash scripts/run-native.sh control
 
 ## Agent：Linux / Windows
 
-每台设备使用独立引擎目录。下载脚本核对官方 FRP / Xray GitHub SHA-256；sing-box 使用修复版，预编译分发包从 patched-engines 校验安装，不需要 Go；源码包用 Go 1.27.3+ 自动构建（可用 --go 指定路径）。不静默回退到未修复的官方 sing-box。只提取白名单二进制，不解压任意路径：
+每台设备使用独立引擎目录。下载脚本核对官方 sing-box / Xray / FRP 的资产 SHA-256，只提取白名单二进制，不执行自定义构建、不解压任意文件路径。可用 --sing-box-version / --xray-version / --frp-version 指定版本或 latest（最新稳定版）。主机页面的内核版本按钮可通过 Agent 进行原生检查与版本切换。
 
 ```bash
 python scripts/fetch-engines.py

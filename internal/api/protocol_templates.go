@@ -68,7 +68,7 @@ func (s *Server) protocolTemplates(w http.ResponseWriter, r *http.Request) error
 			t["security_modes"] = []string{"tls", "reality"}
 			t["reality_required"] = []string{"server_name", "reality.target", "reality.port"}
 			t["reality_optional"] = []string{"reality.short_id", "reality.fingerprint", "flow"}
-			t["note"] = "REALITY TCP uses a generated X25519 keypair, not a CA certificate. Xray 26.10.21 REALITY exports only verified Xray JSON; sing-box 1.14.4-harbor.1 clients use sing-box REALITY."
+			t["note"] = "REALITY TCP uses a generated X25519 keypair, not a CA certificate. Xray 26.10.21 REALITY exports only verified Xray JSON; sing-box 1.14.4 clients use sing-box REALITY."
 		}
 		if kind == "tuic" {
 			t["transports"] = []string{"quic/udp"}

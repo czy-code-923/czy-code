@@ -146,6 +146,17 @@ func purgeHost(r *http.Request, tx pgx.Tx, host string) error {
 	if legacy > 0 {
 		return problem{409, "historical route still depends on this host"}
 	}
+	var serviceIDs []string
+	if e := tx.QueryRow(r.Context(), `SELECT ARRAY(SELECT id FROM live_services WHERE tenant_id=$1 AND host_id=$2)`, tenant, host).Scan(&serviceIDs); e != nil {
+		return e
+	}
+	removed := map[string]bool{}
+	for _, id := range serviceIDs {
+		removed[id] = true
+	}
+	if e := prunePolicyNodes(r, tx, removed); e != nil {
+		return e
+	}
 	var nodeIDs, routeIDs []string
 	if e := tx.QueryRow(r.Context(), `SELECT ARRAY(SELECT node_id FROM live_services WHERE tenant_id=$1 AND host_id=$2 AND node_id IS NOT NULL UNION SELECT node_id FROM instances WHERE tenant_id=$1 AND host_id=$2)`, tenant, host).Scan(&nodeIDs); e != nil {
 		return e
@@ -181,6 +192,7 @@ func purgeHost(r *http.Request, tx pgx.Tx, host string) error {
 		`DELETE FROM traffic_subjects WHERE tenant_id=$1 AND host_id=$2`,
 		`DELETE FROM access_observations WHERE tenant_id=$1 AND host_id=$2`,
 		`DELETE FROM telemetry_status WHERE tenant_id=$1 AND host_id=$2`,
+		`DELETE FROM engine_updates WHERE tenant_id=$1 AND host_id=$2`,
 		`DELETE FROM kernel_revisions WHERE tenant_id=$1 AND host_id=$2`,
 		`DELETE FROM host_kernels WHERE tenant_id=$1 AND host_id=$2`,
 		`UPDATE hosts SET deleted_at=now(),retire_state='complete',retire_result='remote-cleaned',agent_hash='',reported_addresses='[]',address='removed',name='removed',provider='' WHERE tenant_id=$1 AND id=$2`,

@@ -1,4 +1,4 @@
-"""Build Linux Agent packages with verified releases and the patched sing-box source build."""
+"""Build Linux Agent packages with verified official releases and corresponding sing-box source."""
 import argparse, hashlib, json, os, shutil, subprocess, sys, tempfile, zipfile
 from pathlib import Path
 

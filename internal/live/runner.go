@@ -43,6 +43,7 @@ type process struct {
 	release  func()
 }
 type Runner struct {
+	lastWork  []Work
 	usage     *usageStore
 	root      *os.Root
 	binary    map[string]executor.Binary
@@ -160,6 +161,7 @@ func (r *Runner) Reconcile(ctx context.Context, work []Work) error {
 			delete(r.processes, id)
 		}
 	}
+	r.lastWork = work
 	for _, w := range work {
 		raw, _ := json.Marshal(w)
 		sum := manifest.Digest(raw)

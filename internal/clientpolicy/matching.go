@@ -53,7 +53,10 @@ func MatchAlias(a Alias, nodes []Candidate) (string, string) {
 		}
 	}
 	if len(matches) == 1 {
-		return "node:" + matches[0].ID, "唯一协议与端点匹配"
+		if a.Server != "" {
+			return EndpointReference(matches[0].ID, AddressFamily(strings.Trim(a.Server, "[]"))), "唯一协议、地址族与端点匹配"
+		}
+		return "node:" + matches[0].ID, "唯一名称与协议匹配"
 	}
 	if len(matches) > 1 {
 		return "", "匹配多个节点，请手动选择"

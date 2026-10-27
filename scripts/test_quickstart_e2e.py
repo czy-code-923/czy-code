@@ -29,7 +29,7 @@ def main():
             if check():return
             time.sleep(1)
         raise RuntimeError('Timeout: '+description)
-    assert api('session')['version']=='0.16.0'
+    assert api('session')['version']=='0.17.0'
     site=api('site');assert site['domain']=='' and site['ip_origin']=='http://127.0.0.1:18080'
     assert api('agent/releases/linux-amd64')['size']>1000000
     print('Fresh one-command control installation and no-domain IP access: PASS',flush=True)
@@ -41,7 +41,7 @@ def main():
     result=subprocess.run(['sh','-c',command],stdout=subprocess.DEVNULL)
     if result.returncode:raise RuntimeError('Agent bootstrap failed; enrollment ticket omitted')
     def connected():
-        return any(h['id']==host['id'] and h['agent_version']=='0.16.0' and h['online'] and h['cleanup_capable'] for h in api('hosts'))
+        return any(h['id']==host['id'] and h['agent_version']=='0.17.0' and h['online'] and h['cleanup_capable'] for h in api('hosts'))
     wait(connected,'Agent registration and verified heartbeat')
     wait(lambda:any(k['engine']=='sing-box' and k['ready'] for k in api('hosts/'+host['id']+'/kernels')),'Native kernel capabilities')
     agent_env=Path('/etc/harbor-agent/agent.env')
@@ -50,6 +50,18 @@ def main():
     api('live/'+row['id']+'/toggle',{'enabled':True})
     wait(lambda:any(v['id']==row['id'] and v['state']=='running' and v['reported_version']==v['version'] for v in api('live')),'Native inbound deployment')
     print('One-command Agent onboarding and real native deployment: PASS',flush=True)
+    update=api('hosts/'+host['id']+'/engine-updates',{'engine':'sing-box','version':'latest'},202)
+    def switched():
+        rows=api('hosts/'+host['id']+'/engine-updates')
+        current=next(v for v in rows if v['id']==update['id'])
+        if current['state']=='failed':raise RuntimeError('Official update failed: '+current.get('error',''))
+        return current['state']=='succeeded'
+    wait(switched,'Official engine download, validation and switch',480)
+    wait(lambda:any(v['id']==row['id'] and v['state']=='running' for v in api('live')),'Existing inbound after engine switch')
+    kernels=api('hosts/'+host['id']+'/kernels')
+    assert any(k['engine']=='sing-box' and k['ready'] and 'harbor' not in k['version'].lower() for k in kernels)
+    print('Official latest engine switch with existing inbound preserved: PASS',flush=True)
+
     api('hosts/'+host['id']+'/retirement',{},202)
     api('hosts/'+host['id']+'/rotate-agent-token',{},404)
     wait(lambda:all(h['id']!=host['id'] for h in api('hosts')),'Root cleanup and authenticated purge acknowledgement',150)
@@ -57,7 +69,7 @@ def main():
     wait(lambda:all(not Path(path).exists() for path in paths),'Agent files and units fully removed',30)
     assert all(v['id']!=row['id'] for v in api('live'))
     api('agent/heartbeat',{},401,agent=credentials)
-    assert api('session')['version']=='0.16.0' and root.joinpath('control.env').exists()
+    assert api('session')['version']=='0.17.0' and root.joinpath('control.env').exists()
     subprocess.run(['docker','exec','starhub-control-db','pg_isready','-U','harbor','-d','harbor'],check=True,stdout=subprocess.DEVNULL)
     print('Remote Agent files and control-side deployment data removed; manager and database preserved: PASS',flush=True)
 if __name__=='__main__':main()

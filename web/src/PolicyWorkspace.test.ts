@@ -9,7 +9,7 @@ function fixture(policy:Row){const source=JSON.stringify(policy);return vi.fn(as
  if(path==='client-policies'&&method==='GET')return [{id:'p',name:'默认',user_id:'u',client_id:'mihomo',source,version:4,native_options:{}}]
  if(path==='proxy-users')return [{id:'u',name:'Alice'}]
  if(path==='client-catalog')return [{id:'mihomo',name:'Mihomo',full_config:true}]
- if(path==='live')return [{id:'n1',name:'VLESS',kind:'vless'}]
+ if(path.startsWith('client-policies/nodes'))return [{id:'n1',name:'VLESS-v4',kind:'vless',family:'ipv4',reference:'endpoint:n1:ipv4'}]
  return {}
  })}
 const button=(w:any,text:string)=>w.findAll('button').find((b:any)=>b.text()===text)!

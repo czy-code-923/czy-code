@@ -22,3 +22,7 @@ patched-engines/
 
 agent-releases/*
 !agent-releases/.gitkeep
+
+official-engines/
+.release-cache/
+.release-output/

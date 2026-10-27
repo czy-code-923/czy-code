@@ -48,7 +48,7 @@ func (s Spec) validateRouting() error {
 			return e
 		}
 		if s.Engine != "xray" && next.Engine == "xray" && next.IsReality() {
-			return errors.New("pinned sing-box 1.14.4-harbor.1 cannot dial Xray 26.10.21 REALITY; choose a sing-box REALITY next hop")
+			return errors.New("pinned sing-box 1.14.4 cannot dial Xray 26.10.21 REALITY; choose a sing-box REALITY next hop")
 		}
 		if s.Engine == "xray" && next.Kind != "shadowsocks" && next.Kind != "vless" && next.Kind != "vmess" && next.Kind != "trojan" && next.Kind != "http" && next.Kind != "socks" {
 			return errors.New("selected Xray outbound protocol unsupported")

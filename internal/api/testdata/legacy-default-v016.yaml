@@ -1,0 +1,415 @@
+# Based on the supplied mihomo_max.yaml; node identities removed. Local listeners and TUN default to safe portable settings.
+basic:
+  mixed-port: 7890
+  allow-lan: false
+  bind-address: 127.0.0.1
+  mode: rule
+  log-level: warning
+  ipv6: false
+  find-process-mode: 'off'
+  unified-delay: true
+  tcp-concurrent: true
+  keep-alive-idle: 600
+  keep-alive-interval: 15
+  profile:
+    store-selected: true
+    store-fake-ip: true
+  external-controller: 127.0.0.1:9090
+  geodata-mode: true
+  geo-auto-update: true
+  geo-update-interval: 24
+  sniffer:
+    enable: true
+    sniff:
+      HTTP:
+        ports:
+        - 80
+        - 8080
+        override-destination: true
+      TLS:
+        ports:
+        - 443
+      QUIC:
+        ports:
+        - 443
+    skip-domain:
+    - +.push.apple.com
+  tun:
+    enable: false
+    stack: system
+    dns-hijack:
+    - any:53
+    auto-route: true
+    auto-detect-interface: true
+    strict-route: true
+    udp: true
+dns:
+  enable: true
+  listen: 127.0.0.1:1053
+  ipv6: false
+  cache-algorithm: arc
+  respect-rules: true
+  prefer-h3: false
+  enhanced-mode: fake-ip
+  fake-ip-range: 198.18.0.1/16
+  fake-ip-filter-mode: blacklist
+  default-nameserver:
+  - 223.5.5.5
+  - 1.1.1.1
+  proxy-server-nameserver:
+  - https://1.1.1.1/dns-query
+  - https://dns.google/dns-query
+  direct-nameserver:
+  - https://223.5.5.5/dns-query
+  - https://dns.alidns.com/dns-query
+  nameserver:
+  - https://1.1.1.1/dns-query#🚀 节点选择
+  - https://dns.google/dns-query#🚀 节点选择
+  fallback:
+  - https://1.1.1.1/dns-query
+  - https://dns.google/dns-query
+  fallback-filter:
+    geoip: true
+    geoip-code: CN
+    ipcidr:
+    - 240.0.0.0/4
+    - 0.0.0.0/32
+  fake-ip-filter:
+  - +.lan
+  - +.local
+  - +.localhost
+  - +.push.apple.com
+  - +.tiktokdramacenter.com
+  - +.shortdramas.com
+proxy-groups:
+- name: 🚀 节点选择
+  type: select
+  proxies:
+  - ALL
+  - ♻️ IPv4自动
+  - ♻️ 全部自动
+  - protocol:vless
+  - protocol:hysteria2
+  - protocol:tuic
+  - protocol:anytls
+  - 🌐 IPv6备用
+  - DIRECT
+- name: ✈️ Telegram
+  type: select
+  proxies:
+  - 🚀 节点选择
+  - protocol:vless
+  - protocol:hysteria2
+  - DIRECT
+- name: 🎵 TikTok
+  type: select
+  proxies:
+  - 🚀 节点选择
+  - ♻️ IPv4自动
+  - protocol:vless
+  - protocol:hysteria2
+  - DIRECT
+- name: 🎬 longemby
+  type: select
+  proxies:
+  - 🚀 节点选择
+  - ♻️ IPv4自动
+  - protocol:vless
+  - DIRECT
+- name: 🎥 折纸emby
+  type: select
+  proxies:
+  - DIRECT
+  - 🚀 节点选择
+  - protocol:vless
+- name: 🎞️ 予初emby
+  type: select
+  proxies:
+  - DIRECT
+  - 🚀 节点选择
+  - protocol:vless
+- name: 🎟️ 宸澄emby
+  type: select
+  proxies:
+  - DIRECT
+  - 🚀 节点选择
+  - protocol:vless
+- name: 🎥 OKemby
+  type: select
+  proxies:
+  - DIRECT
+  - 🚀 节点选择
+  - protocol:vless
+- name: 🤖 AI服务
+  type: select
+  proxies:
+  - 🚀 节点选择
+  - ♻️ IPv4自动
+  - protocol:vless
+  - protocol:anytls
+  - DIRECT
+- name: 🔍 Google
+  type: select
+  proxies:
+  - 🚀 节点选择
+  - ♻️ IPv4自动
+  - protocol:vless
+  - protocol:anytls
+  - DIRECT
+- name: ▶️ YouTube
+  type: select
+  proxies:
+  - 🚀 节点选择
+  - ♻️ IPv4自动
+  - protocol:vless
+  - protocol:hysteria2
+  - DIRECT
+- name: 📺 流媒体
+  type: select
+  proxies:
+  - 🚀 节点选择
+  - ♻️ IPv4自动
+  - protocol:vless
+  - protocol:hysteria2
+  - DIRECT
+- name: 🍎 Apple
+  type: select
+  proxies:
+  - DIRECT
+  - 🚀 节点选择
+- name: Ⓜ️ Microsoft
+  type: select
+  proxies:
+  - 🚀 节点选择
+  - ♻️ IPv4自动
+  - DIRECT
+- name: 🐙 GitHub
+  type: select
+  proxies:
+  - 🚀 节点选择
+  - ♻️ IPv4自动
+  - DIRECT
+- name: ♻️ IPv4自动
+  type: url-test
+  url: https://www.gstatic.com/generate_204
+  interval: 300
+  tolerance: 50
+  lazy: true
+  proxies:
+  - family:ipv4
+- name: ♻️ 全部自动
+  type: url-test
+  url: https://www.gstatic.com/generate_204
+  interval: 300
+  tolerance: 50
+  lazy: true
+  proxies:
+  - ALL
+- name: 🌐 IPv6备用
+  type: select
+  proxies:
+  - family:ipv6
+  - DIRECT
+- name: 🇨🇳 国内直连
+  type: select
+  proxies:
+  - DIRECT
+  - 🚀 节点选择
+- name: 🛑 广告拦截
+  type: select
+  proxies:
+  - REJECT
+  - DIRECT
+- name: 🐟 漏网之鱼
+  type: select
+  proxies:
+  - 🚀 节点选择
+  - ♻️ IPv4自动
+  - DIRECT
+rules:
+- DOMAIN-SUFFIX,lan,DIRECT
+- DOMAIN-SUFFIX,local,DIRECT
+- DOMAIN-SUFFIX,localhost,DIRECT
+- IP-CIDR,127.0.0.0/8,DIRECT,no-resolve
+- IP-CIDR,10.0.0.0/8,DIRECT,no-resolve
+- IP-CIDR,172.16.0.0/12,DIRECT,no-resolve
+- IP-CIDR,192.168.0.0/16,DIRECT,no-resolve
+- IP-CIDR,169.254.0.0/16,DIRECT,no-resolve
+- DOMAIN-SUFFIX,doubleclick.net,🛑 广告拦截
+- DOMAIN-SUFFIX,googlesyndication.com,🛑 广告拦截
+- DOMAIN-SUFFIX,googleadservices.com,🛑 广告拦截
+- DOMAIN-SUFFIX,adservice.google.com,🛑 广告拦截
+- DOMAIN-SUFFIX,googletagservices.com,🛑 广告拦截
+- DOMAIN-SUFFIX,googletagmanager.com,🛑 广告拦截
+- DOMAIN-SUFFIX,google-analytics.com,🛑 广告拦截
+- DOMAIN-SUFFIX,adsrvr.org,🛑 广告拦截
+- DOMAIN-SUFFIX,adnxs.com,🛑 广告拦截
+- DOMAIN-SUFFIX,criteo.com,🛑 广告拦截
+- DOMAIN-SUFFIX,taboola.com,🛑 广告拦截
+- DOMAIN-SUFFIX,outbrain.com,🛑 广告拦截
+- DOMAIN-SUFFIX,scorecardresearch.com,🛑 广告拦截
+- DOMAIN-SUFFIX,umeng.com,🛑 广告拦截
+- DOMAIN-SUFFIX,umengcloud.com,🛑 广告拦截
+- DOMAIN-SUFFIX,appsflyer.com,🛑 广告拦截
+- DOMAIN-SUFFIX,ads-twitter.com,🛑 广告拦截
+- DOMAIN-SUFFIX,adsafeprotected.com,🛑 广告拦截
+- DOMAIN-SUFFIX,advertising.com,🛑 广告拦截
+- DOMAIN-SUFFIX,adroll.com,🛑 广告拦截
+- DOMAIN-SUFFIX,amazon-adsystem.com,🛑 广告拦截
+- DOMAIN-SUFFIX,bidswitch.net,🛑 广告拦截
+- DOMAIN-SUFFIX,contextweb.com,🛑 广告拦截
+- DOMAIN-SUFFIX,demdex.net,🛑 广告拦截
+- DOMAIN-SUFFIX,lijit.com,🛑 广告拦截
+- DOMAIN-SUFFIX,kanav.ad,🛑 广告拦截
+- DOMAIN-SUFFIX,media.net,🛑 广告拦截
+- DOMAIN-SUFFIX,openx.net,🛑 广告拦截
+- DOMAIN-SUFFIX,pubmatic.com,🛑 广告拦截
+- DOMAIN-SUFFIX,quantserve.com,🛑 广告拦截
+- DOMAIN-SUFFIX,rfihub.com,🛑 广告拦截
+- DOMAIN-SUFFIX,rubiconproject.com,🛑 广告拦截
+- DOMAIN-SUFFIX,sharethrough.com,🛑 广告拦截
+- DOMAIN-SUFFIX,smaato.net,🛑 广告拦截
+- DOMAIN-SUFFIX,sovrn.com,🛑 广告拦截
+- DOMAIN-SUFFIX,spotxchange.com,🛑 广告拦截
+- DOMAIN-SUFFIX,teads.tv,🛑 广告拦截
+- DOMAIN-SUFFIX,undertone.com,🛑 广告拦截
+- DOMAIN-SUFFIX,lijit.com,🛑 广告拦截
+- DOMAIN-SUFFIX,bluekai.com,🛑 广告拦截
+- DOMAIN-SUFFIX,rlcdn.com,🛑 广告拦截
+- DOMAIN-SUFFIX,tiktokdramacenter.com,DIRECT
+- DOMAIN-SUFFIX,shortdramas.com,DIRECT
+- DOMAIN-SUFFIX,apple.com,🍎 Apple
+- DOMAIN-SUFFIX,icloud.com,🍎 Apple
+- DOMAIN-SUFFIX,icloud.com.cn,🍎 Apple
+- DOMAIN-SUFFIX,itunes.com,🍎 Apple
+- DOMAIN-SUFFIX,appstore.com,🍎 Apple
+- DOMAIN-SUFFIX,mzstatic.com,🍎 Apple
+- DOMAIN-SUFFIX,apple-cloudkit.com,🍎 Apple
+- DOMAIN-SUFFIX,microsoft.com,Ⓜ️ Microsoft
+- DOMAIN-SUFFIX,microsoftonline.com,Ⓜ️ Microsoft
+- DOMAIN-SUFFIX,live.com,Ⓜ️ Microsoft
+- DOMAIN-SUFFIX,office.com,Ⓜ️ Microsoft
+- DOMAIN-SUFFIX,office.net,Ⓜ️ Microsoft
+- DOMAIN-SUFFIX,outlook.com,Ⓜ️ Microsoft
+- DOMAIN-SUFFIX,windows.com,Ⓜ️ Microsoft
+- DOMAIN-SUFFIX,windowsupdate.com,Ⓜ️ Microsoft
+- DOMAIN-SUFFIX,msftconnecttest.com,Ⓜ️ Microsoft
+- DOMAIN-SUFFIX,msftncsi.com,Ⓜ️ Microsoft
+- DOMAIN-SUFFIX,onedrive.com,Ⓜ️ Microsoft
+- DOMAIN-SUFFIX,bing.com,Ⓜ️ Microsoft
+- DOMAIN-SUFFIX,msn.com,Ⓜ️ Microsoft
+- DOMAIN-SUFFIX,chatgpt.com,🤖 AI服务
+- DOMAIN-SUFFIX,openai.com,🤖 AI服务
+- DOMAIN-SUFFIX,oaistatic.com,🤖 AI服务
+- DOMAIN-SUFFIX,oaiusercontent.com,🤖 AI服务
+- DOMAIN-SUFFIX,anthropic.com,🤖 AI服务
+- DOMAIN-SUFFIX,claude.ai,🤖 AI服务
+- DOMAIN-SUFFIX,claude.com,🤖 AI服务
+- DOMAIN-SUFFIX,makersuite.google.com,🤖 AI服务
+- DOMAIN-SUFFIX,perplexity.ai,🤖 AI服务
+- DOMAIN-SUFFIX,poe.com,🤖 AI服务
+- DOMAIN-SUFFIX,huggingface.co,🤖 AI服务
+- DOMAIN-SUFFIX,replicate.com,🤖 AI服务
+- DOMAIN-SUFFIX,meta.ai,🤖 AI服务
+- DOMAIN-SUFFIX,muse.ai,🤖 AI服务
+- DOMAIN-SUFFIX,t.me,✈️ Telegram
+- DOMAIN-SUFFIX,telegram.org,✈️ Telegram
+- DOMAIN-SUFFIX,webogram.org,✈️ Telegram
+- DOMAIN-SUFFIX,telegram.me,✈️ Telegram
+- DOMAIN-SUFFIX,telegra.ph,✈️ Telegram
+- DOMAIN-SUFFIX,cdn-telegram.org,✈️ Telegram
+- GEOSITE,telegram,✈️ Telegram
+- GEOIP,telegram,✈️ Telegram,no-resolve
+- DOMAIN-SUFFIX,youtube.com,▶️ YouTube
+- DOMAIN-SUFFIX,m.youtube.com,▶️ YouTube
+- DOMAIN-SUFFIX,music.youtube.com,▶️ YouTube
+- DOMAIN-SUFFIX,youtube-nocookie.com,▶️ YouTube
+- DOMAIN-SUFFIX,youtu.be,▶️ YouTube
+- DOMAIN-SUFFIX,ytimg.com,▶️ YouTube
+- DOMAIN-SUFFIX,googlevideo.com,▶️ YouTube
+- DOMAIN-SUFFIX,youtube.googleapis.com,▶️ YouTube
+- DOMAIN-SUFFIX,youtubei.googleapis.com,▶️ YouTube
+- DOMAIN-SUFFIX,tiktok.com,🎵 TikTok
+- DOMAIN-SUFFIX,tiktokv.com,🎵 TikTok
+- DOMAIN-SUFFIX,tiktokv.us,🎵 TikTok
+- DOMAIN-SUFFIX,tiktokw.us,🎵 TikTok
+- DOMAIN-SUFFIX,tiktokcdn.com,🎵 TikTok
+- DOMAIN-SUFFIX,tiktokcdn-us.com,🎵 TikTok
+- DOMAIN-SUFFIX,ibytedtos.com,🎵 TikTok
+- DOMAIN-SUFFIX,ibyteimg.com,🎵 TikTok
+- DOMAIN-SUFFIX,muscdn.com,🎵 TikTok
+- DOMAIN-SUFFIX,byteoversea.com,🎵 TikTok
+- DOMAIN-SUFFIX,byteoversea.net,🎵 TikTok
+- DOMAIN-SUFFIX,bytefcdn.com,🎵 TikTok
+- DOMAIN-SUFFIX,sgsnssdk.com,🎵 TikTok
+- DOMAIN-SUFFIX,snssdk.com,🎵 TikTok
+- DOMAIN-SUFFIX,google.com,🔍 Google
+- DOMAIN-SUFFIX,google.co.jp,🔍 Google
+- DOMAIN-SUFFIX,google.co.uk,🔍 Google
+- DOMAIN-SUFFIX,google.com.au,🔍 Google
+- DOMAIN-SUFFIX,googleapis.com,🔍 Google
+- DOMAIN-SUFFIX,gstatic.com,🔍 Google
+- DOMAIN-SUFFIX,googleusercontent.com,🔍 Google
+- DOMAIN-SUFFIX,googleadservices.com,🔍 Google
+- DOMAIN-SUFFIX,googletraveladservices.com,🔍 Google
+- DOMAIN-SUFFIX,googletagmanager.com,🔍 Google
+- DOMAIN-SUFFIX,googletagservices.com,🔍 Google
+- DOMAIN-SUFFIX,recaptcha.net,🔍 Google
+- DOMAIN-SUFFIX,google-analytics.com,🔍 Google
+- DOMAIN-SUFFIX,gemini.google.com,🔍 Google
+- DOMAIN-SUFFIX,gemini.gstatic.com,🔍 Google
+- DOMAIN-SUFFIX,ai.google.dev,🔍 Google
+- DOMAIN-SUFFIX,googleapis.cn,🔍 Google
+- DOMAIN-SUFFIX,google.fastly-edge.com,🔍 Google
+- DOMAIN-SUFFIX,ggpht.com,🔍 Google
+- DOMAIN-SUFFIX,1e100.net,🔍 Google
+- DOMAIN-SUFFIX,google.cn,🔍 Google
+- DOMAIN-SUFFIX,g.cn,🔍 Google
+- DOMAIN-SUFFIX,android.com,🔍 Google
+- DOMAIN-SUFFIX,play.googleapis.com,🔍 Google
+- DOMAIN-SUFFIX,safebrowsing.googleapis.com,🔍 Google
+- DOMAIN-SUFFIX,gvt1.com,🔍 Google
+- DOMAIN-SUFFIX,gvt2.com,🔍 Google
+- DOMAIN-SUFFIX,gvt3.com,🔍 Google
+- DOMAIN-SUFFIX,app-measurement.com,🔍 Google
+- DOMAIN-SUFFIX,withgoogle.com,🔍 Google
+- DOMAIN-SUFFIX,blog.google,🔍 Google
+- DOMAIN-SUFFIX,goo.gl,🔍 Google
+- DOMAIN-SUFFIX,autodraw.com,🔍 Google
+- DOMAIN-SUFFIX,tensorflow.org,🔍 Google
+- DOMAIN-SUFFIX,github.com,🐙 GitHub
+- DOMAIN-SUFFIX,githubusercontent.com,🐙 GitHub
+- DOMAIN-SUFFIX,githubassets.com,🐙 GitHub
+- DOMAIN-SUFFIX,github.dev,🐙 GitHub
+- DOMAIN-SUFFIX,github.io,🐙 GitHub
+- DOMAIN-SUFFIX,远程仓库地址,🐙 GitHub
+- DOMAIN,cdn-hk.longemby.com,DIRECT
+- DOMAIN,cf.longemby.com,🎬 longemby
+- DOMAIN-SUFFIX,longemby.live,🎬 longemby
+- DOMAIN-SUFFIX,longemby.com,DIRECT
+- DOMAIN-SUFFIX,longemby.top,DIRECT
+- DOMAIN-SUFFIX,origamiart.uk,🎥 折纸emby
+- DOMAIN-SUFFIX,zhezhi.art,🎥 折纸emby
+- DOMAIN-SUFFIX,wybcs.work,🎟️ 宸澄emby
+- DOMAIN,aaa.yusen6.ccwu.cc,🎞️ 予初emby
+- DOMAIN,emby.yusen.us.ci,🎞️ 予初emby
+- DOMAIN-SUFFIX,yusen.cyou,🎞️ 予初emby
+- DOMAIN-SUFFIX,yusen.cc.cd,🎞️ 予初emby
+- DOMAIN-SUFFIX,okemby.org,🎥 OKemby
+- DOMAIN-SUFFIX,netflix.com,📺 流媒体
+- DOMAIN-SUFFIX,netflix.net,📺 流媒体
+- DOMAIN-SUFFIX,nflxvideo.net,📺 流媒体
+- DOMAIN-SUFFIX,nflximg.net,📺 流媒体
+- DOMAIN-SUFFIX,nflxso.net,📺 流媒体
+- DOMAIN-SUFFIX,nflxext.com,📺 流媒体
+- DOMAIN-SUFFIX,instagram.com,🚀 节点选择
+- DOMAIN-SUFFIX,cdninstagram.com,🚀 节点选择
+- DOMAIN-SUFFIX,facebook.com,🚀 节点选择
+- DOMAIN-SUFFIX,fbcdn.net,🚀 节点选择
+- DOMAIN-SUFFIX,threads.net,🚀 节点选择
+- DOMAIN-SUFFIX,x.com,🚀 节点选择
+- DOMAIN-SUFFIX,twitter.com,🚀 节点选择
+- DOMAIN-SUFFIX,twimg.com,🚀 节点选择
+- GEOSITE,CN,🇨🇳 国内直连
+- GEOIP,CN,🇨🇳 国内直连,no-resolve
+- MATCH,🐟 漏网之鱼

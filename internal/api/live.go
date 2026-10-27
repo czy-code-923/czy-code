@@ -323,12 +323,20 @@ func (s *Server) createLiveTx(r *http.Request, tx pgx.Tx, b liveInput, created *
 		spec.Kind = "frpc"
 		spec.PrivateKey = ""
 		if len(b.Tunnels) > 0 {
-			allowed := map[int]bool{}
+			allowed := map[int]string{}
 			for _, t := range parent.Tunnels {
-				allowed[t.RemotePort] = true
+				kind := t.Type
+				if kind == "" {
+					kind = "tcp"
+				}
+				allowed[t.RemotePort] = kind
 			}
 			for _, t := range b.Tunnels {
-				if !allowed[t.RemotePort] {
+				kind := t.Type
+				if kind == "" {
+					kind = "tcp"
+				}
+				if allowed[t.RemotePort] != kind {
 					return bad("client tunnel remote port is not reserved by parent server")
 				}
 			}
@@ -375,6 +383,9 @@ func (s *Server) createLiveTx(r *http.Request, tx pgx.Tx, b liveInput, created *
 	}
 	if e := spec.Validate(); e != nil {
 		return bad(e.Error())
+	}
+	if e := requireFRPVersion(r, tx, b.HostID, spec); e != nil {
+		return e
 	}
 	if spec.UsesTLS() {
 		if e := spec.VerifyPublicCertificate(); e != nil {
@@ -511,6 +522,9 @@ func (s *Server) liveToggle(w http.ResponseWriter, r *http.Request) error {
 			spec, err := s.loadSpec(r, r.PathValue("id"))
 			if err != nil {
 				return err
+			}
+			if hasFRPUDP(spec) && !engineUpdateCapable(version) {
+				return problem{409, "FRP UDP requires Agent 0.17 or newer"}
 			}
 			if spec.RequiresV13() && !live.V13Capable(version) {
 				return problem{409, "upgrade host to Agent 0.13.0 for this protocol/transport"}
@@ -677,6 +691,9 @@ func (s *Server) liveSync(w http.ResponseWriter, r *http.Request, host string) e
 		if e = json.Unmarshal(raw, &v.Spec); e != nil {
 			rows.Close()
 			return e
+		}
+		if hasFRPUDP(v.Spec) && !engineUpdateCapable(agentVersion) {
+			v.Enabled = false
 		}
 		if v.Spec.RequiresV13() && !live.V13Capable(agentVersion) {
 			v.Enabled = false

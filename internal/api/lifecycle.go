@@ -139,6 +139,9 @@ func (s *Server) liveDelete(w http.ResponseWriter, r *http.Request) error {
 	if dependencies > 0 {
 		return problem{409, "此配置仍被链式出站或 FRP 客户端引用，请先修改或删除引用方"}
 	}
+	if e = prunePolicyNodes(r, tx, map[string]bool{id: true}); e != nil {
+		return e
+	}
 	done := !enabled && ((state == "stopped" && v == rv) || (v == 1 && rv == 0))
 	if done {
 		e = purgeLive(r, tx, id)

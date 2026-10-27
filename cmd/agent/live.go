@@ -7,6 +7,7 @@ import (
 	"os"
 	"runtime"
 	"time"
+	"vps-control/internal/engine"
 	"vps-control/internal/executor"
 	"vps-control/internal/live"
 )
@@ -18,6 +19,13 @@ func runLive(ctx context.Context, call func(context.Context, string, any) ([]byt
 	binaries := map[string]executor.Binary{}
 	for engine, prefix := range map[string]string{"xray": "XRAY", "sing-box": "SING_BOX", "frps": "FRPS", "frpc": "FRPC"} {
 		binaries[engine] = executor.Binary{Path: os.Getenv(prefix + "_BINARY"), SHA256: os.Getenv(prefix + "_SHA256")}
+	}
+	updates, e := engine.NewManager(os.Getenv("LIVE_STATE_DIR"))
+	if e != nil {
+		return e
+	}
+	for name, binary := range updates.Overrides() {
+		binaries[name] = binary
 	}
 	runner, e := live.NewRunner(os.Getenv("LIVE_STATE_DIR"), binaries)
 	if e != nil {
@@ -69,6 +77,24 @@ func runLive(ctx context.Context, call func(context.Context, string, any) ([]byt
 	defer tick.Stop()
 	for {
 		sendUsage(ctx)
+		if candidate, ok := updates.Pending(); ok {
+			previous := runner.Binary(candidate.Engine)
+			if err := runner.SwitchBinary(ctx, candidate.Engine, candidate.Binary); err != nil {
+				updates.Finish(candidate.Request, executor.Binary{}, "candidate configuration or startup failed; previous version retained")
+			} else if err = updates.Finish(candidate.Request, candidate.Binary, ""); err != nil {
+				runner.SwitchBinary(ctx, candidate.Engine, previous)
+			}
+			binaries[candidate.Engine] = runner.Binary(candidate.Engine)
+			capabilities = live.Capabilities(binaries)
+		}
+		if raw, status, err := call(ctx, "engines/sync", map[string]any{"reports": updates.Reports()}); err == nil && status == 200 {
+			var requests []engine.Request
+			if json.Unmarshal(raw, &requests) == nil && len(requests) <= 1 {
+				for _, request := range requests {
+					updates.Submit(ctx, request)
+				}
+			}
+		}
 		reports := runner.Reports()
 		raw, status, e := call(ctx, "live/sync", map[string]any{"reports": reports, "bundle_mode": true, "capabilities": capabilities, "kernel_reports": runner.KernelReports()})
 		if e == nil && status == 200 {

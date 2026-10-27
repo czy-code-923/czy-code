@@ -72,17 +72,28 @@ func (s *Server) updateFRP(w http.ResponseWriter, r *http.Request, tx pgx.Tx, b 
 		spec.PrivateKey = ""
 		spec.Listen = "127.0.0.1"
 		if len(b.Tunnels) > 0 {
-			allowed := map[int]bool{}
+			allowed := map[int]string{}
 			for _, t := range spec.Tunnels {
-				allowed[t.RemotePort] = true
+				kind := t.Type
+				if kind == "" {
+					kind = "tcp"
+				}
+				allowed[t.RemotePort] = kind
 			}
 			for _, t := range b.Tunnels {
-				if !allowed[t.RemotePort] {
+				kind := t.Type
+				if kind == "" {
+					kind = "tcp"
+				}
+				if allowed[t.RemotePort] != kind {
 					return bad("client port must be reserved by parent server")
 				}
 			}
 			spec.Tunnels = b.Tunnels
 		}
+	}
+	if e := requireFRPVersion(r, tx, b.HostID, spec); e != nil {
+		return e
 	}
 	if e := spec.Validate(); e != nil {
 		return bad(e.Error())

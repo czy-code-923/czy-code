@@ -107,6 +107,7 @@ type Peer struct {
 	Password string `json:"password"`
 }
 type Tunnel struct {
+	Type       string `json:"type,omitempty"`
 	Name       string `json:"name"`
 	LocalHost  string `json:"local_host"`
 	LocalPort  int    `json:"local_port"`
@@ -207,6 +208,9 @@ func (s Spec) Validate() error {
 		seen := map[int]bool{s.Port: true}
 		names := map[string]bool{}
 		for _, t := range s.Tunnels {
+			if t.Type != "" && t.Type != "tcp" && t.Type != "udp" {
+				return errors.New("FRP tunnel type must be tcp or udp")
+			}
 			if names[t.Name] || !label.MatchString(t.Name) || (t.LocalHost != "127.0.0.1" && t.LocalHost != "::1") || t.LocalPort < 1 || t.LocalPort > 65535 || t.RemotePort < 1024 || t.RemotePort > 65535 || seen[t.RemotePort] || t.RemotePort == 8080 || t.RemotePort == 8091 || t.RemotePort == 5173 {
 				return errors.New("invalid or overlapping FRP tunnel")
 			}
@@ -281,7 +285,11 @@ func (s Spec) Render() (engineResult string, fileResult map[string][]byte, errRe
 			engine = "frpc"
 			proxies := []any{}
 			for _, t := range s.Tunnels {
-				proxies = append(proxies, map[string]any{"name": t.Name, "type": "tcp", "localIP": t.LocalHost, "localPort": t.LocalPort, "remotePort": t.RemotePort})
+				kind := t.Type
+				if kind == "" {
+					kind = "tcp"
+				}
+				proxies = append(proxies, map[string]any{"name": t.Name, "type": kind, "localIP": t.LocalHost, "localPort": t.LocalPort, "remotePort": t.RemotePort})
 			}
 			config = map[string]any{"serverAddr": s.Address, "serverPort": s.Port, "auth": auth, "transport": map[string]any{"tls": map[string]any{"enable": true, "trustedCaFile": "tls.crt", "serverName": s.Address}}, "proxies": proxies}
 		}

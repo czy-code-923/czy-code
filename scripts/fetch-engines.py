@@ -1,89 +1,73 @@
-"""Download pinned official releases, verify GitHub's SHA-256, extract only named binaries."""
+"""Fetch official, checksum-verified sing-box / Xray / FRP releases.
+
+latest resolves the latest stable version. Specific tags are accepted. Existing
+engine directories are refused; runtime switching is handled by the Agent.
+"""
 from pathlib import Path
-import argparse
-import hashlib
-import io
-import json
-import os
-import platform
-import subprocess
-import sys
-import tarfile
-import tempfile
-import urllib.request
-import zipfile
+import argparse,hashlib,io,json,os,platform,re,tarfile,urllib.request,zipfile
 
 def fetch(url):
-    req=urllib.request.Request(url,headers={'User-Agent':'Harbor-engine-installer'})
-    with urllib.request.urlopen(req,timeout=120) as response:
-        data=response.read(160*1024*1024+1)
-        if len(data)>160*1024*1024: raise ValueError('Download too large')
-        return data
+    request=urllib.request.Request(url,headers={'User-Agent':'Starhub-official-engine-installer'})
+    with urllib.request.urlopen(request,timeout=120) as response:
+        raw=response.read((160<<20)+1)
+        if len(raw)>160<<20:raise ValueError('Download exceeds limit')
+        return raw
 
 def main():
-    parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--os',choices=['linux','windows'],default='windows' if os.name=='nt' else 'linux')
-    parser.add_argument('--arch',choices=['amd64','arm64'],default='arm64' if platform.machine().lower() in ('arm64','aarch64') else 'amd64')
-    parser.add_argument('--go',default='go')
-    parser.add_argument('--output',help='New staged engine directory; existing directories are refused')
-    args=parser.parse_args()
-    project=Path(__file__).resolve().parents[1]
-    dest=Path(args.output).resolve() if args.output else project/'engines'
-    if dest.exists(): raise SystemExit('engines/ already exists; keep the running version and stage upgrades in a separate checkout.')
+    p=argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--os',choices=['linux','windows'],default='windows' if os.name=='nt' else 'linux')
+    p.add_argument('--arch',choices=['amd64','arm64'],default='arm64' if platform.machine().lower() in ('arm64','aarch64') else 'amd64')
+    p.add_argument('--output');p.add_argument('--go',default='go',help='Compatibility argument; official binaries need no Go build')
+    for engine in ('sing-box','xray','frp'):p.add_argument('--'+engine+'-version',default='latest')
+    a=p.parse_args();dest=Path(a.output).resolve() if a.output else Path(__file__).resolve().parents[1]/'engines'
+    if dest.exists():raise SystemExit('Output exists; stage a new engine directory')
     output={};receipt={}
-    for repo,version in [('SagerNet/sing-box','v1.14.4'),('fatedier/frp','v0.71.1'),('XTLS/Xray-core','v26.10.21')]:
-        if repo=='SagerNet/sing-box':
-            name='sing-box'+('.exe' if args.os=='windows' else '')
-            bundle=project/'patched-engines'/name
-            if bundle.exists():
-                build=json.loads((bundle.parent/'receipt.json').read_text(encoding='utf-8'))
-                if build.get('platform')!=args.os+'-'+args.arch or build.get('version')!='1.14.4-harbor.1':raise ValueError('Patched core platform/version mismatch')
-                data=bundle.read_bytes()
-                if hashlib.sha256(data).hexdigest()!=build['binary_sha256']:raise ValueError('Patched core digest mismatch')
-                output[name]=data
-                for legal in ('sing-box-source.zip','LICENSE.sing-box'):
-                    output[legal]=(bundle.parent/legal).read_bytes()
-            else:
-                with tempfile.TemporaryDirectory(prefix='harbor-engine-build-') as tmp:
-                    built=Path(tmp)/name
-                    subprocess.run([sys.executable,str(project/'scripts/build-singbox.py'),'--go',args.go,'--os',args.os,'--arch',args.arch,'--output',str(built)],check=True)
-                    build=json.loads(built.with_suffix(built.suffix+'.receipt.json').read_text())
-                    output[name]=built.read_bytes()
-                    output['sing-box-source.zip']=(built.parent/'sing-box-1.14.4-harbor.1-source.zip').read_bytes()
-                    output['LICENSE.sing-box']=(project/'third_party/sing-box-security/LICENSE').read_bytes()+b'\n'+(project/'third_party/sing-box-security/COPYING').read_bytes()
-            if hashlib.sha256(output['sing-box-source.zip']).hexdigest()!=build['corresponding_source_sha256']:raise ValueError('Corresponding source digest mismatch')
-            receipt[repo]={'version':'1.14.4-harbor.1','build':build}
-            continue
-        release=json.loads(fetch('https://api.github.com/repos/'+repo+'/releases/tags/'+version))
-        extension='zip' if args.os=='windows' or repo=='XTLS/Xray-core' else 'tar.gz'
-        name=(f'sing-box-{version[1:]}-{args.os}-{args.arch}.{extension}' if 'sing-box' in repo else f'frp_{version[1:]}_{args.os}_{args.arch}.{extension}')
-        if repo=='XTLS/Xray-core': name='Xray-'+args.os+'-'+('64' if args.arch=='amd64' else 'arm64-v8a')+'.zip'
-        asset=next(a for a in release['assets'] if a['name']==name)
-        url=asset['browser_download_url']
-        if not url.startswith('https://github.com/'+repo+'/releases/download/'+version+'/'): raise ValueError('Unexpected asset URL')
-        data=fetch(url);digest=hashlib.sha256(data).hexdigest()
-        if asset.get('digest')!='sha256:'+digest: raise ValueError('Missing or mismatched official archive digest')
-        names=['xray'] if repo=='XTLS/Xray-core' else ['sing-box'] if 'sing-box' in repo else ['frps','frpc']
-        names=[n+('.exe' if args.os=='windows' else '') for n in names]
-        archive=zipfile.ZipFile(io.BytesIO(data)) if extension=='zip' else tarfile.open(fileobj=io.BytesIO(data),mode='r:gz')
-        for wanted in names:
-            members=archive.namelist() if extension=='zip' else [m.name for m in archive.getmembers() if m.isfile()]
-            matches=[n for n in members if n.split('/')[-1]==wanted]
-            if len(matches)!=1: raise ValueError('Ambiguous engine archive')
-            output[wanted]=archive.read(matches[0]) if extension=='zip' else archive.extractfile(matches[0]).read()
-        if repo=='XTLS/Xray-core':
-            for wanted in ('geoip.dat','geosite.dat'):
-                matches=[n for n in archive.namelist() if n.split('/')[-1]==wanted]
-                if len(matches)==1:output[wanted]=archive.read(matches[0])
-        archive.close()
-        receipt[repo]={'version':version,'archive_sha256':digest,'url':url}
+    for repo,key in [('SagerNet/sing-box','sing_box'),('XTLS/Xray-core','xray'),('fatedier/frp','frp')]:
+        version=getattr(a,key+'_version');path='latest'
+        if version!='latest':
+            if not re.fullmatch(r'v?[0-9]+\.[0-9]+\.[0-9]+(?:[-.][a-zA-Z0-9.-]+)?',version):raise ValueError('Invalid official version')
+            version=version if version.startswith('v') else 'v'+version;path='tags/'+version
+        release=json.loads(fetch('https://api.github.com/repos/'+repo+'/releases/'+path));tag=release['tag_name']
+        if (version=='latest' and release.get('prerelease')) or version!='latest' and tag!=version:raise ValueError('Unexpected official release')
+        if not re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+(?:[-.][a-zA-Z0-9.-]+)?',tag):raise ValueError('Unexpected official tag')
+        extension='zip' if a.os=='windows' or key=='xray' else 'tar.gz'
+        wanted=(f'sing-box-{tag[1:]}-{a.os}-{a.arch}.{extension}' if key=='sing_box' else f'frp_{tag[1:]}_{a.os}_{a.arch}.{extension}')
+        if key=='xray':wanted='Xray-'+a.os+'-'+('64' if a.arch=='amd64' else 'arm64-v8a')+'.zip'
+        asset=next((v for v in release['assets'] if v['name']==wanted),None)
+        if not asset or not asset['browser_download_url'].startswith('https://github.com/'+repo+'/releases/download/'+tag+'/'):raise ValueError('Official platform asset unavailable')
+        raw=fetch(asset['browser_download_url']);digest=hashlib.sha256(raw).hexdigest()
+        if asset.get('digest')!='sha256:'+digest or len(raw)!=asset['size']:raise ValueError('Official archive digest mismatch')
+        archive=zipfile.ZipFile(io.BytesIO(raw)) if extension=='zip' else tarfile.open(fileobj=io.BytesIO(raw),mode='r:gz')
+        members=archive.namelist() if extension=='zip' else [m.name for m in archive.getmembers() if m.isfile()]
+        def extract(name,required=True):
+            matches=[v for v in members if v.split('/')[-1]==name]
+            if not matches and not required:return None
+            if len(matches)!=1:raise ValueError('Missing or ambiguous official archive member')
+            item=archive.getinfo(matches[0]) if extension=='zip' else archive.getmember(matches[0])
+            if (item.file_size if extension=='zip' else item.size)>160<<20:raise ValueError('Engine exceeds extraction limit')
+            return archive.read(matches[0]) if extension=='zip' else archive.extractfile(item).read()
+        names=['sing-box'] if key=='sing_box' else ['xray'] if key=='xray' else ['frps','frpc']
+        for name in names:
+            filename=name+('.exe' if a.os=='windows' else '');output[filename]=extract(filename)
+        if key=='xray':
+            for name in ('geoip.dat','geosite.dat'):
+                body=extract(name,False)
+                if body:output[name]=body
+        if key=='sing_box':
+            source=fetch('https://codeload.github.com/SagerNet/sing-box/zip/refs/tags/'+tag);output['sing-box-source.zip']=source
+            with zipfile.ZipFile(io.BytesIO(source)) as z:
+                licenses=[n for n in z.namelist() if n.split('/')[-1]=='LICENSE']
+                if not licenses:raise ValueError('Official source license missing')
+                output['LICENSE.sing-box']=z.read(min(licenses,key=len))
+        archive.close();receipt[repo]={'version':tag,'official':True,'archive_sha256':digest,'url':asset['browser_download_url']}
     dest.mkdir(mode=0o700)
-    for name,data in output.items():
-        path=dest/name
-        with path.open('xb') as file: file.write(data)
-        path.chmod(0o644 if name in ('LICENSE.sing-box','sing-box-source.zip','geoip.dat','geosite.dat') else 0o755)
-    receipt['binaries']={name:hashlib.sha256(data).hexdigest() for name,data in output.items()}
-    (dest/'receipt.json').write_text(json.dumps(receipt,indent=2),encoding='utf-8')
-    print('Patched sing-box and verified official engines ready:',', '.join(output))
+    executables={name+('.exe' if a.os=='windows' else '') for name in ('sing-box','xray','frps','frpc')}
+    for name,raw in output.items():
+        file=dest/name
+        with file.open('xb') as target:target.write(raw)
+        file.chmod(0o755 if name in executables else 0o644)
+    receipt['binaries']={name:hashlib.sha256(raw).hexdigest() for name,raw in output.items()}
+    (dest/'receipt.json').write_text(json.dumps(receipt,indent=2)+'\n',encoding='utf-8')
+    print('Verified official engines:',', '.join(v['version'] for k,v in receipt.items() if k!='binaries'))
 
-if __name__=='__main__': main()
+if __name__=='__main__':main()

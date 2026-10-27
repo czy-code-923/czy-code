@@ -1,7 +1,7 @@
 """Build release assets on a clean checkout; never reads an installed control plane.
 
-The patched engines are reused from hash-pinned, previously published packages.
-Harbor binaries and frontend are rebuilt from this checkout. Publishing is handled
+Official engines are downloaded by exact upstream tags and verified digests.
+Control binaries and frontend are rebuilt from this checkout. Publishing is handled
 by the workflow, with the repository token kept out of archives and logs.
 """
 import hashlib
@@ -16,22 +16,13 @@ import urllib.request
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.16.0"
-PREVIOUS = "0.15.0"
+VERSION = "0.17.0"
+PREVIOUS = "0.16.0"
 REPOSITORY = "czy-code-923/czy-code"
 BASE = f"https://github.com/{REPOSITORY}/releases/download/v{VERSION}-distribution/"
 OLD_BASE = f"https://github.com/{REPOSITORY}/releases/download/v{PREVIOUS}-distribution/"
-PINNED = {
-    "starhub-0.15.0-agent-releases.zip": "e3d1ccda2ef0986cb6402d6dbd3279a0c2e54d33384361e80393c4c033aeb788",
-    "starhub-v015-update.zip": "3dad3e485ae7a5ae2048029d80619f834ceee08b145fdaf5871b5a2f06ddd8a5",
-    "harbor-0.15.0-linux-amd64.zip": "99b4b96e91a5b282e6592e67af80ab7d7a60daab5bff4c1440a61cabfa85ead7",
-    "harbor-0.15.0-linux-arm64.zip": "fc06e6d21ccd24ef785abc72f84b3b4c65d54d8ef2d9915e6094a39cc402f320",
-    "harbor-0.15.0-windows-amd64.zip": "f41e4290d12120ecf14240e9bf57f46256bac5b81482c2bbefbeb60c02d74f99",
-    "harbor-0.15.0-windows-arm64.zip": "a4e5d9de626cadb13847edc8d7f60ee1239bc81cc2df266c886f52058a248de1",
-    "sing-box-1.14.4-harbor.1-source.zip": "6fccff19fb6ee1625bfa6c2fe21fe1ff4a668ca172ff27bc381afde85fd18f2c",
-    "install-starhub.sh": "785b51660b24d5eb264b973b1a10fb9deec58cfde04894cdd1afd075d55e2ca2",
-    "install-starhub.ps1": "4f97ee29138481aa8711f809930de51f3076afb414e52e19663a7dc8d0ee5ee8",
-}
+PINNED = {'starhub-v016-update.zip': '2898a911ca2a80087956b991dbbeef2efe31d758cb67c0361814e02449985f20', 'install-starhub.sh': 'eeed37c5b3b1f2339abf8f0d459e78fe1d64947fd31025ad525111d91a0ca8de', 'install-starhub.ps1': 'a5682253cb66c98933549c5ba8dcc29985fa0ae8ff02ef29d679d18fcf3e3f53', 'harbor-0.16.0-linux-amd64.zip': 'ea12c4eded69bee9cab40a46b7d67cfa8fe637566858f6bfe07c33ff44515a20', 'harbor-0.16.0-linux-arm64.zip': '7464a7512818482ba550139f104f6dc6ba63edb67189db54e04a561045c72849', 'harbor-0.16.0-windows-amd64.zip': '1f05330b4fa504d6a1e924f890e6329050f4447b38bbd55b0a515866a6c6a121', 'harbor-0.16.0-windows-arm64.zip': 'a06115a5b765abfe4af0763b8b64574a369886d63f4a60da8ae5e4b2d6a19675'}
+ENGINE_VERSIONS = {"sing-box": "v1.14.4", "xray": "v26.10.21", "frp": "v0.71.1"}
 
 
 def digest(path):
@@ -74,17 +65,27 @@ def main():
         binaries[target] = directory
         print("Built " + target, flush=True)
 
+    engines = {}
+    for target in targets:
+        goos, arch = target.split("-")
+        directory = cache / ("official-" + target)
+        arguments = ["python3", "scripts/fetch-engines.py", "--os", goos, "--arch", arch, "--output", str(directory)]
+        for name, version in ENGINE_VERSIONS.items():
+            arguments += ["--" + name + "-version", version]
+        run(*arguments)
+        engines[target] = directory
+
     agents = cache / "agents"
     agents.mkdir()
     manifest = {}
-    with zipfile.ZipFile(previous("starhub-0.15.0-agent-releases.zip")) as old_agents:
-        for target in targets[:2]:
-            path = agents / (target + ".zip")
-            with zipfile.ZipFile(io.BytesIO(old_agents.read(target + ".zip"))) as old, zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
-                for item in old.infolist():
-                    body = (binaries[target] / item.filename).read_bytes() if item.filename in ("harbor-agent", "harbor-agent-cleanup") else old.read(item)
-                    archive.writestr(item.filename, body)
-            manifest[target] = {"size": path.stat().st_size, "sha256": digest(path)}
+    for target in targets[:2]:
+        path = agents / (target + ".zip")
+        with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
+            for name in ("harbor-agent", "harbor-agent-cleanup"):
+                archive.write(binaries[target] / name, name)
+            for name in ("sing-box", "xray", "frps", "frpc", "LICENSE.sing-box", "sing-box-source.zip"):
+                archive.write(engines[target] / name, name)
+        manifest[target] = {"size": path.stat().st_size, "sha256": digest(path)}
     (agents / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     bundle = out / f"starhub-{VERSION}-agent-releases.zip"
     with zipfile.ZipFile(bundle, "w", zipfile.ZIP_STORED) as archive:
@@ -94,9 +95,9 @@ def main():
 
     api_tests = cache / "api-tests"
     run("go", "test", "-c", "-o", str(api_tests), "./internal/api", env={**os.environ, "GOOS": "linux", "GOARCH": "amd64", "CGO_ENABLED": "0"})
-    update = out / "starhub-v016-update.zip"
-    with zipfile.ZipFile(previous("starhub-v015-update.zip")) as old, zipfile.ZipFile(update, "w", zipfile.ZIP_DEFLATED) as archive:
-        apply = old.read("apply.py").decode("utf-8").replace("v015", "v016").replace("V015", "V016").replace(PREVIOUS, VERSION)
+    update = out / "starhub-v017-update.zip"
+    with zipfile.ZipFile(previous("starhub-v016-update.zip")) as old, zipfile.ZipFile(update, "w", zipfile.ZIP_DEFLATED) as archive:
+        apply = old.read("apply.py").decode("utf-8").replace("v016", "v017").replace("V016", "V017").replace(PREVIOUS, VERSION)
         archive.writestr("apply.py", apply)
         archive.write(api_tests, "api-tests")
         for name in ("harbor-control", "harbor-agent", "harbor-firewall", "harbor-agent-cleanup"):
@@ -110,13 +111,12 @@ def main():
     package_checksums = {}
     for target in targets:
         package = out / f"harbor-{VERSION}-{target}.zip"
-        with zipfile.ZipFile(previous(f"harbor-{PREVIOUS}-{target}.zip")) as old, zipfile.ZipFile(package, "w", zipfile.ZIP_DEFLATED) as archive:
-            for name in old.namelist():
-                if name.startswith("patched-engines/"):
-                    archive.writestr(name, old.read(name))
+        with zipfile.ZipFile(package, "w", zipfile.ZIP_DEFLATED) as archive:
+            for file in sorted(engines[target].iterdir()):
+                archive.write(file, "official-engines/" + file.name)
             for file in sorted(binaries[target].iterdir()):
                 archive.write(file, "bin/" + file.name)
-            for directory in ("scripts", "docs", "web/dist", "third_party"):
+            for directory in ("scripts", "docs", "web/dist"):
                 for file in sorted((ROOT / directory).rglob("*")):
                     if file.is_file() and "__pycache__" not in file.parts:
                         archive.write(file, file.relative_to(ROOT).as_posix())
@@ -145,8 +145,7 @@ def main():
             if path.name.startswith(".env") and path.name != ".env.example":
                 raise ValueError("Private environment file tracked")
             archive.write(ROOT / name, f"harbor-{VERSION}/" + name)
-    engine_source = previous("sing-box-1.14.4-harbor.1-source.zip")
-    shutil.copyfile(engine_source, out / engine_source.name)
+    shutil.copyfile(engines["linux-amd64"] / "sing-box-source.zip", out / "sing-box-1.14.4-source.zip")
     assets = sorted(out.iterdir())
     (out / "SHA256SUMS.txt").write_text("".join(digest(file) + "  " + file.name + "\n" for file in assets), encoding="ascii")
     assets.append(out / "SHA256SUMS.txt")

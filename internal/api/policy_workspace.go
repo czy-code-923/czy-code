@@ -2,7 +2,9 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"github.com/jackc/pgx/v5"
 	"net/http"
 	"slices"
@@ -11,8 +13,10 @@ import (
 	"vps-control/internal/live"
 )
 
-// Install the built-in template once for new workspaces. Existing global/user
-// choices are preserved, and deliberately deleting it does not recreate it.
+const legacyDefaultSourceSHA = "5bac8a5edb37b4e89c4a4406c82efb8f3099e429d4d43c0ad7ff438ef2defbfc"
+
+// Only the byte-exact, uncustomized factory template is eligible for migration.
+// User policies and deliberately deleted templates are preserved.
 func (s *Server) EnsureDefaultClientPolicy(ctx context.Context) error {
 	p, e := clientpolicy.Default()
 	if e != nil {
@@ -27,6 +31,19 @@ func (s *Server) EnsureDefaultClientPolicy(ctx context.Context) error {
 		return e
 	}
 	defer tx.Rollback(ctx)
+	var oldID, oldSource string
+	e = tx.QueryRow(ctx, `SELECT id,source FROM client_policies WHERE tenant_id=$1 AND user_id IS NULL AND client_id='all' AND name='Mihomo Max 默认模板' AND bindings='{}'::jsonb FOR UPDATE`, tenant).Scan(&oldID, &oldSource)
+	if e != nil && e != pgx.ErrNoRows {
+		return e
+	}
+	if e == nil && fmt.Sprintf("%x", sha256.Sum256([]byte(oldSource))) == legacyDefaultSourceSHA {
+		if _, e = tx.Exec(ctx, `UPDATE client_policies SET source=$3,version=version+1,updated_at=now() WHERE tenant_id=$1 AND id=$2`, tenant, oldID, source); e != nil {
+			return e
+		}
+		if e = audit(ctx, tx, "system", "client-policy.factory-migrate", oldID); e != nil {
+			return e
+		}
+	}
 	var marker string
 	e = tx.QueryRow(ctx, `INSERT INTO client_policy_bootstrap(tenant_id) VALUES($1) ON CONFLICT DO NOTHING RETURNING tenant_id`, tenant).Scan(&marker)
 	if e == pgx.ErrNoRows {
@@ -51,7 +68,7 @@ func (s *Server) defaultPolicy(w http.ResponseWriter, r *http.Request) error {
 	if e != nil {
 		return e
 	}
-	send(w, 200, map[string]any{"name": "Mihomo Max 默认模板", "policy": p, "source": source, "native_options": map[string]any{}, "notes": []string{"基于提供的 mihomo_max.yaml：21 组、186 条规则，基础/DNS/策略组/规则独立编辑", "不含节点凭据；节点按协议和 IPv4/IPv6 动态匹配已授权服务", "默认关闭 LAN/TUN，DNS/控制器使用回环监听；respect-rules 时关闭 prefer-h3"}})
+	send(w, 200, map[string]any{"name": "Mihomo Max 默认模板", "policy": p, "source": source, "native_options": map[string]any{}, "notes": []string{"基于提供的 mihomo_max.yaml：21 组、186 条规则，基础/DNS/策略组/规则独立编辑", "不含虚构协议或节点；按实际已授权节点的 IPv4/IPv6 端点选择", "默认关闭 LAN/TUN，DNS/控制器使用回环监听；respect-rules 时关闭 prefer-h3"}})
 	return nil
 }
 func (s *Server) importPolicy(w http.ResponseWriter, r *http.Request) error {
@@ -125,6 +142,7 @@ func (s *Server) previewPolicy(w http.ResponseWriter, r *http.Request) error {
 	var b struct {
 		Source string                     `json:"source"`
 		Client string                     `json:"client_id"`
+		User   string                     `json:"user_id"`
 		Native map[string]json.RawMessage `json:"native_options"`
 	}
 	if e := decodeBounded(w, r, &b, 160<<10); e != nil {
@@ -138,7 +156,7 @@ func (s *Server) previewPolicy(w http.ResponseWriter, r *http.Request) error {
 	if !ok || !c.Full {
 		return bad("请选择支持分流配置的客户端")
 	}
-	rows, e := s.DB.Query(r.Context(), `SELECT id,name,kind,host_id FROM live_services WHERE tenant_id=$1 AND delete_requested_at IS NULL AND kind NOT IN ('frps','frpc') ORDER BY created_at LIMIT 128`, tenant)
+	rows, e := s.DB.Query(r.Context(), `SELECT id,name,kind,host_id,address,sealed FROM live_services l WHERE tenant_id=$1 AND delete_requested_at IS NULL AND kind NOT IN ('frps','frpc') AND ($2='' OR EXISTS(SELECT 1 FROM user_group_services gs JOIN user_group_members gm USING(tenant_id,group_id) WHERE gs.tenant_id=l.tenant_id AND gs.service_id=l.id AND gm.user_id=$2)) ORDER BY created_at LIMIT 128`, tenant, b.User)
 	if e != nil {
 		return e
 	}
@@ -147,13 +165,30 @@ func (s *Server) previewPolicy(w http.ResponseWriter, r *http.Request) error {
 	outs := []any{}
 	for rows.Next() {
 		var n clientpolicy.Node
-		if e = rows.Scan(&n.ID, &n.Name, &n.Protocol, &n.Host); e != nil {
+		var address string
+		var sealed []byte
+		if e = rows.Scan(&n.ID, &n.Name, &n.Protocol, &n.Host, &address, &sealed); e != nil {
 			return e
 		}
-		n.Tag = n.Name + "-" + n.ID[:8]
-		n.Family = "ipv4"
-		nodes = append(nodes, n)
-		outs = append(outs, map[string]any{"tag": n.Tag, "name": n.Tag, "type": "socks", "protocol": "socks", "server": "127.0.0.1", "server_port": 9, "settings": map[string]any{"servers": []any{map[string]any{"address": "127.0.0.1", "port": 9}}}})
+		raw, err := live.Open(s.MasterKey, sealed)
+		if err != nil {
+			return err
+		}
+		var spec live.Spec
+		if e = json.Unmarshal(raw, &spec); e != nil {
+			return e
+		}
+		addresses := spec.EndpointAddresses
+		if len(addresses) == 0 {
+			addresses = []string{address}
+		}
+		for _, address := range addresses {
+			endpoint := n
+			endpoint.Tag = n.Name + "-" + n.ID[:8] + "-" + clientpolicy.AddressFamily(address)
+			endpoint.Family = clientpolicy.AddressFamily(address)
+			nodes = append(nodes, endpoint)
+			outs = append(outs, map[string]any{"tag": endpoint.Tag, "name": endpoint.Tag, "type": "socks", "protocol": "socks", "server": "127.0.0.1", "server_port": 9, "settings": map[string]any{"servers": []any{map[string]any{"address": "127.0.0.1", "port": 9}}}})
+		}
 	}
 	if e = rows.Err(); e != nil {
 		return e

@@ -225,6 +225,9 @@ func (p Policy) References() []string {
 	return r
 }
 func Dynamic(ref string) bool {
+	if _, _, ok := EndpointIdentity(ref); ok {
+		return true
+	}
 	return ref == "ALL" || ref == "DIRECT" || ref == "REJECT" || strings.HasPrefix(ref, "protocol:") || strings.HasPrefix(ref, "node:") || strings.HasPrefix(ref, "host:") || ref == "family:ipv4" || ref == "family:ipv6"
 }
 func (p Policy) Resolve(nodes []Node, bindings map[string]string) (Result, error) {
@@ -236,8 +239,9 @@ func (p Policy) Resolve(nodes []Node, bindings map[string]string) (Result, error
 	for _, g := range p.Groups {
 		names[g.Name] = true
 	}
-	if !names["PROXY"] {
-		p.Groups = append([]Group{{Name: "PROXY", Type: "select", Proxies: []string{"ALL"}}}, p.Groups...)
+	needsProxy := slices.Contains(p.References(), "PROXY") || len(p.Rules) == 0 && len(p.Groups) == 0
+	if !names["PROXY"] && needsProxy {
+		p.Groups = append(p.Groups, Group{Name: "PROXY", Type: "select", Proxies: []string{"ALL"}})
 		names["PROXY"] = true
 	}
 	for _, n := range nodes {
@@ -251,6 +255,12 @@ func (p Policy) Resolve(nodes []Node, bindings map[string]string) (Result, error
 		}
 		tags := []string{}
 		for _, n := range nodes {
+			if id, family, ok := EndpointIdentity(ref); ok {
+				if id == n.ID && family == n.Family {
+					tags = append(tags, n.Tag)
+				}
+				continue
+			}
 			if bound := bindings[ref]; bound != "" {
 				if bound == n.ID {
 					tags = append(tags, n.Tag)
@@ -314,7 +324,11 @@ func (p Policy) Resolve(nodes []Node, bindings map[string]string) (Result, error
 		r.Rules = append(r.Rules, strings.Join(a, ","))
 	}
 	if len(r.Rules) == 0 || !strings.HasPrefix(r.Rules[len(r.Rules)-1], "MATCH,") {
-		r.Rules = append(r.Rules, "MATCH,PROXY")
+		fallback := "PROXY"
+		if !names[fallback] && len(p.Groups) > 0 {
+			fallback = p.Groups[0].Name
+		}
+		r.Rules = append(r.Rules, "MATCH,"+fallback)
 	}
 	for _, key := range []string{"nameserver", "direct-nameserver", "proxy-server-nameserver"} {
 		values := stringsOf(r.DNS[key])

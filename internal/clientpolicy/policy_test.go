@@ -38,7 +38,7 @@ func TestPolicies(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	if len(r.Groups) != 5 || len(r.Groups[2].Proxies) != 1 {
+	if len(r.Groups) != 4 || len(r.Groups[1].Proxies) != 1 {
 		t.Fatalf("bad group expansion: %+v", r.Groups)
 	}
 	for _, format := range []string{"mihomo", "sing-box", "xray"} {

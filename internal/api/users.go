@@ -15,23 +15,36 @@ func (s *Server) users(w http.ResponseWriter, r *http.Request) error {
 	}
 	if r.Method == "GET" {
 		var data json.RawMessage
-		e := s.DB.QueryRow(r.Context(), `SELECT COALESCE(jsonb_agg(x),'[]') FROM (SELECT id,name,enabled,expires_at,created_at,quota_bytes,used_bytes,lifetime_bytes,upload_bytes,download_bytes,reset_strategy,reset_anchor_at,reset_day,CASE reset_strategy WHEN 'rolling_monthly' THEN next_reset_at WHEN 'daily' THEN (date_trunc('day',now() AT TIME ZONE 'Asia/Shanghai')+interval '1 day') AT TIME ZONE 'Asia/Shanghai' WHEN 'monthly' THEN (date_trunc('month',now() AT TIME ZONE 'Asia/Shanghai')+interval '1 month') AT TIME ZONE 'Asia/Shanghai' END next_reset_at,last_reset_at,last_active_at,CASE WHEN quota_bytes=0 THEN NULL ELSE GREATEST(quota_bytes-used_bytes,0) END remaining_bytes,(quota_bytes>0 AND used_bytes>=quota_bytes) limited,COALESCE((SELECT jsonb_agg(group_id) FROM user_group_members m WHERE m.tenant_id=u.tenant_id AND m.user_id=u.id),'[]') group_ids,(enabled AND expires_at>now() AND (quota_bytes=0 OR used_bytes<quota_bytes)) active FROM proxy_users u WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT 500) x`, tenant).Scan(&data)
+		e := s.DB.QueryRow(r.Context(), `SELECT COALESCE(jsonb_agg(x),'[]') FROM(SELECT `+proxyUserColumns+` FROM proxy_users u WHERE tenant_id=$1 AND ($2='' OR id=$2) AND ($3='' OR external_id=$3) ORDER BY created_at DESC LIMIT 500) x`, tenant, r.PathValue("id"), r.URL.Query().Get("external_id")).Scan(&data)
 		if e != nil {
 			return e
 		}
-		send(w, 200, data)
+		if r.PathValue("id") != "" {
+			var rows []json.RawMessage
+			if e = json.Unmarshal(data, &rows); e != nil {
+				return e
+			}
+			if len(rows) == 0 {
+				return pgx.ErrNoRows
+			}
+			send(w, 200, rows[0])
+		} else {
+			send(w, 200, data)
+		}
 		return nil
 	}
 	var b struct {
-		Name    string     `json:"name"`
-		Enabled *bool      `json:"enabled"`
-		Expires time.Time  `json:"expires_at"`
-		Rotate  bool       `json:"rotate_credentials"`
-		Groups  *[]string  `json:"group_ids"`
-		Quota   *int64     `json:"quota_bytes"`
-		Reset   *string    `json:"reset_strategy"`
-		Day     *int       `json:"reset_day"`
-		Anchor  *time.Time `json:"reset_anchor_at"`
+		Name       string     `json:"name"`
+		Version    *int       `json:"version"`
+		ExternalID *string    `json:"external_id"`
+		Enabled    *bool      `json:"enabled"`
+		Expires    time.Time  `json:"expires_at"`
+		Rotate     bool       `json:"rotate_credentials"`
+		Groups     *[]string  `json:"group_ids"`
+		Quota      *int64     `json:"quota_bytes"`
+		Reset      *string    `json:"reset_strategy"`
+		Day        *int       `json:"reset_day"`
+		Anchor     *time.Time `json:"reset_anchor_at"`
 	}
 	if e := decode(w, r, &b); e != nil {
 		return e
@@ -49,6 +62,49 @@ func (s *Server) users(w http.ResponseWriter, r *http.Request) error {
 	}
 	id := r.PathValue("id")
 	fresh := id == ""
+	requestKey := r.Header.Get("Idempotency-Key")
+	if len(requestKey) > 128 || strings.ContainsAny(requestKey, "\r\n") {
+		return bad("invalid idempotency key")
+	}
+	actor := "admin"
+	if identity, ok := r.Context().Value(identityContext{}).(apiIdentity); ok {
+		actor = identity.ID
+	}
+	rawRequest, _ := json.Marshal(b)
+	requestHash := Hash(string(rawRequest))
+	if fresh && requestKey != "" {
+		var oldID, oldHash string
+		err := tx.QueryRow(r.Context(), `SELECT user_id,request_hash FROM user_create_requests WHERE tenant_id=$1 AND actor=$2 AND request_key=$3 AND created_at>now()-interval '24 hours'`, tenant, actor, requestKey).Scan(&oldID, &oldHash)
+		if err == nil {
+			if oldHash != requestHash {
+				return problem{409, "Idempotency-Key was used with different fields"}
+			}
+			var exists bool
+			if err = tx.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM proxy_users WHERE tenant_id=$1 AND id=$2)`, tenant, oldID).Scan(&exists); err != nil {
+				return err
+			}
+			if !exists {
+				return problem{410, "The original user was deleted; use a new idempotency key"}
+			}
+			send(w, 200, map[string]any{"id": oldID, "replayed": true})
+			return nil
+		}
+		if err != pgx.ErrNoRows {
+			return err
+		}
+	}
+	if !fresh && b.Version != nil {
+		var current int
+		if e = tx.QueryRow(r.Context(), `SELECT version FROM proxy_users WHERE tenant_id=$1 AND id=$2 FOR UPDATE`, tenant, id).Scan(&current); e != nil {
+			return e
+		}
+		if current != *b.Version {
+			return problem{409, "user changed; refresh before saving"}
+		}
+	}
+	if b.ExternalID != nil && len([]rune(*b.ExternalID)) > 128 {
+		return bad("external_id is limited to 128 characters")
+	}
 	if fresh {
 		id = ID()
 		var n int
@@ -75,6 +131,16 @@ func (s *Server) users(w http.ResponseWriter, r *http.Request) error {
 	}
 	if e != nil {
 		return e
+	}
+	if b.ExternalID != nil {
+		if _, e = tx.Exec(r.Context(), `UPDATE proxy_users SET external_id=NULLIF($3,'') WHERE tenant_id=$1 AND id=$2`, tenant, id, *b.ExternalID); e != nil {
+			return e
+		}
+	}
+	if !fresh {
+		if _, e = tx.Exec(r.Context(), `UPDATE proxy_users SET version=version+1 WHERE tenant_id=$1 AND id=$2`, tenant, id); e != nil {
+			return e
+		}
 	}
 	if _, e = tx.Exec(r.Context(), `UPDATE live_services SET version=version+1,state='pending' WHERE managed_users AND tenant_id=$1 AND id IN (SELECT gs.service_id FROM user_group_services gs JOIN user_group_members gm USING(tenant_id,group_id) WHERE gs.tenant_id=$1 AND gm.user_id=$2)`, tenant, id); e != nil {
 		return e
@@ -151,6 +217,14 @@ func (s *Server) users(w http.ResponseWriter, r *http.Request) error {
 	}
 	if e = audit(r.Context(), tx, "admin", "proxy-user.save", id); e != nil {
 		return e
+	}
+	if fresh && requestKey != "" {
+		if _, e = tx.Exec(r.Context(), `DELETE FROM user_create_requests WHERE tenant_id=$1 AND created_at<now()-interval '24 hours'`, tenant); e != nil {
+			return e
+		}
+		if _, e = tx.Exec(r.Context(), `INSERT INTO user_create_requests(tenant_id,actor,request_key,request_hash,user_id) VALUES($1,$2,$3,$4,$5)`, tenant, actor, requestKey, requestHash, id); e != nil {
+			return e
+		}
 	}
 	if e = tx.Commit(r.Context()); e != nil {
 		return e

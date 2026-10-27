@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "星枢 · VPS 多机管理 API",
-    "version": "0.15.0",
+    "version": "0.17.0",
     "description": "Self-workspace API for host agents, proxy protocols, user quotas and client subscriptions. Bearer administrator token or expiring scoped xs_ API key. No arbitrary shell; privileged gateway work and API key administration remain root-only."
   },
   "servers": [
@@ -3862,7 +3862,17 @@
           "200": {
             "description": "Redacted collection"
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "external_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter by unique external panel ID. Legacy list is bounded to 500; use /page for cursors."
+          }
+        ]
       },
       "post": {
         "summary": "Create ProxyUser",
@@ -3879,8 +3889,26 @@
         "responses": {
           "200": {
             "description": "Saved; server credentials never returned"
+          },
+          "409": {
+            "description": "External ID conflict or mismatched idempotency request"
+          },
+          "410": {
+            "description": "Original idempotent user has been deleted"
           }
-        }
+        },
+        "description": "Create a user; users:write. Optional external_id maps an external panel account. Idempotency-Key replays the same fields for 24 hours per API identity; changed fields return 409 and deleted original users return 410. PUT supports optional version for optimistic concurrency.",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "description": "Optional POST deduplication per API key actor for 24 hours. Same parsed fields replay the same user ID; changed fields 409; deleted original 410."
+          }
+        ]
       }
     },
     "/api/v1/proxy-users/{id}": {
@@ -3911,9 +3939,10 @@
             "description": "Saved"
           },
           "409": {
-            "description": "Version or membership conflict"
+            "description": "Stale version or external ID conflict"
           }
-        }
+        },
+        "description": "Send name, enabled and expires_at; optional fields preserve existing values when omitted. Include version from GET to reject concurrent writes."
       },
       "delete": {
         "summary": "Delete proxy-users with dependency and deployment lifecycle checks",
@@ -3936,6 +3965,33 @@
           },
           "409": {
             "description": "Referenced by a chain or FRP client"
+          }
+        }
+      },
+      "get": {
+        "summary": "Read one user without proxy credentials",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Public account metadata, quota, groups, external_id and version"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "users:read required"
+          },
+          "404": {
+            "description": "User not found"
           }
         }
       }
@@ -5863,6 +5919,266 @@
           "notifications:write"
         ]
       }
+    },
+    "/api/v1/subscriptions/{id}/check": {
+      "get": {
+        "summary": "Compile a subscription readiness check without returning credentials",
+        "description": "Same authorization, readiness, protocol filtering and policy compilation as public export. ready=false for no running nodes, incompatible formats, invalid policy or exhausted quota. Does not prove a client local merge or end-to-end reachability. Requires subscriptions:read.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "client",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "policy",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "nodes-only"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ready status, diagnostic stage and export status; no private configuration or link"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/v1/client-policies/nodes": {
+      "get": {
+        "summary": "List configured IPv4/IPv6/DNS endpoints as stable endpoint references; no credentials",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bounded response; no credentials"
+          },
+          "400": {
+            "description": "Invalid fields"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Missing scope"
+          }
+        },
+        "description": "One safe inventory row per configured node address family. reference is endpoint:<stable-node-id>:ipv4|ipv6|dns. user_id limits inventory to that user group authorization. Offline/disabled rows can be configured but are not exported until ready; deleted nodes are removed. No credentials."
+      }
+    },
+    "/api/v1/engine-releases": {
+      "get": {
+        "summary": "Resolve latest or specific official sing-box/Xray release; kernels:read",
+        "parameters": [
+          {
+            "name": "engine",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "sing-box",
+                "xray"
+              ]
+            }
+          },
+          {
+            "name": "version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bounded response; no credentials"
+          },
+          "400": {
+            "description": "Invalid fields"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Missing scope"
+          }
+        },
+        "description": "version defaults to latest stable. A numeric official upstream tag is also accepted. No custom repository or URL."
+      }
+    },
+    "/api/v1/hosts/{id}/engine-updates": {
+      "get": {
+        "summary": "List recent engine updates; kernels:read",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bounded response; no credentials"
+          },
+          "400": {
+            "description": "Invalid fields"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Missing scope"
+          }
+        }
+      },
+      "post": {
+        "summary": "Queue an official engine switch with candidate validation and rollback; kernels:update",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "Invalid fields"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Missing scope"
+          },
+          "202": {
+            "description": "Pinned official version queued. Poll GET on the same path for downloading/validating/succeeded/failed."
+          },
+          "409": {
+            "description": "Host offline, retiring, old Agent or another update is active"
+          },
+          "502": {
+            "description": "Official upstream release metadata unavailable"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "engine"
+                ],
+                "properties": {
+                  "engine": {
+                    "type": "string",
+                    "enum": [
+                      "sing-box",
+                      "xray"
+                    ]
+                  },
+                  "version": {
+                    "type": "string",
+                    "default": "latest",
+                    "maxLength": 64
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent/engines/sync": {
+      "post": {
+        "summary": "Authenticated Agent update reports and pinned-version requests",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Bounded response; no credentials"
+          },
+          "400": {
+            "description": "Invalid fields"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Missing scope"
+          }
+        }
+      }
+    },
+    "/api/v1/proxy-users/page": {
+      "get": {
+        "summary": "Paginated public user fields with stable ID cursor",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Public account metadata, quota, groups, external_id and version"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "users:read required"
+          },
+          "404": {
+            "description": "User not found"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -6852,6 +7168,16 @@
             "type": "string",
             "format": "date-time",
             "description": "Optional cycle anchor; preserve omitted anchor. Original monthly day clamped on short months."
+          },
+          "external_id": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Unique external panel account ID; empty clears it on PUT. Omission preserves it."
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "PUT optimistic concurrency version returned by GET; stale value returns 409."
           }
         },
         "required": [

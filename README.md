@@ -2,9 +2,9 @@
 
 0.14 新增四分区客户端工作区：基础、DNS、策略组与规则。默认模板基于提供的 Mihomo Max（21 组 / 186 规则），无服务器凭据。支持配置识别、节点映射、单项编辑、客户端转换预览和 Shadowrocket 配套节点/分流链接。具体转换差异见 [0.14 使用说明](docs/WORKFLOW-v014.md)。
 
-# 星枢 · VPS 多机管理 0.16.0
+# 星枢 · VPS 多机管理 0.17.0
 
-0.16 增加分享前可用性检查、明确的全部节点 / 手动勾选、客户端格式优先级与精确节点导入映射。停止节点和格式错误分别提示，详见 [订阅与节点成员说明](docs/WORKFLOW-v016.md)。
+0.17 支持按 IPv4/IPv6 端点手动选节点、无虚构节点的默认策略、官方 sing-box/Xray 在线版本切换、FRP UDP 和机场面板用户 API。详见 [本版工作流与升级说明](docs/WORKFLOW-v017.md)。
 
 0.15 修复 Telegram 命令接收与 VPS 时钟偏差，发送和接收状态分开显示。机器人查询须启用长轮询并授权用户 ID；私聊可在通知设置中填入当前绑定用户后保存。策略页统一管理客户端配置，等宽列表独立滚动；订阅页只管理分享，历史输出覆盖在策略页高级区域保留。首页显示有限余额、完整日期趋势与用户范围统计，访问记录按需加载。详见 [本版行为与边界](docs/WORKFLOW-v015.md)。
 
@@ -20,18 +20,18 @@ Vue 3 / TypeScript / Go / PostgreSQL 的个人 VPS 控制面。主流程：**连
 Linux（Debian / Ubuntu / Rocky / Alma / Fedora / openSUSE 等 systemd 系统）：
 
 ```bash
-curl -fL https://github.com/czy-code-923/czy-code/releases/download/v0.16.0-distribution/install-starhub.sh -o /tmp/install-starhub.sh && sudo sh /tmp/install-starhub.sh --public
+curl -fL https://github.com/czy-code-923/czy-code/releases/download/v0.17.0-distribution/install-starhub.sh -o /tmp/install-starhub.sh && sudo sh /tmp/install-starhub.sh --public
 ```
 
 Windows PowerShell：
 
 ```powershell
-Invoke-WebRequest https://github.com/czy-code-923/czy-code/releases/download/v0.16.0-distribution/install-starhub.ps1 -OutFile "$env:TEMP/install-starhub.ps1"; & "$env:TEMP/install-starhub.ps1" -Public
+Invoke-WebRequest https://github.com/czy-code-923/czy-code/releases/download/v0.17.0-distribution/install-starhub.ps1 -OutFile "$env:TEMP/install-starhub.ps1"; & "$env:TEMP/install-starhub.ps1" -Public
 ```
 
 `--public` / `-Public` 明确启用 IP:18080 的认证网页入口；HTTP 不加密，建议设置 HTTPS 网关。省略此参数则只监听回环。内部 8080 API、8091 分享处理器和 PostgreSQL 均不暴露公网。管理员令牌保存在本机私有 control.env，不打印、不上传。Windows 安装当前用户登录任务，退出登录后不保证运行；Alpine/OpenRC 用包内 `python3 scripts/quickstart.py --foreground` 配置自己的进程监督器。依赖安装与 HTTPS 网关、离线、源码、Compose 方式见 [安装文档](docs/INSTALL.md)。
 
-完整源码请下载 Release 附件 **harbor-0.16.0-source.zip**；GitHub 自动生成的 Source code 归档对应标签所指提交，可能早于分发附件。
+完整源码请下载 Release 附件 **harbor-0.17.0-source.zip**；源码附件与发行标签逐文件核对；包含完整前后端、迁移、测试、脚本和文档。
 
 ## 0.13 新增与修正
 
@@ -40,7 +40,7 @@ Invoke-WebRequest https://github.com/czy-code-923/czy-code/releases/download/v0.
 - 防火墙版本编辑、回收站删除/恢复、本机受控移除和取消，保留独立回滚。
 - 原生配置识别草稿、客户端路由引用检查、可视化规则自动同步、嵌套组展开去重。
 - 空授权账号不再可能变为免认证；新增端口失败时保留完全未变的有效入站。补齐扩展协议的用户流量与访问日志解析。
-- 控制面与 Agent 均为 **0.16.0**；新功能需升级 Agent。
+- 控制面与 Agent 均为 **0.17.0**；新功能需升级 Agent。
 - [0.13 功能、配置、通知与兼容边界](docs/WORKFLOW-v013.md)。
 
 ## 0.12 新增
@@ -115,14 +115,14 @@ cd web && npm ci && npm test && npm run build
 
 ## 内核与一键接入包
 
-安装器采用固定下载地址和 SHA-256 校验。当前服务端使用 **sing-box 1.14.4-harbor.1**（官方 1.14.4 源码、修复依赖、Go 1.27.3）、Xray 26.10.21、FRP 0.71.1。修复版是本项目构建，不能冒充官方二进制。
+安装器采用固定下载地址和 SHA-256 校验。本版使用官方 sing-box 1.14.4、Xray 26.10.21、FRP 0.71.1 发行文件。下载时核对官方资产 SHA-256，不再使用本项目定制后缀。主机卡片的“内核版本”可以查询最新稳定版、安装或切换指定版本；Agent 先检查当前配置，启动失败时回退。
 
 ```bash
 python scripts/fetch-engines.py
 python scripts/build-agent-releases.py --output agent-releases-v010
 ```
 
-源码包的 fetch-engines.py 自动用 Go 构建修复版；预编译包自带 patched-engines，校验后直接使用，无需 Go。脚本不会覆盖现有 engines/，升级应使用新目录。构建脚本提供完整对应源码 ZIP、GPL 许可和构建回执；Agent 包附带该源码与许可。`AGENT_RELEASE_DIR` 指向新版本目录后，面板可生成目标 VPS 的接入命令，不覆盖已安装的 Agent。
+fetch-engines.py 下载官方发行文件，无需 Go。使用 --sing-box-version / --xray-version / --frp-version 指定标签或 latest；脚本不会覆盖已有 engines/。Agent 包附带未修改的官方 sing-box 对应源码与许可。官方来源及摘要校验不等同于没有上游漏洞，升级后仍需关注官方安全公告。`AGENT_RELEASE_DIR` 指向新版本目录后，面板可生成目标 VPS 的接入命令，不覆盖已安装的 Agent。
 
 ## 使用与边界
 

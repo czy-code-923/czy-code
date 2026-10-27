@@ -2,7 +2,7 @@
 
 服务端保持 `/api/v1/` REST API。在 **系统设置 → API 与集成** 创建密钥，选择功能、到期时间和每分钟请求数。密钥明文只显示一次，数据库只存哈希；修改权限和撤销在下一次请求立即校验。创建/修改/撤销写入审计，使用密钥修改业务资源时审计 actor 为 `api-key:<id>`。
 
-当前是单一自用工作区 `self`。功能权限覆盖该工作区全部资源，**没有按主机、按用户的资源隔离，也不应直接作为面向客户的登录系统**。完整管理员令牌负责密钥管理及网关特权工作，不能交给机器人。Telegram 集成仅预留 API，本项目不自动发送任何 Telegram 消息。
+当前是单一自用工作区 `self`。功能权限覆盖该工作区全部资源，**没有按主机、按用户的资源隔离，也不应直接作为面向客户的登录系统**。完整管理员令牌负责密钥管理及网关特权工作，不能交给机器人。设置中可绑定 Telegram 机器人并显式开启通知和授权只读命令；默认关闭。该功能与外部面板密钥相互独立。
 
 ## 调用
 
@@ -59,3 +59,42 @@ Clash/Mihomo 输出原生 YAML。无格式参数的链接优先使用关联模�
 按月周期从设置时刻或指定起点计算，北京时间，保留原始日期；1 月 31 日 → 2 月最后一天 → 3 月 31 日。控制面每 5 秒检查，不依赖浏览器或 Agent 在线。仅清除本期用量，累计量与上报去重基线保留；离线期间无法精确切分的连接字节在下次收到上报时归入当期，不宣称逐字节跨周期账单。
 
 参考：[Clash Verge 响应头](https://www.clashverge.dev/guide/url_schemes.html)、[Remnawave 用户与流量](https://docs.rw/learn-en/users/)、[sing-box 路由](https://sing-box.sagernet.org/configuration/route/)。
+
+
+## 0.17 机场面板服务端集成
+
+在设置 → API 密钥选择“机场面板服务端”，按需缩小权限。API 密钥仅交给服务端；浏览器端或 Telegram 普通用户不能持有管理权限。用 `GET /api/v1/openapi` 查看当前服务器的完整契约。
+
+| 操作 | 路径 | 权限与行为 |
+|---|---|---|
+| 建用户 | POST /proxy-users | users:write；200 返回 id |
+| 查用户 | GET /proxy-users/{id} | users:read；只返回账户、额度、流量、组和版本等元数据 |
+| 按外部 ID 查 | GET /proxy-users?external_id=panel-123 | users:read；返回数组 |
+| 分页 | GET /proxy-users/page?limit=100&after=ID | users:read；items / next_cursor；limit 1–200 |
+| 修改 | PUT /proxy-users/{id} | users:write；提供 name、enabled、expires_at，建议提供 GET 返回的 version；旧版本 409 |
+| 删除 | DELETE /proxy-users/{id} | users:write；立即撤销用户授权和关联订阅，Agent 下一轮同步生效 |
+| 重置额度 | POST /proxy-users/{id}/reset-traffic | usage:reset；累计用量保留 |
+| 策略端点 | GET /client-policies/nodes?user_id=ID | profiles:read；已授权实际端点，不含凭据 |
+| 内核版本 | GET /engine-releases?engine=sing-box&version=latest | kernels:read |
+| 更新内核 | POST /hosts/{id}/engine-updates | kernels:update；202；同路径 GET 轮询状态 |
+
+创建示例（仅占位数据）：
+
+```json
+{
+  "name": "panel-user-123",
+  "external_id": "panel-123",
+  "enabled": true,
+  "expires_at": "2027-01-01T00:00:00Z",
+  "quota_bytes": 107374182400,
+  "reset_strategy": "rolling_monthly",
+  "reset_day": 5,
+  "group_ids": ["existing-group-id"]
+}
+```
+
+POST 可携带 `Idempotency-Key: order-123`，同一密钥身份、同一内容在 24 小时内重试返回原 id；换内容返回 409，原用户已删除返回 410，不会重新开通。external_id 在工作区内唯一，最多 128 字节；PUT 省略保留，空串清除。quota_bytes=0 表示不限额。按月指定日使用 Asia/Shanghai 日期，缺少该日的月份取月末。
+
+创建后以用户组授权实际入站，再通过现有 `/subscriptions` 创建绑定该用户的订阅；查询/导出链接需 subscriptions:links，不由 users:read 自动授予。SS/Snell 共享密钥不能实现独立用户级精确计量和撤销，按原有共享入口订阅规则处理。
+
+当前只有 self 工作区、最多 500 用户、无账单和支付流程。PUT 不是 PATCH，必须带必填基础字段。平台不保证终端已缓存凭据在离线 Agent 上立即失效；变更需要 Agent 在线同步。接口响应不会返回用户凭据密文。

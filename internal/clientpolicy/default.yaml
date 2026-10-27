@@ -88,89 +88,68 @@ proxy-groups:
   - ALL
   - ♻️ IPv4自动
   - ♻️ 全部自动
-  - protocol:vless
-  - protocol:hysteria2
-  - protocol:tuic
-  - protocol:anytls
   - 🌐 IPv6备用
   - DIRECT
 - name: ✈️ Telegram
   type: select
   proxies:
   - 🚀 节点选择
-  - protocol:vless
-  - protocol:hysteria2
   - DIRECT
 - name: 🎵 TikTok
   type: select
   proxies:
   - 🚀 节点选择
   - ♻️ IPv4自动
-  - protocol:vless
-  - protocol:hysteria2
   - DIRECT
 - name: 🎬 longemby
   type: select
   proxies:
   - 🚀 节点选择
   - ♻️ IPv4自动
-  - protocol:vless
   - DIRECT
 - name: 🎥 折纸emby
   type: select
   proxies:
   - DIRECT
   - 🚀 节点选择
-  - protocol:vless
 - name: 🎞️ 予初emby
   type: select
   proxies:
   - DIRECT
   - 🚀 节点选择
-  - protocol:vless
 - name: 🎟️ 宸澄emby
   type: select
   proxies:
   - DIRECT
   - 🚀 节点选择
-  - protocol:vless
 - name: 🎥 OKemby
   type: select
   proxies:
   - DIRECT
   - 🚀 节点选择
-  - protocol:vless
 - name: 🤖 AI服务
   type: select
   proxies:
   - 🚀 节点选择
   - ♻️ IPv4自动
-  - protocol:vless
-  - protocol:anytls
   - DIRECT
 - name: 🔍 Google
   type: select
   proxies:
   - 🚀 节点选择
   - ♻️ IPv4自动
-  - protocol:vless
-  - protocol:anytls
   - DIRECT
 - name: ▶️ YouTube
   type: select
   proxies:
   - 🚀 节点选择
   - ♻️ IPv4自动
-  - protocol:vless
-  - protocol:hysteria2
   - DIRECT
 - name: 📺 流媒体
   type: select
   proxies:
   - 🚀 节点选择
   - ♻️ IPv4自动
-  - protocol:vless
-  - protocol:hysteria2
   - DIRECT
 - name: 🍎 Apple
   type: select

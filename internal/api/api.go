@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"vps-control/internal/engine"
 	"vps-control/internal/manifest"
 
 	"github.com/jackc/pgx/v5"
@@ -23,12 +24,13 @@ import (
 
 const tenant = "self" // Never accepted from client input. Replace with membership resolution before multi-tenant release.
 type Server struct {
-	DB              *pgxpool.Pool
-	MasterKey       []byte
-	AdminToken      string
-	AgentReleaseDir string
-	telegramClient  *http.Client
-	keyRates        keyLimiter
+	DB                   *pgxpool.Pool
+	MasterKey            []byte
+	AdminToken           string
+	AgentReleaseDir      string
+	telegramClient       *http.Client
+	keyRates             keyLimiter
+	resolveEngineRelease func(context.Context, string, string) (engine.Release, error)
 }
 type problem struct {
 	status  int
@@ -144,6 +146,7 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("DELETE /api/v1/client-policies/{id}", s.admin(s.policies))
 	m.HandleFunc("POST /api/v1/client-policies/parse", s.admin(s.parsePolicy))
 	m.HandleFunc("GET /api/v1/client-policies/default", s.admin(s.defaultPolicy))
+	m.HandleFunc("GET /api/v1/client-policies/nodes", s.admin(s.policyNodes))
 	m.HandleFunc("POST /api/v1/client-policies/import", s.admin(s.importPolicy))
 	m.HandleFunc("POST /api/v1/client-policies/preview", s.admin(s.previewPolicy))
 	m.HandleFunc("GET /api/v1/branding", wrap(s.branding))
@@ -172,6 +175,8 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("PUT /api/v1/subscriptions/{id}", s.admin(s.subscriptionUpdate))
 	m.HandleFunc("GET /api/v1/subscriptions/{id}/link", s.admin(s.subscriptionLink))
 	m.HandleFunc("GET /api/v1/proxy-users", s.admin(s.users))
+	m.HandleFunc("GET /api/v1/proxy-users/page", s.admin(s.usersPage))
+	m.HandleFunc("GET /api/v1/proxy-users/{id}", s.admin(s.users))
 	m.HandleFunc("POST /api/v1/proxy-users", s.admin(s.users))
 	m.HandleFunc("PUT /api/v1/proxy-users/{id}", s.admin(s.users))
 	m.HandleFunc("GET /api/v1/user-groups", s.admin(s.groups))
@@ -181,6 +186,10 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("POST /api/v1/client-profiles", s.admin(s.clientProfiles))
 	m.HandleFunc("PUT /api/v1/client-profiles/{id}", s.admin(s.clientProfiles))
 	m.HandleFunc("GET /api/v1/hosts/{id}/kernels", s.admin(s.kernels))
+	m.HandleFunc("GET /api/v1/engine-releases", s.admin(s.engineRelease))
+	m.HandleFunc("GET /api/v1/hosts/{id}/engine-updates", s.admin(s.engineUpdates))
+	m.HandleFunc("POST /api/v1/hosts/{id}/engine-updates", s.admin(s.engineUpdates))
+	m.HandleFunc("POST /api/v1/agent/engines/sync", s.agent(s.engineSync))
 	m.HandleFunc("GET /api/v1/hosts/{id}/kernel-config", s.admin(s.kernelConfig))
 	m.HandleFunc("GET /api/v1/engine-catalog", s.admin(s.engineCatalog))
 	m.HandleFunc("GET /api/v1/protocol-templates", s.admin(s.protocolTemplates))

@@ -1,7 +1,7 @@
 [
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.4-harbor.1",
+    "pinned_version": "1.14.4",
     "protocol": "anytls",
     "inbound": true,
     "outbound": true,
@@ -15,7 +15,7 @@
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.4-harbor.1",
+    "pinned_version": "1.14.4",
     "protocol": "block",
     "inbound": false,
     "outbound": true,
@@ -29,7 +29,7 @@
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.4-harbor.1",
+    "pinned_version": "1.14.4",
     "protocol": "bridge",
     "inbound": false,
     "outbound": true,
@@ -43,7 +43,7 @@
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.4-harbor.1",
+    "pinned_version": "1.14.4",
     "protocol": "cloudflared",
     "inbound": true,
     "outbound": false,
@@ -57,7 +57,7 @@
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.4-harbor.1",
+    "pinned_version": "1.14.4",
     "protocol": "direct",
     "inbound": true,
     "outbound": true,
@@ -71,7 +71,7 @@
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.4-harbor.1",
+    "pinned_version": "1.14.4",
     "protocol": "dns",
     "inbound": false,
     "outbound": true,
@@ -85,7 +85,7 @@
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.4-harbor.1",
+    "pinned_version": "1.14.4",
     "protocol": "http",
     "inbound": true,
     "outbound": true,
@@ -99,7 +99,7 @@
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.4-harbor.1",
+    "pinned_version": "1.14.4",
     "protocol": "hysteria",
     "inbound": true,
     "outbound": true,
@@ -113,7 +113,7 @@
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.4-harbor.1",
+    "pinned_version": "1.14.4",
     "protocol": "hysteria2",
     "inbound": true,
     "outbound": true,
@@ -127,7 +127,7 @@
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.4-harbor.1",
+    "pinned_version": "1.14.4",
     "protocol": "mixed",
     "inbound": true,
     "outbound": false,
@@ -141,7 +141,7 @@
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.4-harbor.1",
+    "pinned_version": "1.14.4",
     "protocol": "naive",
     "inbound": true,
     "outbound": true,
@@ -155,7 +155,7 @@
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.4-harbor.1",
+    "pinned_version": "1.14.4",
     "protocol": "redirect",
     "inbound": true,
     "outbound": false,
@@ -169,7 +169,7 @@
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.4-harbor.1",
+    "pinned_version": "1.14.4",
     "protocol": "selector",
     "inbound": false,
     "outbound": true,
@@ -183,7 +183,7 @@
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.4-harbor.1",
+    "pinned_version": "1.14.4",
     "protocol": "shadowsocks",
     "inbound": true,
     "outbound": true,
@@ -197,7 +197,7 @@
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.4-harbor.1",
+    "pinned_version": "1.14.4",
     "protocol": "shadowtls",
     "inbound": true,
     "outbound": true,
@@ -211,7 +211,7 @@
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.4-harbor.1",
+    "pinned_version": "1.14.4",
     "protocol": "snell",
     "inbound": true,
     "outbound": true,
@@ -225,7 +225,7 @@
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.4-harbor.1",
+    "pinned_version": "1.14.4",
     "protocol": "socks",
     "inbound": true,
     "outbound": true,
@@ -239,7 +239,7 @@
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.4-harbor.1",
+    "pinned_version": "1.14.4",
     "protocol": "ssh",
     "inbound": false,
     "outbound": true,
@@ -253,7 +253,7 @@
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.4-harbor.1",
+    "pinned_version": "1.14.4",
     "protocol": "tailcat",
     "inbound": true,
     "outbound": true,
@@ -267,7 +267,7 @@
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.4-harbor.1",
+    "pinned_version": "1.14.4",
     "protocol": "tor",
     "inbound": false,
     "outbound": true,
@@ -281,7 +281,7 @@
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.4-harbor.1",
+    "pinned_version": "1.14.4",
     "protocol": "tproxy",
     "inbound": true,
     "outbound": false,
@@ -295,7 +295,7 @@
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.4-harbor.1",
+    "pinned_version": "1.14.4",
     "protocol": "trojan",
     "inbound": true,
     "outbound": true,
@@ -309,7 +309,7 @@
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.4-harbor.1",
+    "pinned_version": "1.14.4",
     "protocol": "tuic",
     "inbound": true,
     "outbound": true,
@@ -323,7 +323,7 @@
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.4-harbor.1",
+    "pinned_version": "1.14.4",
     "protocol": "tun",
     "inbound": true,
     "outbound": false,
@@ -337,7 +337,7 @@
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.4-harbor.1",
+    "pinned_version": "1.14.4",
     "protocol": "urltest",
     "inbound": false,
     "outbound": true,
@@ -351,7 +351,7 @@
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.4-harbor.1",
+    "pinned_version": "1.14.4",
     "protocol": "vless",
     "inbound": true,
     "outbound": true,
@@ -365,7 +365,7 @@
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.4-harbor.1",
+    "pinned_version": "1.14.4",
     "protocol": "vmess",
     "inbound": true,
     "outbound": true,
@@ -379,7 +379,7 @@
   },
   {
     "engine": "sing-box",
-    "pinned_version": "1.14.4-harbor.1",
+    "pinned_version": "1.14.4",
     "protocol": "wireguard",
     "inbound": false,
     "outbound": true,

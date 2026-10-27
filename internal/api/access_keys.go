@@ -27,6 +27,7 @@ type scopeInfo struct {
 }
 
 var apiScopes = []scopeInfo{
+	{"kernels:read", "查看官方内核版本与更新状态", false}, {"kernels:update", "安装或切换官方内核版本", true},
 	{"notifications:read", "查看通知设置与结果", true}, {"notifications:write", "绑定通知机器人与授权查询", true},
 	{"hosts:uninstall", "卸载远端 Agent 并删除主机部署数据", true}, {"hosts:read", "查看主机", false}, {"hosts:write", "修改与删除主机", true}, {"hosts:enroll", "主机接入与凭据", true},
 	{"nodes:read", "查看协议与内核配置", false}, {"nodes:write", "修改、部署与启停协议", true},
@@ -69,6 +70,12 @@ func requiredScopes(r *http.Request) []string {
 			return []string{}
 		}
 	case "hosts":
+		if len(a) > 2 && a[2] == "engine-updates" {
+			if write {
+				return []string{"kernels:update"}
+			}
+			return []string{"kernels:read"}
+		}
 		if write && (r.Method == "DELETE" || len(a) > 2 && a[2] == "retirement") {
 			return []string{"hosts:uninstall"}
 		}
@@ -87,6 +94,8 @@ func requiredScopes(r *http.Request) []string {
 		return []string{"hosts" + mode}
 	case "live", "protocol-templates", "engine-catalog":
 		return []string{"nodes" + mode}
+	case "engine-releases":
+		return []string{"kernels:read"}
 	case "proxy-users":
 		if len(a) > 2 && a[2] == "reset-traffic" {
 			return []string{"usage:reset"}
