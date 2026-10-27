@@ -5,11 +5,14 @@ import (
 	"encoding/hex"
 	"log"
 	"net/http"
+	"net/netip"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 	"vps-control/internal/api"
+	"vps-control/internal/live"
 	"vps-control/internal/store"
 )
 
@@ -27,6 +30,23 @@ func main() {
 		log.Fatal(e)
 	}
 	defer db.Close()
+	if origin := os.Getenv("PUBLIC_ORIGIN"); origin != "" {
+		if !live.Origin(origin) {
+			log.Fatal("invalid PUBLIC_ORIGIN")
+		}
+		u, _ := url.Parse(origin)
+		domain := ""
+		if _, e := netip.ParseAddr(u.Hostname()); e != nil {
+			if u.Port() != "" {
+				log.Fatal("domain origins with custom ports require a reverse proxy")
+			}
+			domain = u.Hostname()
+		}
+		if _, e = db.Exec(startup, `INSERT INTO site_settings(tenant_id,domain,https,ip_origin) VALUES('self',$1,$2,$3) ON CONFLICT DO NOTHING`, domain, u.Scheme == "https", origin); e != nil {
+			log.Fatal("cannot initialize public origin")
+		}
+	}
+
 	addr := os.Getenv("HTTP_ADDR")
 	if addr == "" {
 		addr = "127.0.0.1:8080"

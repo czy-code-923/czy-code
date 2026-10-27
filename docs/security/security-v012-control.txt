@@ -1,0 +1,4 @@
+govulncheck v1.1.4, Go 1.27.3, ./..., 2026-10-27
+No vulnerabilities found.
+Scope: control plane / Agent / fixed cleanup helper source dependencies.
+Third-party engine findings and limitations: see SECURITY-v010.md.

@@ -1,0 +1,10 @@
+<script setup lang="ts">
+import {computed} from 'vue'
+const props=defineProps<{host?:Record<string,any>,endpoints:string[],egress:string[]}>(),emit=defineEmits<{endpoints:[string[]],egress:[string[]]}>()
+const ips=computed(()=>Array.from(new Set([props.host?.address,...(props.host?.reported_addresses??[])])).filter((x):x is string=>typeof x==='string'&&(/^(\d{1,3}\.){3}\d{1,3}$/.test(x)||x.includes(':'))&&!x.startsWith('fe80:')))
+const v4=computed(()=>ips.value.find(x=>!x.includes(':'))),v6=computed(()=>ips.value.find(x=>x.includes(':')))
+function endpoint(ip:string,checked:boolean){emit('endpoints',checked?[...props.endpoints,ip]:props.endpoints.filter(x=>x!==ip))}
+function selectEgress(f:string,checked:boolean){emit('egress',checked?[...props.egress,f]:props.egress.filter(x=>x!==f))}
+</script>
+<template><fieldset class="network-fields"><legend>IP 地址与出站</legend><p class="muted">发布地址用于客户端连接；双选会为同一协议生成 IPv4 / IPv6 两个节点，不额外启动内核进程。取消地址选择可手动填写域名。</p><div class="choice-list"><label><input type="checkbox" :checked="!!v4&&endpoints.includes(v4)" :disabled="!v4" @change="v4&&endpoint(v4,($event.target as HTMLInputElement).checked)">{{v4?'IPv4 · '+v4:'无 IPv4（主机未回报）'}}</label><label><input type="checkbox" :checked="!!v6&&endpoints.includes(v6)" :disabled="!v6" @change="v6&&endpoint(v6,($event.target as HTMLInputElement).checked)">{{v6?'IPv6 · '+v6:'无 IPv6（主机未回报）'}}</label></div><h4>VPS 出站地址类型</h4><div class="choice-list"><label><input type="checkbox" :checked="egress.includes('ipv4')" :disabled="!v4" @change="selectEgress('ipv4',($event.target as HTMLInputElement).checked)">IPv4</label><label><input type="checkbox" :checked="egress.includes('ipv6')" :disabled="!v6" @change="selectEgress('ipv6',($event.target as HTMLInputElement).checked)">{{v6?'IPv6':'无 IPv6'}}</label></div><p class="form-note">未选择使用系统默认。单选限制该类型；双选按选择顺序优先解析。Xray 双栈在首选类型解析无结果时回退，连接失败时不会切换。设置出站策略需要 Agent 0.12.0；IP 存在不代表外网路由已连通。</p></fieldset></template>
+<style scoped>.network-fields{border:1px solid var(--border);border-radius:12px;padding:16px;margin:18px 0}h4{margin-bottom:8px}</style>

@@ -1,0 +1,23 @@
+<script setup lang="ts">
+import {ref,onMounted,defineAsyncComponent} from 'vue'
+import FirewallEditor from './FirewallEditor.vue'
+import Cleanup from './Cleanup.vue'
+const ApiKeys=defineAsyncComponent(()=>import('./ApiKeys.vue'))
+const emit=defineEmits(['branding'])
+const originsText=ref('')
+const Topology=defineAsyncComponent(()=>import('./Topology.vue'))
+type Row=Record<string,any>
+const props=defineProps<{api:(p:string,m?:string,b?:any)=>Promise<any>,hosts:Row[]}>()
+const tab=ref('domain'),site=ref<Row>({domain:'',https:true}),error=ref(''),notice=ref(''),busy=ref(false),rows=ref<Row[]>([]),preview=ref<Row|null>(null)
+async function run(fn:()=>Promise<void>){busy.value=true;error.value='';try{await fn()}catch(e){error.value=String(e)}finally{busy.value=false}}
+onMounted(()=>void run(async()=>{site.value=await props.api('site');originsText.value=(site.value.api_origins??[]).join('\n')}))
+function select(v:string){tab.value=v;preview.value=null;if(['firewalls','audit','tasks'].includes(v))void run(async()=>rows.value=await props.api(v))}
+function save(){void run(async()=>{await props.api('site','PUT',{domain:site.value.domain,https:site.value.https,title:site.value.title,ip_origin:site.value.ip_origin,share_domain:site.value.share_domain,share_https:site.value.share_https,api_origins:originsText.value.split(/\r?\n/).map(v=>v.trim()).filter(Boolean)});site.value=await props.api('site');emit('branding');notice.value='域名设置已保存，网关同步器会检查 DNS、申请证书并回报结果。'})}
+function inspect(r:Row){void run(async()=>preview.value=await props.api('firewalls/'+r.id+'/preview'))}
+function archive(r:Row){void run(async()=>{await props.api('firewalls/'+r.id+'/archive','POST',{archived:!r.archived_at});rows.value=await props.api('firewalls')})}
+</script>
+<template><nav class="subnav"><button v-for="t in [{id:'domain',name:'站点与域名'},{id:'api',name:'API 与集成'},{id:'tools',name:'证书 / 反代 / 兼容目录'},{id:'firewalls',name:'防火墙'},{id:'audit',name:'审计'},{id:'tasks',name:'历史任务'},{id:'cleanup',name:'验收清理'}]" :key="t.id" class="secondary" :class="{active:tab===t.id}" @click="select(t.id)">{{t.name}}</button></nav><p v-if="error" role="alert" class="error">{{error}}</p><p v-if="notice" role="status" class="notice">{{notice}}</p>
+<section v-if="tab==='domain'" class="panel publish-card"><h2>域名与 HTTPS</h2><p class="muted">域名可留空，使用配置的 IP + 端口访问。订阅域名可独立设置，留空时依次使用主站域名、IP 入口。更换域名前请配置 DNS。</p><form @submit.prevent="save"><div class="fields"><label>网站名称<input v-model="site.title" required maxlength="30" placeholder="星枢"></label><label>控制台域名（可选）<input v-model="site.domain" placeholder="vps.example.com"></label><label class="check-label"><input v-model="site.https" type="checkbox">启用 HTTPS 与自动证书</label><label>IP 访问入口<input v-model="site.ip_origin" placeholder="http://45.129.8.122:18080" required></label><label>独立订阅域名（可选）<input v-model="site.share_domain" placeholder="sub.example.com"></label><label class="check-label"><input v-model="site.share_https" type="checkbox">订阅域名启用 HTTPS</label></div><label>独立前端允许来源（每行一个 HTTPS Origin，最多 8 个）<textarea v-model="originsText" rows="3" placeholder="https://panel.example.com"></textarea><small>不填写路径，不使用通配符；本机开发可填 http://localhost:5173。跨域仍需密钥权限。</small></label><p>网关当前：{{site.gateway_domain||'尚未回报'}} · {{site.gateway_state||'等待同步'}} · {{site.gateway_https?'HTTPS':'HTTP'}}</p><p>订阅网关：{{site.share_gateway_domain||'继承主站'}} · {{site.share_gateway_state||'等待同步'}}</p><button class="primary" :disabled="busy">保存域名设置</button></form></section>
+<ApiKeys v-else-if="tab==='api'" :api="api"/><Cleanup v-else-if="tab==='cleanup'" :api="api"/>
+<Topology v-else-if="tab==='tools'" :api="api" :hosts="hosts" tools-only/>
+<section v-else class="panel publish-card"><h2>{{tab==='firewalls'?'防火墙策略':tab==='audit'?'操作审计':'历史任务'}}</h2><p v-if="tab==='firewalls'" class="form-note">策略先预览与导出，应用使用服务器上的受控脚本并保留 SSH 与回环管理端口保护。Agent 不接受任意 Shell 或直接修改主机防火墙。</p><FirewallEditor v-if="tab==='firewalls'" :api="api" :hosts="hosts" @saved="select('firewalls')"/><div v-for="r in rows" :key="r.id??r.sequence" class="setting-row"><div><b>{{r.name??r.action??r.id}}</b><small class="block-muted">{{r.state??r.actor??r.host_id}} · {{r.result??r.created_at}}</small></div><div v-if="tab==='firewalls'"><button class="text-button" @click="inspect(r)">预览与导出</button><button class="text-button" @click="archive(r)">{{r.archived_at?'恢复':'归档'}}</button></div><button v-if="tab==='tasks'&&r.state==='queued'" class="text-button" @click="run(async()=>{await api('tasks/'+r.id+'/cancel','POST',{});rows=await api('tasks')})">取消任务</button></div><p v-if="!rows.length" class="console-empty">暂无记录</p><details v-if="preview" open><summary>受控防火墙配置</summary><pre class="native-preview">{{JSON.stringify(preview,null,2)}}</pre></details></section></template>

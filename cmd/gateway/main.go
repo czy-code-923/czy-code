@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 	"vps-control/internal/live"
@@ -95,11 +96,30 @@ func main() {
 	key := flag.String("key", "", "absolute private key PEM")
 	admin := flag.String("admin-cidrs", "", "comma separated trusted administrator CIDRs")
 	out := flag.String("out", "", "new output file (never overwritten)")
+	shareOnly := flag.Bool("share-only", false, "serve subscriptions only")
+	port := flag.Int("listen-port", 0, "explicit HTTP port for IP access")
 	flag.Parse()
 	config, e := render(*domain, *https, *cert, *key, strings.Split(*admin, ","))
 	if e != nil {
 		fmt.Fprintln(os.Stderr, e)
 		os.Exit(1)
+	}
+	if *port != 0 {
+		if *https || *port < 1024 || *port > 65535 || *port == 8080 || *port == 8091 || *port == 5173 {
+			fmt.Fprintln(os.Stderr, "invalid HTTP gateway port")
+			os.Exit(1)
+		}
+		config = strings.ReplaceAll(config, "listen 80;", "listen "+strconv.Itoa(*port)+";")
+		config = strings.ReplaceAll(config, "listen [::]:80;", "listen [::]:"+strconv.Itoa(*port)+";")
+	}
+	if *shareOnly {
+		a := strings.Index(config, "location ^~ /api/v1/agent/ {")
+		b := strings.Index(config[a:], "\n}\n}\n")
+		if a < 0 || b < 0 {
+			fmt.Fprintln(os.Stderr, "unexpected gateway template")
+			os.Exit(1)
+		}
+		config = config[:a] + "location / { return 404; }\n" + config[a+b+3:]
 	}
 	if *out == "" {
 		fmt.Print(config)

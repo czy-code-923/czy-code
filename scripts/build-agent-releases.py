@@ -1,4 +1,4 @@
-"""Build fixed Linux Agent bootstrap packages using verified official engines."""
+"""Build Linux Agent packages with verified releases and the patched sing-box source build."""
 import argparse, hashlib, json, os, shutil, subprocess, sys, tempfile, zipfile
 from pathlib import Path
 
@@ -15,15 +15,19 @@ def main():
     with tempfile.TemporaryDirectory(prefix='harbor-release-') as temporary:
         stage=Path(temporary)
         for arch in ('amd64','arm64'):
-            target=stage/arch; (target/'scripts').mkdir(parents=True)
-            shutil.copyfile(project/'scripts/fetch-engines.py',target/'scripts/fetch-engines.py')
-            subprocess.run([sys.executable,str(target/'scripts/fetch-engines.py'),'--os','linux','--arch',arch],check=True)
+            target=stage/arch;target.mkdir()
+            subprocess.run([sys.executable,str(project/'scripts/fetch-engines.py'),'--go',args.go,'--os','linux','--arch',arch,'--output',str(target/'engines')],check=True)
             binary=target/'harbor-agent'
             subprocess.run([args.go,'build','-trimpath','-ldflags=-s -w','-o',str(binary),'./cmd/agent'],cwd=project,env={**os.environ,'GOOS':'linux','GOARCH':arch,'CGO_ENABLED':'0'},check=True)
+            helper=target/'harbor-agent-cleanup'
+            subprocess.run([args.go,'build','-trimpath','-ldflags=-s -w','-o',str(helper),'./cmd/agent-cleanup'],cwd=project,env={**os.environ,'GOOS':'linux','GOARCH':arch,'CGO_ENABLED':'0'},check=True)
             archive=stage/f'linux-{arch}.zip'
             with zipfile.ZipFile(archive,'w',zipfile.ZIP_DEFLATED) as package:
                 package.write(binary,'harbor-agent')
+                package.write(helper,'harbor-agent-cleanup')
                 for name in ('sing-box','frps','frpc','xray'):package.write(target/'engines'/name,name)
+                package.write(target/'engines/LICENSE.sing-box','LICENSE.sing-box')
+                package.write(target/'engines/sing-box-source.zip','sing-box-source.zip')
             manifest[f'linux-{arch}']={'sha256':hashlib.sha256(archive.read_bytes()).hexdigest(),'size':archive.stat().st_size}
         output.mkdir(exist_ok=True,parents=True)
         for arch in ('amd64','arm64'):shutil.copyfile(stage/f'linux-{arch}.zip',output/f'linux-{arch}.zip')

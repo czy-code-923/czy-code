@@ -3,6 +3,7 @@ package api
 import "vps-control/internal/live"
 
 func applySecurity(s *live.Spec, b liveInput) error {
+	s.ProtocolOptions = b.ProtocolOptions
 	s.Flow = b.Flow
 	s.ALPN = b.ALPN
 	s.Congestion = b.Congestion

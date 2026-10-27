@@ -90,13 +90,25 @@ func (s *Server) bootstrapScript(w http.ResponseWriter, r *http.Request) {
 	w.Write(b)
 }
 func (s *Server) enrollmentCreate(w http.ResponseWriter, r *http.Request) error {
-	origin, e := s.publicOrigin(r)
+	var active string
+	if e := s.DB.QueryRow(r.Context(), `SELECT id FROM hosts WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL AND retire_state=''`, tenant, r.PathValue("id")).Scan(&active); e != nil {
+		return e
+	}
+	origin, e := s.managementOrigin(r)
 	if e != nil {
 		return e
 	}
-	if !strings.HasPrefix(origin, "https://") {
-		return bad("verified HTTPS control domain required")
+	var options struct {
+		AllowHTTP bool `json:"allow_insecure_http"`
 	}
+	if e = decode(w, r, &options); e != nil {
+		return e
+	}
+	insecure := !strings.HasPrefix(origin, "https://")
+	if insecure && !options.AllowHTTP {
+		return bad("HTTP 入口没有传输加密；请显式确认允许 HTTP 接入，或配置 HTTPS")
+	}
+
 	if _, _, e = s.release("linux-amd64"); e != nil {
 		return e
 	}
@@ -107,7 +119,7 @@ func (s *Server) enrollmentCreate(w http.ResponseWriter, r *http.Request) error 
 	}
 	defer tx.Rollback(ctx)
 	var host string
-	if e = tx.QueryRow(ctx, "SELECT id FROM hosts WHERE tenant_id=$1 AND id=$2 FOR UPDATE", tenant, r.PathValue("id")).Scan(&host); e != nil {
+	if e = tx.QueryRow(ctx, "SELECT id FROM hosts WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL AND retire_state='' FOR UPDATE", tenant, r.PathValue("id")).Scan(&host); e != nil {
 		return e
 	}
 	if _, e = tx.Exec(ctx, "UPDATE agent_enrollments SET revoked_at=now() WHERE tenant_id=$1 AND host_id=$2 AND consumed_at IS NULL AND revoked_at IS NULL", tenant, host); e != nil {
@@ -125,7 +137,16 @@ func (s *Server) enrollmentCreate(w http.ResponseWriter, r *http.Request) error 
 		return e
 	}
 	// Origin is a validated HTTPS DNS origin; token alphabet is fixed. No user-supplied shell is accepted.
-	command := "(f=$(mktemp) && curl --proto '=https' --tlsv1.2 -fsS '" + origin + "/api/v1/agent/install.sh' -o \"$f\" && sh \"$f\" '" + origin + "' '" + ticket + "'; rc=$?; rm -f \"$f\"; exit $rc)"
+	transport := "https"
+	if insecure {
+		transport = "http,https"
+	}
+	command := "(f=$(mktemp) && curl --proto '=" + transport + "' --tlsv1.2 -fsS '" + origin + "/api/v1/agent/install.sh' -o \"$f\" && sh \"$f\" '" + origin + "' '" + ticket + "'" + func() string {
+		if insecure {
+			return " --allow-insecure-http"
+		}
+		return ""
+	}() + "; rc=$?; rm -f \"$f\"; exit $rc)"
 	send(w, 201, map[string]any{"command": command, "expires_at": expires, "state": "waiting", "platforms": []string{"linux-amd64", "linux-arm64"}})
 	return nil
 }
@@ -167,7 +188,7 @@ func (s *Server) enrollmentClaim(w http.ResponseWriter, r *http.Request) error {
 		return e
 	}
 	var locked string
-	if e = tx.QueryRow(ctx, "SELECT id FROM hosts WHERE tenant_id=$1 AND id=$2 FOR UPDATE", tenant, host).Scan(&locked); e != nil {
+	if e = tx.QueryRow(ctx, "SELECT id FROM hosts WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL AND retire_state='' FOR UPDATE", tenant, host).Scan(&locked); e != nil {
 		return e
 	}
 	tag, e := tx.Exec(ctx, "UPDATE agent_enrollments SET consumed_at=now() WHERE token_hash=$1 AND tenant_id=$2 AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at>now()", Hash(b.Ticket), tenant)
@@ -207,7 +228,7 @@ func (s *Server) enrollmentRevoke(w http.ResponseWriter, r *http.Request) error 
 	}
 	defer tx.Rollback(ctx)
 	var id string
-	if e = tx.QueryRow(ctx, "SELECT id FROM hosts WHERE tenant_id=$1 AND id=$2 FOR UPDATE", tenant, r.PathValue("id")).Scan(&id); e != nil {
+	if e = tx.QueryRow(ctx, "SELECT id FROM hosts WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL AND retire_state='' FOR UPDATE", tenant, r.PathValue("id")).Scan(&id); e != nil {
 		return e
 	}
 	_, e = tx.Exec(ctx, "UPDATE agent_enrollments SET revoked_at=now() WHERE tenant_id=$1 AND host_id=$2 AND consumed_at IS NULL AND revoked_at IS NULL", tenant, id)

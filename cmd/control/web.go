@@ -3,11 +3,13 @@ package main
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -29,6 +31,8 @@ func webServer(ctx context.Context, dir string) error {
 	files := http.FileServerFS(root.FS())
 	mux := http.NewServeMux()
 	mux.Handle("/api/", proxy)
+	shareTarget, _ := url.Parse("http://127.0.0.1:8091")
+	mux.Handle("/s/", httputil.NewSingleHostReverseProxy(shareTarget))
 	mux.Handle("/healthz", proxy)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -52,7 +56,19 @@ func webServer(ctx context.Context, dir string) error {
 		}
 		files.ServeHTTP(w, r)
 	})
-	srv := &http.Server{Addr: "127.0.0.1:5173", Handler: mux, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 20 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
+	addr := os.Getenv("WEB_ADDR")
+	if addr == "" {
+		addr = "127.0.0.1:5173"
+	}
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil || net.ParseIP(host) == nil {
+		return errors.New("WEB_ADDR requires IP:port")
+	}
+	n, err := strconv.Atoi(port)
+	if err != nil || n < 1024 || n > 65535 || n == 8080 || n == 8091 {
+		return errors.New("invalid WEB_ADDR port")
+	}
+	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 20 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	go func() {
 		<-ctx.Done()
 		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)

@@ -11,7 +11,7 @@ func EngineSupports(engine, kind string) bool {
 	if engine == "" || engine == "sing-box" {
 		return Proxy(kind) || kind == "frps" || kind == "frpc"
 	}
-	return engine == "xray" && (kind == "vless" || kind == "trojan" || kind == "vmess")
+	return engine == "xray" && (kind == "shadowsocks" || kind == "vless" || kind == "trojan" || kind == "vmess")
 }
 func (s Spec) UsesTLS() bool {
 	return TLSProxy(s.Kind) && !(s.Kind == "vmess" && s.TLSMode == "none") && !s.IsReality()
@@ -58,7 +58,7 @@ func (s Spec) xrayOutbound(tag string) map[string]any {
 	settings := map[string]any{}
 	switch s.Kind {
 	case "shadowsocks":
-		settings["servers"] = []any{map[string]any{"address": s.Address, "port": s.Port, "method": Method, "password": s.Password}}
+		settings["servers"] = []any{map[string]any{"address": s.Address, "port": s.Port, "method": s.SSMethod(), "password": s.Password}}
 	case "trojan":
 		settings["servers"] = []any{map[string]any{"address": s.Address, "port": s.Port, "password": s.Password}}
 	default:
@@ -121,7 +121,13 @@ func (s Spec) renderXray() (string, map[string][]byte, error) {
 	if s.Flow != "" {
 		user["flow"] = s.Flow
 	}
-	settings["users"] = []any{user}
+	if s.Kind == "shadowsocks" {
+		settings["method"] = s.SSMethod()
+		settings["password"] = s.Password
+		settings["network"] = "tcp,udp"
+	} else {
+		settings["users"] = []any{user}
+	}
 	if s.ManagedUsers {
 		users := []any{}
 		for _, a := range s.Accounts {

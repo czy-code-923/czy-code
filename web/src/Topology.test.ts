@@ -1,0 +1,15 @@
+// @vitest-environment happy-dom
+import {afterEach,beforeEach,it,expect,vi,type Mock} from 'vitest'
+import {mount,flushPromises,type VueWrapper} from '@vue/test-utils'
+import Topology from './Topology.vue'
+let w:VueWrapper,api:Mock<(p:string,m?:string,b?:any)=>Promise<any>>
+const host={id:'a'.repeat(32),name:'VPS',address:'192.0.2.1',agent_version:'0.10.0'}
+const service={id:'b'.repeat(32),host_id:host.id,name:'VMess entry',kind:'vmess',engine:'sing-box',enabled:false,version:2}
+beforeEach(()=>{api=vi.fn(async(p,m='GET')=>{if(m!=='GET')return {pending_stop:true};if(p==='live')return [service];if(p==='live/'+service.id)return {...service,node_id:'n',certificate_id:'',next_id:'',spec:{kind:'vmess',engine:'sing-box',listen:'127.0.0.1',port:2080,address:'192.0.2.1',transport:'ws',path:'/kept',tls_mode:'none'},rendered:{inbounds:[],outbounds:[]}};if(p==='protocol-templates')return [{kind:'vless',name:'VLESS',certificate:true,engines:['sing-box','xray']},{kind:'vmess',name:'VMess',certificate:true,engines:['sing-box','xray']},{kind:'hysteria2',name:'HY2',certificate:true,engines:['sing-box']}];return []});w=mount(Topology,{props:{api,hosts:[host]}})})
+afterEach(()=>{w.unmount();vi.useRealTimers();vi.restoreAllMocks()})
+const button=(text:string)=>w.findAll('button').find(b=>b.text()===text)!
+it('filters protocols under the kernel without requiring a logical-node grouping',async()=>{await flushPromises();await button('添加协议').trigger('click');await flushPromises();const dialog=w.get('[role=dialog]');expect(dialog.text()).not.toContain('逻辑节点分组');await dialog.findAll('select')[1].setValue('xray');expect(dialog.findAll('select')[2].text()).toContain('VMess');expect(dialog.findAll('select')[2].text()).not.toContain('HY2')})
+it('keeps existing transport and managed-user settings during an edit',async()=>{await flushPromises();await button('详情 / 编辑').trigger('click');await flushPromises();await w.get('form[role=dialog]').trigger('submit');await flushPromises();expect(api).toHaveBeenCalledWith('live/'+service.id,'PUT',expect.objectContaining({version:2,transport:'ws',path:'/kept',managed_users:false}))})
+it('sets the REALITY target and SNI together from a vendor candidate',async()=>{await flushPromises();await button('添加协议').trigger('click');await flushPromises();await w.get('[aria-label="大厂 SNI 候选"]').setValue('www.apple.com');const inputValues=w.get('[role=dialog]').findAll('input').map(i=>(i.element as HTMLInputElement).value);expect(inputValues.filter(v=>v==='www.apple.com')).toHaveLength(2)})
+it('confirms deletion and explains waiting for an Agent stop receipt',async()=>{await flushPromises();api.mockClear();await button('删除').trigger('click');expect(api).not.toHaveBeenCalled();await button('确认执行').trigger('click');await flushPromises();expect(api).toHaveBeenCalledWith('live/'+service.id,'DELETE');expect(w.text()).toContain('等待 Agent 停止回执')})
+it('does not poll kernel catalogs in a hidden tab',async()=>{vi.useFakeTimers();await flushPromises();api.mockClear();vi.spyOn(document,'visibilityState','get').mockReturnValue('hidden');await vi.advanceTimersByTimeAsync(90000);expect(api).not.toHaveBeenCalled()})

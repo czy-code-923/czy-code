@@ -23,7 +23,12 @@ func (s *Server) snapshot(w http.ResponseWriter, r *http.Request) error {
 		{"audit", "SELECT sequence,actor,action,resource_id,created_at FROM audit", 100},
 		{"firewalls", "SELECT id,host_id,name,version,checksum,archived_at,created_at FROM firewall_policies", 200},
 	} {
-		parts = append(parts, "'"+c.kind+"', (SELECT COALESCE(jsonb_agg(to_jsonb(x)),'[]'::jsonb) FROM ("+c.query+" WHERE tenant_id=$1 ORDER BY created_at DESC,"+func() string {
+		parts = append(parts, "'"+c.kind+"', (SELECT COALESCE(jsonb_agg(to_jsonb(x)),'[]'::jsonb) FROM ("+c.query+" WHERE tenant_id=$1"+func() string {
+			if c.kind == "hosts" {
+				return " AND deleted_at IS NULL"
+			}
+			return ""
+		}()+" ORDER BY created_at DESC,"+func() string {
 			if c.kind == "audit" {
 				return "sequence"
 			}
@@ -36,8 +41,8 @@ func (s *Server) snapshot(w http.ResponseWriter, r *http.Request) error {
 		}()+") x)")
 	}
 	query := `SELECT jsonb_build_object('collections',jsonb_build_object(` + strings.Join(parts, ",") + `),'summary',jsonb_build_object(
- 'hosts',(SELECT count(*) FROM hosts WHERE tenant_id=$1),
- 'online_hosts',(SELECT count(*) FROM hosts WHERE tenant_id=$1 AND last_seen>now()-interval '90 seconds'),
+ 'hosts',(SELECT count(*) FROM hosts WHERE tenant_id=$1 AND deleted_at IS NULL),
+ 'online_hosts',(SELECT count(*) FROM hosts WHERE tenant_id=$1 AND deleted_at IS NULL AND last_seen>now()-interval '90 seconds'),
  'instances',(SELECT count(*) FROM instances WHERE tenant_id=$1),
  'live_services',(SELECT count(*) FROM live_services WHERE tenant_id=$1 AND kind NOT IN ('frps','frpc')),
  'running_services',(SELECT count(*) FROM live_services WHERE tenant_id=$1 AND kind NOT IN ('frps','frpc') AND enabled AND state='running' AND reported_version=version AND reported_at>now()-interval '45 seconds'),

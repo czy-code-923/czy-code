@@ -24,11 +24,51 @@ func runLive(ctx context.Context, call func(context.Context, string, any) ([]byt
 		return e
 	}
 	defer runner.Close()
+	// Do not start an empty ledger while the controller baseline is unavailable.
+	// Retry here so a temporary network failure recovers without an Agent restart.
+	for {
+		raw, status, err := call(ctx, "telemetry/baseline", nil)
+		var counters []live.TrafficCounter
+		if err == nil && status == 200 && json.Unmarshal(raw, &counters) == nil {
+			if err = runner.SeedCounters(counters); err != nil {
+				return err
+			}
+			break
+		}
+		log.Print("waiting for authenticated traffic baseline")
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(10 * time.Second):
+		}
+	}
+	sendUsage := func(guard context.Context) {
+		batch, err := runner.TelemetrySnapshot(guard)
+		if err != nil {
+			log.Print("traffic ledger unavailable")
+			return
+		}
+		raw, status, err := call(guard, "telemetry", batch)
+		if err == nil && status == 200 {
+			var ack struct {
+				Retired []string `json:"retired_counter_ids"`
+			}
+			json.Unmarshal(raw, &ack)
+			runner.AckTelemetry(batch, ack.Retired)
+		}
+	}
+	defer func() {
+		runner.StopAll()
+		guard, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		sendUsage(guard)
+	}()
 	capabilities := live.Capabilities(binaries)
 	last := time.Now()
 	tick := time.NewTicker(10 * time.Second)
 	defer tick.Stop()
 	for {
+		sendUsage(ctx)
 		reports := runner.Reports()
 		raw, status, e := call(ctx, "live/sync", map[string]any{"reports": reports, "bundle_mode": true, "capabilities": capabilities, "kernel_reports": runner.KernelReports()})
 		if e == nil && status == 200 {

@@ -41,8 +41,26 @@ func (s *Server) Reap(ctx context.Context) error {
 		return e
 	}
 	defer tx.Rollback(ctx)
+	if _, e = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(717071)`); e != nil {
+		return e
+	}
+	if e = resetPeriods(ctx, tx); e != nil {
+		return e
+	}
 	if e = reap(ctx, tx); e != nil {
 		return e
+	}
+	var clock string
+	e = tx.QueryRow(ctx, `INSERT INTO maintenance_clock VALUES($1,now()) ON CONFLICT(tenant_id) DO UPDATE SET last_run_at=excluded.last_run_at WHERE maintenance_clock.last_run_at<now()-interval '1 minute' RETURNING tenant_id`, tenant).Scan(&clock)
+	if e != nil && e != pgx.ErrNoRows {
+		return e
+	}
+	if e == nil {
+		for _, q := range []string{`DELETE FROM host_retirement_receipts WHERE tenant_id=$1 AND completed_at<now()-interval '30 days'`, `DELETE FROM access_observations WHERE tenant_id=$1 AND observed_at<now()-interval '7 days'`, `DELETE FROM traffic_daily WHERE tenant_id=$1 AND day<(now() AT TIME ZONE 'Asia/Shanghai')::date-90`, `DELETE FROM deployment_batches WHERE tenant_id=$1 AND created_at<now()-interval '30 days'`} {
+			if _, e = tx.Exec(ctx, q, tenant); e != nil {
+				return e
+			}
+		}
 	}
 	return tx.Commit(ctx)
 }

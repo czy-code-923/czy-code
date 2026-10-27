@@ -17,6 +17,7 @@ import (
 	"net/netip"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -41,7 +42,16 @@ func Address(s string) bool {
 }
 func Origin(s string) bool {
 	u, e := url.Parse(s)
-	return e == nil && (u.Scheme == "https" || u.Scheme == "http") && u.User == nil && u.Host != "" && Address(u.Hostname()) && u.Port() == "" && u.Path == "" && u.RawQuery == "" && u.Fragment == ""
+	if e != nil {
+		return false
+	}
+	if u.Port() != "" {
+		n, err := strconv.Atoi(u.Port())
+		if err != nil || n < 1 || n > 65535 {
+			return false
+		}
+	}
+	return e == nil && (u.Scheme == "https" || u.Scheme == "http") && u.User == nil && u.Host != "" && Address(u.Hostname()) && u.Path == "" && u.RawQuery == "" && u.Fragment == ""
 }
 func Secret() string {
 	b := make([]byte, 32)
@@ -92,6 +102,9 @@ type Tunnel struct {
 	RemotePort int    `json:"remote_port"`
 }
 type Spec struct {
+	EndpointAddresses []string `json:"endpoint_addresses,omitempty"`
+	EgressFamilies    []string `json:"egress_families,omitempty"`
+	ProtocolOptions
 	Reality      *Reality  `json:"reality,omitempty"`
 	Flow         string    `json:"flow,omitempty"`
 	ALPN         []string  `json:"alpn,omitempty"`
@@ -119,6 +132,9 @@ type Spec struct {
 }
 
 func (s Spec) Validate() error {
+	if e := s.validateNetwork(); e != nil {
+		return e
+	}
 	if e := s.validateRouting(); e != nil {
 		return e
 	}
@@ -141,7 +157,11 @@ func (s Spec) Validate() error {
 		return errors.New("unsupported live service")
 	}
 	key, e := base64.StdEncoding.DecodeString(s.Password)
-	if e != nil || len(key) != 32 {
+	if s.Kind == "shadowsocks" && s.SSMethod() != Method {
+		if e := s.validateCredential(); e != nil {
+			return e
+		}
+	} else if e != nil || len(key) != 32 {
 		return errors.New("32-byte base64 credential required")
 	}
 	if s.Kind == "shadowsocks" {
@@ -210,11 +230,19 @@ func Certificate(address string) (string, string, error) {
 }
 
 // Render accepts only fixed protocol fields; all file names are chosen locally.
-func (s Spec) Render() (string, map[string][]byte, error) {
+func (s Spec) Render() (engineResult string, fileResult map[string][]byte, errResult error) {
+	defer func() {
+		if errResult == nil {
+			errResult = s.patchEgress(engineResult, fileResult)
+		}
+	}()
 	if e := s.Validate(); e != nil {
 		return "", nil, e
 	}
 	files := map[string][]byte{}
+	if s.Kind == "shadowsocks" && s.Engine == "xray" {
+		return s.renderXray()
+	}
 	if Proxy(s.Kind) && s.Kind != "shadowsocks" {
 		return s.renderProxy()
 	}
@@ -225,7 +253,7 @@ func (s Spec) Render() (string, map[string][]byte, error) {
 		if s.Peer != nil {
 			out = map[string]any{"type": "shadowsocks", "tag": "egress", "server": s.Peer.Address, "server_port": s.Peer.Port, "method": Method, "password": s.Peer.Password}
 		}
-		config = map[string]any{"log": map[string]any{"level": "warn"}, "inbounds": []any{map[string]any{"type": "shadowsocks", "tag": "entry", "listen": s.Listen, "listen_port": s.Port, "method": Method, "password": s.Password}}, "outbounds": []any{out}, "route": map[string]any{"final": "egress"}}
+		config = map[string]any{"log": map[string]any{"level": "warn"}, "inbounds": []any{map[string]any{"type": "shadowsocks", "tag": "entry", "listen": s.Listen, "listen_port": s.Port, "method": s.SSMethod(), "password": s.Password}}, "outbounds": []any{out}, "route": map[string]any{"final": "egress"}}
 	} else {
 		files["tls.crt"] = []byte(s.Certificate)
 		auth := map[string]any{"method": "token", "token": s.Password}

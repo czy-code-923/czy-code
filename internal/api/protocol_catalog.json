@@ -8,7 +8,7 @@
     "managed": true,
     "status": "已实现受限模板",
     "source": "https://sing-box.sagernet.org/configuration/",
-    "checked_at": "2026-10-23"
+    "checked_at": "2026-10-26"
   },
   {
     "engine": "sing-box",
@@ -96,7 +96,7 @@
     "managed": true,
     "status": "已实现受限模板",
     "source": "https://sing-box.sagernet.org/configuration/",
-    "checked_at": "2026-10-23"
+    "checked_at": "2026-10-26"
   },
   {
     "engine": "sing-box",
@@ -151,7 +151,7 @@
     "managed": true,
     "status": "已实现受限模板",
     "source": "https://sing-box.sagernet.org/configuration/",
-    "checked_at": "2026-10-23"
+    "checked_at": "2026-10-26"
   },
   {
     "engine": "sing-box",
@@ -173,7 +173,7 @@
     "managed": true,
     "status": "已实现受限模板",
     "source": "https://sing-box.sagernet.org/configuration/",
-    "checked_at": "2026-10-23"
+    "checked_at": "2026-10-26"
   },
   {
     "engine": "sing-box",
@@ -239,7 +239,7 @@
     "managed": true,
     "status": "已实现受限模板",
     "source": "https://sing-box.sagernet.org/configuration/",
-    "checked_at": "2026-10-23"
+    "checked_at": "2026-10-26"
   },
   {
     "engine": "sing-box",
@@ -250,7 +250,7 @@
     "managed": true,
     "status": "已实现受限模板",
     "source": "https://sing-box.sagernet.org/configuration/",
-    "checked_at": "2026-10-23"
+    "checked_at": "2026-10-26"
   },
   {
     "engine": "sing-box",
@@ -283,7 +283,7 @@
     "managed": true,
     "status": "已实现受限模板",
     "source": "https://sing-box.sagernet.org/configuration/",
-    "checked_at": "2026-10-23"
+    "checked_at": "2026-10-26"
   },
   {
     "engine": "sing-box",
@@ -294,7 +294,7 @@
     "managed": true,
     "status": "已实现受限模板",
     "source": "https://sing-box.sagernet.org/configuration/",
-    "checked_at": "2026-10-23"
+    "checked_at": "2026-10-26"
   },
   {
     "engine": "sing-box",
@@ -390,10 +390,10 @@
     "protocol": "shadowsocks",
     "inbound": true,
     "outbound": true,
-    "managed": false,
-    "status": "官方文档能力；尚未集成或需版本/构建验证",
+    "managed": true,
+    "status": "已实现 AEAD / 2022 单用户模板",
     "source": "https://xtls.github.io/en/config/",
-    "checked_at": "2026-10-23"
+    "checked_at": "2026-10-26"
   },
   {
     "engine": "xray",
@@ -415,7 +415,7 @@
     "managed": true,
     "status": "已实现受限模板",
     "source": "https://xtls.github.io/en/config/",
-    "checked_at": "2026-10-23"
+    "checked_at": "2026-10-26"
   },
   {
     "engine": "xray",
@@ -448,7 +448,7 @@
     "managed": true,
     "status": "已实现受限模板",
     "source": "https://xtls.github.io/en/config/",
-    "checked_at": "2026-10-23"
+    "checked_at": "2026-10-26"
   },
   {
     "engine": "xray",
@@ -459,7 +459,7 @@
     "managed": true,
     "status": "已实现受限模板",
     "source": "https://xtls.github.io/en/config/",
-    "checked_at": "2026-10-23"
+    "checked_at": "2026-10-26"
   },
   {
     "engine": "xray",

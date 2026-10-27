@@ -15,7 +15,7 @@ if ($Mode -eq 'compose') {
 } else {
     New-Item -ItemType Directory -Force bin | Out-Null
     $env:CGO_ENABLED='0'
-    foreach ($Program in @('control','agent','firewall','gateway')) {
+    foreach ($Program in @('control','agent','agent-cleanup','firewall','gateway')) {
         Invoke-Checked go @('build','-trimpath','-ldflags=-s -w','-o',"bin/harbor-$Program.exe","./cmd/$Program")
     }
     Push-Location web

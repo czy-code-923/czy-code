@@ -50,18 +50,21 @@ func (s *Server) kernelConfig(w http.ResponseWriter, r *http.Request) error {
 }
 
 type clientProfile struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Format    string `json:"format"`
-	Port      int    `json:"local_port"`
-	Selection string `json:"selection"`
-	TestURL   string `json:"test_url"`
+	ID        string          `json:"id"`
+	Name      string          `json:"name"`
+	Format    string          `json:"format"`
+	Port      int             `json:"local_port"`
+	Selection string          `json:"selection"`
+	TestURL   string          `json:"test_url"`
+	Extra     json.RawMessage `json:"extra_config,omitempty"`
+	ExtraText *string         `json:"extra_text,omitempty"`
+	Version   int             `json:"version"`
 }
 
 func (s *Server) clientProfiles(w http.ResponseWriter, r *http.Request) error {
 	if r.Method == "GET" {
 		var raw json.RawMessage
-		e := s.DB.QueryRow(r.Context(), `SELECT COALESCE(jsonb_agg(x),'[]') FROM (SELECT id,name,format,local_port,selection,test_url FROM client_profiles WHERE tenant_id=$1 ORDER BY name LIMIT 100) x`, tenant).Scan(&raw)
+		e := s.DB.QueryRow(r.Context(), `SELECT COALESCE(jsonb_agg(x),'[]') FROM (SELECT id,name,format,local_port,selection,test_url,extra_config,extra_source extra_text,version FROM client_profiles WHERE tenant_id=$1 ORDER BY name LIMIT 100) x`, tenant).Scan(&raw)
 		if e != nil {
 			return e
 		}
@@ -72,11 +75,35 @@ func (s *Server) clientProfiles(w http.ResponseWriter, r *http.Request) error {
 	if e := decode(w, r, &b); e != nil {
 		return e
 	}
-	if b.Name == "" || len(b.Name) > 100 || (b.Format != "sing-box" && b.Format != "mihomo" && b.Format != "shadowrocket" && b.Format != "xray") || b.Port < 1024 || b.Port > 65535 || (b.Selection != "select" && b.Selection != "urltest") {
+	client, clientOK := clientByID(b.Format)
+	if b.Name == "" || len(b.Name) > 100 || !clientOK || b.Port < 1024 || b.Port > 65535 || (b.Selection != "select" && b.Selection != "urltest") {
 		return bad("name, client format, local port and selection required")
 	}
 	if b.TestURL != "https://www.gstatic.com/generate_204" && b.TestURL != "https://cp.cloudflare.com/generate_204" {
 		return bad("choose a supported connectivity test URL")
+	}
+	if b.ExtraText != nil {
+		var e error
+		b.Extra, e = parseClientText(*b.ExtraText)
+		if e != nil {
+			return e
+		}
+	}
+	if len(b.Extra) == 0 {
+		b.Extra = json.RawMessage(`{}`)
+	}
+	if e := validateClientOptions(client.Format, b.Extra); e != nil {
+		return e
+	}
+	source := ""
+	if b.ExtraText != nil {
+		source = *b.ExtraText
+	} else {
+		pretty, e := json.MarshalIndent(b.Extra, "", "  ")
+		if e != nil {
+			return e
+		}
+		source = string(pretty)
 	}
 	tx, e := s.DB.Begin(r.Context())
 	if e != nil {
@@ -86,12 +113,12 @@ func (s *Server) clientProfiles(w http.ResponseWriter, r *http.Request) error {
 	id := r.PathValue("id")
 	if id == "" {
 		id = ID()
-		_, e = tx.Exec(r.Context(), `INSERT INTO client_profiles(tenant_id,id,name,format,local_port,selection,test_url) VALUES($1,$2,$3,$4,$5,$6,$7)`, tenant, id, b.Name, b.Format, b.Port, b.Selection, b.TestURL)
+		_, e = tx.Exec(r.Context(), `INSERT INTO client_profiles(tenant_id,id,name,format,local_port,selection,test_url,extra_config,extra_source) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`, tenant, id, b.Name, b.Format, b.Port, b.Selection, b.TestURL, b.Extra, source)
 	} else {
-		tag, err := tx.Exec(r.Context(), `UPDATE client_profiles SET name=$3,format=$4,local_port=$5,selection=$6,test_url=$7 WHERE tenant_id=$1 AND id=$2`, tenant, id, b.Name, b.Format, b.Port, b.Selection, b.TestURL)
+		tag, err := tx.Exec(r.Context(), `UPDATE client_profiles SET name=$3,format=$4,local_port=$5,selection=$6,test_url=$7,extra_config=$8,extra_source=$9,version=version+1 WHERE tenant_id=$1 AND id=$2 AND version=$10`, tenant, id, b.Name, b.Format, b.Port, b.Selection, b.TestURL, b.Extra, source, b.Version)
 		e = err
 		if err == nil && tag.RowsAffected() == 0 {
-			return bad("unknown client profile")
+			return problem{409, "client profile changed; refresh before saving"}
 		}
 	}
 	if e != nil {

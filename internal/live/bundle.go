@@ -69,7 +69,7 @@ func (w Work) Render() (string, map[string][]byte, error) {
 		if e = json.Unmarshal(part["config.json"], &cfg); e != nil {
 			return "", nil, e
 		}
-		rename := map[string]string{"entry": "in-" + m.ID, "egress": "out-" + m.ID}
+		rename := map[string]string{"entry": "in-" + m.ID, "egress": "out-" + m.ID, "egress-block": "block-" + m.ID}
 		for name, body := range part {
 			if name != "config.json" {
 				newName := m.ID + "-" + name
@@ -99,12 +99,46 @@ func (w Work) Render() (string, map[string][]byte, error) {
 		ins = append(ins, cfg["inbounds"].([]any)...)
 		outs = append(outs, cfg["outbounds"].([]any)...)
 		if engine == "xray" {
+			if routing, ok := cfg["routing"].(map[string]any); ok {
+				if extra, ok := routing["rules"].([]any); ok {
+					for _, item := range extra {
+						rule := item.(map[string]any)
+						rule["inboundTag"] = []string{rename["entry"]}
+						rules = append(rules, rule)
+					}
+				}
+			}
+		} else {
+			if route, ok := cfg["route"].(map[string]any); ok {
+				if extra, ok := route["rules"].([]any); ok {
+					for _, item := range extra {
+						rule := item.(map[string]any)
+						rule["inbound"] = []string{rename["entry"]}
+						rules = append(rules, rule)
+					}
+				}
+			}
+		}
+		if engine == "xray" {
 			rules = append(rules, map[string]any{"type": "field", "inboundTag": []string{rename["entry"]}, "outboundTag": rename["egress"]})
 		} else {
 			rules = append(rules, map[string]any{"inbound": []string{rename["entry"]}, "action": "route", "outbound": rename["egress"]})
 		}
 	}
 	cfg := map[string]any{"inbounds": ins, "outbounds": outs}
+	needsDNS := false
+	for _, m := range w.Members {
+		if m.Enabled && len(m.Spec.EgressFamilies) > 0 {
+			needsDNS = true
+		}
+	}
+	if needsDNS {
+		if w.Spec.Engine == "xray" {
+			cfg["dns"] = map[string]any{"servers": []string{"localhost"}}
+		} else {
+			cfg["dns"] = map[string]any{"servers": []any{map[string]any{"type": "local", "tag": "host-dns"}}}
+		}
+	}
 	if w.Spec.Engine == "xray" {
 		cfg["log"] = map[string]any{"loglevel": "warning"}
 		cfg["routing"] = map[string]any{"rules": rules}

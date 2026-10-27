@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"syscall"
@@ -32,7 +33,7 @@ func run(ctx context.Context) error {
 	if e != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Path != "" {
 		return errors.New("invalid CONTROL_URL; use an origin without path")
 	}
-	if u.Scheme != "https" && !(u.Scheme == "http" && (u.Hostname() == "127.0.0.1" || u.Hostname() == "localhost" || u.Hostname() == "::1" || os.Getenv("ALLOW_COMPOSE_HTTP") == "1" && u.Hostname() == "api")) {
+	if u.Scheme != "https" && !(u.Scheme == "http" && (os.Getenv("ALLOW_INSECURE_HTTP") == "1" || u.Hostname() == "127.0.0.1" || u.Hostname() == "localhost" || u.Hostname() == "::1" || os.Getenv("ALLOW_COMPOSE_HTTP") == "1" && u.Hostname() == "api")) {
 		return errors.New("HTTPS required except loopback or explicit Compose development network")
 	}
 	host, token := os.Getenv("HOST_ID"), os.Getenv("AGENT_TOKEN")
@@ -123,7 +124,32 @@ func run(ctx context.Context) error {
 					}
 				}
 			}
-			_, _, e = call(ctx, "heartbeat", map[string]any{"mode": mode, "version": "0.8.0", "platform": runtime.GOOS + "/" + runtime.GOARCH, "addresses": addresses})
+			data, _, err := call(ctx, "heartbeat", map[string]any{"cleanup_capable": os.Getenv("RETIRE_MARKER") != "", "mode": mode, "version": "0.12.0", "platform": runtime.GOOS + "/" + runtime.GOARCH, "addresses": addresses})
+			e = err
+			if e == nil && os.Getenv("RETIRE_MARKER") != "" {
+				var retirement struct {
+					ID    *string `json:"retire_id"`
+					State string  `json:"retire_state"`
+				}
+				if json.Unmarshal(data, &retirement) == nil && retirement.ID != nil && (retirement.State == "requested" || retirement.State == "cleaning") {
+					if !manifest.ValidID(*retirement.ID) {
+						return errors.New("invalid retirement ID")
+					}
+					path := os.Getenv("RETIRE_MARKER")
+					if !filepath.IsAbs(path) {
+						return errors.New("absolute local marker required")
+					}
+					body, _ := json.Marshal(map[string]string{"retire_id": *retirement.ID})
+					tmp := path + ".tmp"
+					if e = os.WriteFile(tmp, body, 0600); e != nil {
+						return e
+					}
+					if e = os.Rename(tmp, path); e != nil {
+						return e
+					}
+					return nil
+				}
+			}
 			if e == nil {
 				nextHeartbeat = time.Now().Add(30 * time.Second)
 			}

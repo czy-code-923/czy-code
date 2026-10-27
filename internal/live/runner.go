@@ -28,6 +28,7 @@ type Report struct {
 	State   string `json:"state"`
 }
 type process struct {
+	meter    *kernelMeter
 	members  []Work
 	engine   string
 	version  int
@@ -41,6 +42,7 @@ type process struct {
 	release  func()
 }
 type Runner struct {
+	usage     *usageStore
 	root      *os.Root
 	binary    map[string]executor.Binary
 	processes map[string]*process
@@ -73,9 +75,19 @@ func NewRunner(dir string, binaries map[string]executor.Binary) (*Runner, error)
 		root.Close()
 		return nil, e
 	}
-	return &Runner{root: root, binary: binaries, processes: map[string]*process{}, unlock: unlock}, nil
+	r := &Runner{root: root, binary: binaries, processes: map[string]*process{}, unlock: unlock}
+	if e = r.loadUsage(); e != nil {
+		unlock()
+		root.Close()
+		return nil, e
+	}
+	return r, nil
 }
 func stopProcess(p *process) {
+	if p.meter != nil {
+		p.meter.close()
+		p.meter = nil
+	}
 	if p.cmd != nil {
 		p.cmd.Process.Kill()
 		<-p.done
@@ -90,6 +102,7 @@ func (r *Runner) Close() {
 	for _, p := range r.processes {
 		stopProcess(p)
 	}
+	r.saveUsage()
 	r.unlock()
 	r.root.Close()
 }
@@ -194,6 +207,13 @@ func (r *Runner) Reconcile(ctx context.Context, work []Work) error {
 		if e != nil {
 			continue
 		}
+		var meter *kernelMeter
+		if len(w.Members) > 0 && (engine == "sing-box" || engine == "xray") {
+			meter, e = prepareMeter(engine, files, r.usage)
+			if e != nil {
+				continue
+			}
+		}
 		dir := w.ID + "/" + sum
 		if e = r.root.MkdirAll(dir, 0700); e != nil {
 			continue
@@ -265,6 +285,9 @@ func (r *Runner) Reconcile(ctx context.Context, work []Work) error {
 			cmd.Env = append(cmd.Env, "SystemRoot="+systemRoot)
 		}
 		cmd.Stdout = io.Discard
+		if meter != nil && engine == "xray" {
+			cmd.Stdout = &accessWriter{meter: meter}
+		}
 		cmd.Stderr = io.Discard
 		prepareChild(cmd)
 		if e = cmd.Start(); e != nil {
@@ -275,6 +298,15 @@ func (r *Runner) Reconcile(ctx context.Context, work []Work) error {
 			cmd.Process.Kill()
 			cmd.Wait()
 			continue
+		}
+		if meter != nil {
+			if e = meter.start(); e != nil {
+				cmd.Process.Kill()
+				cmd.Wait()
+				release()
+				continue
+			}
+			p.meter = meter
 		}
 		p.cmd = cmd
 		p.release = release

@@ -22,6 +22,9 @@ func (s *Server) subscriptionServices(w http.ResponseWriter, r *http.Request) er
 		return e
 	}
 	defer tx.Rollback(r.Context())
+	if e = graphLock(r, tx); e != nil {
+		return e
+	}
 	var id string
 	var user string
 	if e = tx.QueryRow(r.Context(), `SELECT COALESCE(user_id,'') FROM subscriptions WHERE tenant_id=$1 AND id=$2`, tenant, r.PathValue("id")).Scan(&user); e != nil {
@@ -65,6 +68,9 @@ func (s *Server) subscriptionServices(w http.ResponseWriter, r *http.Request) er
 		if _, e = tx.Exec(r.Context(), "INSERT INTO subscription_services VALUES($1,$2,$3)", tenant, id, service); e != nil {
 			return e
 		}
+	}
+	if _, e = tx.Exec(r.Context(), `UPDATE subscriptions SET version=version+1 WHERE tenant_id=$1 AND id=$2`, tenant, id); e != nil {
+		return e
 	}
 	if e = audit(r.Context(), tx, "admin", "subscription.services.replace", id); e != nil {
 		return e

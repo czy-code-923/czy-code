@@ -4,8 +4,11 @@ import (
 	"encoding/json"
 	"github.com/jackc/pgx/v5"
 	"net/http"
+	"net/netip"
+	"net/url"
 	"strings"
 	"time"
+	"unicode"
 	"vps-control/internal/live"
 )
 
@@ -28,12 +31,38 @@ func (s *Server) site(w http.ResponseWriter, r *http.Request) error {
 		var state *string
 		var checked *time.Time
 		_ = s.DB.QueryRow(r.Context(), "SELECT gateway_domain,gateway_https,gateway_state,gateway_checked_at FROM site_settings WHERE tenant_id=$1", tenant).Scan(&actualDomain, &actualHTTPS, &state, &checked)
-		send(w, 200, map[string]any{"domain": domain, "https": https, "gateway_domain": actualDomain, "gateway_https": actualHTTPS, "gateway_state": state, "gateway_checked_at": checked, "live_enabled": len(s.MasterKey) == 32})
+		var title string
+		var origins json.RawMessage
+		if e = s.DB.QueryRow(r.Context(), `SELECT title,api_origins FROM site_settings WHERE tenant_id=$1`, tenant).Scan(&title, &origins); e != nil && e != pgx.ErrNoRows {
+			return e
+		}
+		if title == "" {
+			title = "星枢"
+		}
+		if len(origins) == 0 {
+			origins = json.RawMessage(`[]`)
+		}
+		var shareGatewayDomain, shareGatewayState string
+		var shareGatewayChecked *time.Time
+		if e = s.DB.QueryRow(r.Context(), `SELECT share_gateway_domain,share_gateway_state,share_gateway_checked_at FROM site_settings WHERE tenant_id=$1`, tenant).Scan(&shareGatewayDomain, &shareGatewayState, &shareGatewayChecked); e != nil && e != pgx.ErrNoRows {
+			return e
+		}
+		var ipOrigin, shareDomain string
+		var shareHTTPS bool
+		if e = s.DB.QueryRow(r.Context(), `SELECT ip_origin,share_domain,share_https FROM site_settings WHERE tenant_id=$1`, tenant).Scan(&ipOrigin, &shareDomain, &shareHTTPS); e != nil && e != pgx.ErrNoRows {
+			return e
+		}
+		send(w, 200, map[string]any{"share_gateway_domain": shareGatewayDomain, "share_gateway_state": shareGatewayState, "share_gateway_checked_at": shareGatewayChecked, "ip_origin": ipOrigin, "share_domain": shareDomain, "share_https": shareHTTPS, "title": title, "api_origins": origins, "domain": domain, "https": https, "gateway_domain": actualDomain, "gateway_https": actualHTTPS, "gateway_state": state, "gateway_checked_at": checked, "live_enabled": len(s.MasterKey) == 32})
 		return nil
 	}
 	var b struct {
-		Domain string `json:"domain"`
-		HTTPS  *bool  `json:"https"`
+		Domain      string    `json:"domain"`
+		IPOrigin    *string   `json:"ip_origin"`
+		ShareDomain *string   `json:"share_domain"`
+		ShareHTTPS  *bool     `json:"share_https"`
+		HTTPS       *bool     `json:"https"`
+		Title       *string   `json:"title"`
+		Origins     *[]string `json:"api_origins"`
 	}
 	if e := decode(w, r, &b); e != nil {
 		return e
@@ -42,7 +71,7 @@ func (s *Server) site(w http.ResponseWriter, r *http.Request) error {
 		return bad("https is required")
 	}
 	b.Domain = strings.ToLower(strings.TrimSpace(b.Domain))
-	if !live.Address(b.Domain) || strings.Contains(b.Domain, ":") {
+	if b.Domain != "" && (!live.Address(b.Domain) || strings.Contains(b.Domain, ":")) {
 		return bad("valid DNS domain or IPv4 required; IPv6 endpoints belong on live services")
 	}
 	var reserved bool
@@ -56,8 +85,63 @@ func (s *Server) site(w http.ResponseWriter, r *http.Request) error {
 	if !*b.HTTPS {
 		scheme = "http"
 	}
-	if !live.Origin(scheme + "://" + b.Domain) {
+	if b.Domain != "" && !live.Origin(scheme+"://"+b.Domain) {
 		return bad("invalid public domain")
+	}
+	if b.IPOrigin != nil {
+		v := strings.TrimRight(strings.TrimSpace(*b.IPOrigin), "/")
+		u, e := url.Parse(v)
+		if e != nil || !live.Origin(v) {
+			return bad("IP 访问入口应为 http(s)://IP:端口")
+		}
+		if _, e = netip.ParseAddr(u.Hostname()); e != nil {
+			return bad("IP 入口必须填写 IP 地址")
+		}
+		b.IPOrigin = &v
+	}
+	if b.ShareDomain != nil {
+		v := strings.ToLower(strings.TrimSpace(*b.ShareDomain))
+		if v != "" && (!live.Address(v) || strings.Contains(v, ":")) {
+			return bad("订阅域名格式无效")
+		}
+		b.ShareDomain = &v
+		var used bool
+		if e := s.DB.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM reverse_proxies WHERE tenant_id=$1 AND domain=$2)`, tenant, v).Scan(&used); e != nil {
+			return e
+		}
+		if used {
+			return problem{409, "订阅域名已用于反向代理"}
+		}
+	}
+	if b.Title != nil {
+		value := strings.TrimSpace(*b.Title)
+		if value == "" || len([]rune(value)) > 30 {
+			return bad("site title must contain 1-30 characters")
+		}
+		for _, c := range value {
+			if unicode.IsControl(c) {
+				return bad("invalid site title")
+			}
+		}
+		b.Title = &value
+	}
+	if b.Origins != nil {
+		if len(*b.Origins) > 8 {
+			return bad("at most eight API origins")
+		}
+		values := []string{}
+		seen := map[string]bool{}
+		for _, origin := range *b.Origins {
+			normalized, ok := normalizedAPIOrigin(origin)
+			if !ok {
+				return bad("API origin requires exact HTTPS origin, or HTTP loopback for development")
+			}
+			if !seen[normalized] {
+				values = append(values, normalized)
+				seen[normalized] = true
+			}
+		}
+		b.Origins = &values
 	}
 	tx, e := s.DB.Begin(r.Context())
 	if e != nil {
@@ -65,6 +149,20 @@ func (s *Server) site(w http.ResponseWriter, r *http.Request) error {
 	}
 	defer tx.Rollback(r.Context())
 	if _, e = tx.Exec(r.Context(), "INSERT INTO site_settings(tenant_id,domain,https) VALUES($1,$2,$3) ON CONFLICT(tenant_id) DO UPDATE SET domain=excluded.domain,https=excluded.https,updated_at=now()", tenant, b.Domain, *b.HTTPS); e != nil {
+		return e
+	}
+	if b.Title != nil {
+		if _, e = tx.Exec(r.Context(), `UPDATE site_settings SET title=$2 WHERE tenant_id=$1`, tenant, *b.Title); e != nil {
+			return e
+		}
+	}
+	if b.Origins != nil {
+		raw, _ := json.Marshal(*b.Origins)
+		if _, e = tx.Exec(r.Context(), `UPDATE site_settings SET api_origins=$2 WHERE tenant_id=$1`, tenant, raw); e != nil {
+			return e
+		}
+	}
+	if _, e = tx.Exec(r.Context(), `UPDATE site_settings SET ip_origin=COALESCE($2,ip_origin),share_domain=COALESCE($3,share_domain),share_https=COALESCE($4,share_https) WHERE tenant_id=$1`, tenant, b.IPOrigin, b.ShareDomain, b.ShareHTTPS); e != nil {
 		return e
 	}
 	if e = audit(r.Context(), tx, "admin", "site.update", tenant); e != nil {
@@ -78,7 +176,7 @@ func (s *Server) site(w http.ResponseWriter, r *http.Request) error {
 }
 func (s *Server) liveList(w http.ResponseWriter, r *http.Request) error {
 	var b json.RawMessage
-	e := s.DB.QueryRow(r.Context(), `SELECT COALESCE(jsonb_agg(x),'[]') FROM (SELECT id,host_id,node_id,certificate_id,name,kind,engine,address,port,parent_id,next_id,managed_users,enabled,version,reported_version,state,reported_at,created_at,(reported_at>now()-interval '45 seconds' AND version=reported_version AND state='running' AND enabled) AS online FROM live_services WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT 200) x`, tenant).Scan(&b)
+	e := s.DB.QueryRow(r.Context(), `SELECT COALESCE(jsonb_agg(x),'[]') FROM (SELECT id,host_id,node_id,certificate_id,name,kind,engine,address,port,parent_id,next_id,managed_users,enabled,version,reported_version,state,reported_at,created_at,delete_requested_at,(reported_at>now()-interval '45 seconds' AND version=reported_version AND state='running' AND enabled) AS online FROM live_services WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT 200) x`, tenant).Scan(&b)
 	if e != nil {
 		return e
 	}
@@ -87,7 +185,7 @@ func (s *Server) liveList(w http.ResponseWriter, r *http.Request) error {
 }
 func (s *Server) loadSpec(r *http.Request, id string) (live.Spec, error) {
 	var sealed []byte
-	e := s.DB.QueryRow(r.Context(), "SELECT sealed FROM live_services WHERE tenant_id=$1 AND id=$2", tenant, id).Scan(&sealed)
+	e := s.DB.QueryRow(r.Context(), "SELECT l.sealed FROM live_services l JOIN hosts h ON (l.tenant_id,l.host_id)=(h.tenant_id,h.id) WHERE l.tenant_id=$1 AND l.id=$2 AND h.retire_state='' AND h.deleted_at IS NULL", tenant, id).Scan(&sealed)
 	if e != nil {
 		return live.Spec{}, e
 	}
@@ -104,6 +202,10 @@ func (s *Server) loadSpec(r *http.Request, id string) (live.Spec, error) {
 }
 
 type liveInput struct {
+	EndpointAddresses *[]string `json:"endpoint_addresses"`
+	EgressFamilies    *[]string `json:"egress_families"`
+	live.ProtocolOptions
+	ClearHY2Obfs      bool          `json:"clear_hy2_obfs"`
 	Reality           *live.Reality `json:"reality"`
 	Flow              string        `json:"flow"`
 	ALPN              []string      `json:"alpn"`
@@ -135,6 +237,15 @@ type liveInput struct {
 	RotateCredentials bool          `json:"rotate_credentials"`
 }
 
+type liveCreated struct {
+	ID      string `json:"id"`
+	Kind    string `json:"kind"`
+	Port    int    `json:"port"`
+	NodeID  string `json:"node_id"`
+	Engine  string `json:"engine"`
+	Enabled bool   `json:"enabled"`
+}
+
 func (s *Server) liveCreate(w http.ResponseWriter, r *http.Request) error {
 	if e := s.liveReady(); e != nil {
 		return e
@@ -143,6 +254,25 @@ func (s *Server) liveCreate(w http.ResponseWriter, r *http.Request) error {
 	if e := decode(w, r, &b); e != nil {
 		return e
 	}
+	tx, e := s.DB.Begin(r.Context())
+	if e != nil {
+		return e
+	}
+	defer tx.Rollback(r.Context())
+	if e = graphLock(r, tx); e != nil {
+		return e
+	}
+	var created liveCreated
+	if e = s.createLiveTx(r, tx, b, &created); e != nil {
+		return e
+	}
+	if e = tx.Commit(r.Context()); e != nil {
+		return e
+	}
+	send(w, 201, created)
+	return nil
+}
+func (s *Server) createLiveTx(r *http.Request, tx pgx.Tx, b liveInput, created *liveCreated) error {
 	if len(strings.TrimSpace(b.Name)) == 0 || len([]rune(b.Name)) > 100 {
 		return bad("name required (max 100 characters)")
 	}
@@ -150,6 +280,9 @@ func (s *Server) liveCreate(w http.ResponseWriter, r *http.Request) error {
 		b.Listen = "127.0.0.1"
 	}
 	spec := live.Spec{Kind: b.Kind, Listen: b.Listen, Address: b.Address, Port: b.Port, Password: live.Secret(), Tunnels: b.Tunnels}
+	if e := s.applyNetwork(r, tx, b, &spec); e != nil {
+		return e
+	}
 	spec.Engine = b.Engine
 	spec.Transport = b.Transport
 	spec.Path = b.Path
@@ -218,6 +351,8 @@ func (s *Server) liveCreate(w http.ResponseWriter, r *http.Request) error {
 		if e != nil {
 			return e
 		}
+		next.EndpointAddresses = nil
+		next.EgressFamilies = nil
 		next.Outbound = nil
 		next.Peer = nil
 		next.StripServerSecrets()
@@ -247,25 +382,26 @@ func (s *Server) liveCreate(w http.ResponseWriter, r *http.Request) error {
 		return e
 	}
 	ctx := r.Context()
-	tx, e := s.DB.Begin(ctx)
-	if e != nil {
-		return e
-	}
-	defer tx.Rollback(ctx)
-	if _, e = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(717071)"); e != nil {
-		return e
+	if b.ParentID != "" {
+		var parent string
+		if e = tx.QueryRow(ctx, `SELECT id FROM live_services WHERE tenant_id=$1 AND id=$2 AND delete_requested_at IS NULL`, tenant, b.ParentID).Scan(&parent); e != nil {
+			return e
+		}
 	}
 	if e = s.checkChain(r, tx, "", b.NextID); e != nil {
 		return e
 	}
 	var host string
-	if e = tx.QueryRow(ctx, "SELECT id FROM hosts WHERE tenant_id=$1 AND id=$2 FOR UPDATE", tenant, b.HostID).Scan(&host); e != nil {
+	if e = tx.QueryRow(ctx, "SELECT id FROM hosts WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL FOR UPDATE", tenant, b.HostID).Scan(&host); e != nil {
 		return e
 	}
 	if live.Proxy(spec.Kind) && (spec.Kind != "shadowsocks" || spec.RequiresAdvanced()) {
 		var version string
 		if e = tx.QueryRow(ctx, "SELECT agent_version FROM hosts WHERE tenant_id=$1 AND id=$2", tenant, host).Scan(&version); e != nil {
 			return e
+		}
+		if spec.RequiresOptions() && !live.OptionsCapable(version) {
+			return problem{409, "upgrade host to Agent 0.9.0 for protocol options"}
 		}
 		if (spec.ManagedUsers || spec.IsReality() || spec.Transport == "grpc") && !live.BundleCapable(version) {
 			return problem{409, "upgrade host to Agent 0.8.0 for REALITY, gRPC and users"}
@@ -320,13 +456,18 @@ func (s *Server) liveCreate(w http.ResponseWriter, r *http.Request) error {
 	if e = audit(ctx, tx, "admin", "live.create", id); e != nil {
 		return e
 	}
-	if e = tx.Commit(ctx); e != nil {
-		return e
-	}
-	send(w, 201, map[string]any{"id": id, "enabled": false})
+	*created = liveCreated{ID: id, Kind: spec.Kind, Port: spec.Port, NodeID: nodeID, Engine: spec.Engine}
 	return nil
 }
 func (s *Server) liveToggle(w http.ResponseWriter, r *http.Request) error {
+	var deleting bool
+	if e := s.DB.QueryRow(r.Context(), `SELECT (delete_requested_at IS NOT NULL OR EXISTS(SELECT 1 FROM hosts h WHERE (h.tenant_id,h.id)=(live_services.tenant_id,live_services.host_id) AND h.retire_state<>'')) FROM live_services WHERE tenant_id=$1 AND id=$2`, tenant, r.PathValue("id")).Scan(&deleting); e != nil {
+		return e
+	}
+	if deleting {
+		return problem{409, "配置正在删除，等待 Agent 停止回执"}
+	}
+
 	if e := s.liveReady(); e != nil {
 		return e
 	}
@@ -344,6 +485,15 @@ func (s *Server) liveToggle(w http.ResponseWriter, r *http.Request) error {
 		return e
 	}
 	defer tx.Rollback(r.Context())
+	if e = graphLock(r, tx); e != nil {
+		return e
+	}
+	if e = tx.QueryRow(r.Context(), `SELECT (delete_requested_at IS NOT NULL OR EXISTS(SELECT 1 FROM hosts h WHERE (h.tenant_id,h.id)=(live_services.tenant_id,live_services.host_id) AND h.retire_state<>'')) FROM live_services WHERE tenant_id=$1 AND id=$2 FOR UPDATE`, tenant, r.PathValue("id")).Scan(&deleting); e != nil {
+		return e
+	}
+	if deleting {
+		return problem{409, "配置正在删除，等待 Agent 停止回执"}
+	}
 	if *b.Enabled {
 		var kind, version string
 		if e = tx.QueryRow(r.Context(), "SELECT l.kind,h.agent_version FROM live_services l JOIN hosts h ON (l.tenant_id,l.host_id)=(h.tenant_id,h.id) WHERE l.tenant_id=$1 AND l.id=$2", tenant, r.PathValue("id")).Scan(&kind, &version); e != nil {
@@ -353,6 +503,9 @@ func (s *Server) liveToggle(w http.ResponseWriter, r *http.Request) error {
 			spec, err := s.loadSpec(r, r.PathValue("id"))
 			if err != nil {
 				return err
+			}
+			if spec.RequiresOptions() && !live.OptionsCapable(version) {
+				return problem{409, "upgrade host to Agent 0.9.0 for protocol options"}
 			}
 			if err = spec.Validate(); err != nil {
 				return bad(err.Error())
@@ -434,6 +587,9 @@ func (s *Server) liveSync(w http.ResponseWriter, r *http.Request, host string) e
 		return e
 	}
 	defer tx.Rollback(r.Context())
+	if e = graphLock(r, tx); e != nil {
+		return e
+	}
 	for _, c := range b.Capabilities {
 		if c.Engine != "sing-box" && c.Engine != "xray" && c.Engine != "frps" && c.Engine != "frpc" || len(c.Version) > 120 {
 			return bad("invalid kernel report")
@@ -463,6 +619,29 @@ func (s *Server) liveSync(w http.ResponseWriter, r *http.Request, host string) e
 		}
 		_ = tag
 	}
+	// Never release a live port until the Agent has acknowledged this stop version.
+	rowsToDelete, e := tx.Query(r.Context(), `SELECT id FROM live_services WHERE tenant_id=$1 AND host_id=$2 AND delete_requested_at IS NOT NULL AND NOT enabled AND state='stopped' AND reported_version=version`, tenant, host)
+	if e != nil {
+		return e
+	}
+	pending := []string{}
+	for rowsToDelete.Next() {
+		var id string
+		if e = rowsToDelete.Scan(&id); e != nil {
+			rowsToDelete.Close()
+			return e
+		}
+		pending = append(pending, id)
+	}
+	rowsToDelete.Close()
+	if e = rowsToDelete.Err(); e != nil {
+		return e
+	}
+	for _, id := range pending {
+		if e = purgeLive(r, tx, id); e != nil {
+			return e
+		}
+	}
 	var agentVersion string
 	if e = tx.QueryRow(r.Context(), "SELECT agent_version FROM hosts WHERE tenant_id=$1 AND id=$2", tenant, host).Scan(&agentVersion); e != nil {
 		return e
@@ -488,6 +667,9 @@ func (s *Server) liveSync(w http.ResponseWriter, r *http.Request, host string) e
 			rows.Close()
 			return e
 		}
+		if v.Spec.RequiresOptions() && !live.OptionsCapable(agentVersion) {
+			v.Enabled = false
+		}
 		if v.Spec.RequiresAdvanced() && !live.AdvancedCapable(agentVersion) {
 			continue
 		}
@@ -495,6 +677,10 @@ func (s *Server) liveSync(w http.ResponseWriter, r *http.Request, host string) e
 			v.Enabled = false
 		}
 
+		v.Spec.EndpointAddresses = nil
+		if len(v.Spec.EgressFamilies) > 0 && !live.NetworkCapable(agentVersion) {
+			v.Enabled = false
+		}
 		work = append(work, v)
 	}
 	rows.Close()
@@ -517,6 +703,8 @@ func (s *Server) liveSync(w http.ResponseWriter, r *http.Request, host string) e
 			if e = json.Unmarshal(raw, &next); e != nil {
 				return e
 			}
+			next.EndpointAddresses = nil
+			next.EgressFamilies = nil
 			next.Outbound = nil
 			next.Peer = nil
 			next.StripServerSecrets()
@@ -528,6 +716,18 @@ func (s *Server) liveSync(w http.ResponseWriter, r *http.Request, host string) e
 	for i := range work {
 		if e = s.materializeAccounts(r, tx, work[i].ID, &work[i].Spec); e != nil {
 			return e
+		}
+		if live.Proxy(work[i].Spec.Kind) {
+			if _, e = tx.Exec(r.Context(), `INSERT INTO traffic_subjects(tenant_id,host_id,subject_kind,subject_id) VALUES($1,$2,'service',$3) ON CONFLICT DO NOTHING`, tenant, host, work[i].ID); e != nil {
+				return e
+			}
+			for _, a := range work[i].Spec.Accounts {
+				if len(a.Name) == 32 {
+					if _, e = tx.Exec(r.Context(), `INSERT INTO traffic_subjects(tenant_id,host_id,subject_kind,subject_id) VALUES($1,$2,'user',$3) ON CONFLICT DO NOTHING`, tenant, host, a.Name); e != nil {
+						return e
+					}
+				}
+			}
 		}
 		compiled = append(compiled, live.Work{ID: work[i].ID, Version: work[i].Version, Enabled: work[i].Enabled, Spec: work[i].Spec})
 	}
@@ -566,25 +766,35 @@ func (s *Server) liveSync(w http.ResponseWriter, r *http.Request, host string) e
 	}
 	return nil
 }
-func (s *Server) publicOrigin(r *http.Request) (string, error) {
-	var domain string
-	var https bool
-	e := s.DB.QueryRow(r.Context(), "SELECT domain,https FROM site_settings WHERE tenant_id=$1", tenant).Scan(&domain, &https)
+func (s *Server) managementOrigin(r *http.Request) (string, error) { return s.siteOrigin(r, false) }
+func (s *Server) publicOrigin(r *http.Request) (string, error)     { return s.siteOrigin(r, true) }
+func (s *Server) siteOrigin(r *http.Request, share bool) (string, error) {
+	var domain, ipOrigin, sd string
+	var https, sh bool
+	e := s.DB.QueryRow(r.Context(), `SELECT domain,https,ip_origin,share_domain,share_https FROM site_settings WHERE tenant_id=$1`, tenant).Scan(&domain, &https, &ipOrigin, &sd, &sh)
 	if e != nil {
 		return "", e
 	}
-	prefix := "https://"
-	if !https {
-		prefix = "http://"
+	if share && sd != "" && sd != domain {
+		domain = sd
+		https = sh
 	}
-	if !live.Origin(prefix + domain) {
-		return "", bad("configure site domain first")
+	origin := ipOrigin
+	if domain != "" {
+		scheme := "http://"
+		if https {
+			scheme = "https://"
+		}
+		origin = scheme + domain
 	}
-	return prefix + domain, nil
+	if !live.Origin(origin) {
+		return "", bad("请配置 IP:端口或站点域名")
+	}
+	return origin, nil
 }
 func (s *Server) subscriptionList(w http.ResponseWriter, r *http.Request) error {
 	var b json.RawMessage
-	e := s.DB.QueryRow(r.Context(), `SELECT COALESCE(jsonb_agg(x),'[]') FROM (SELECT id,name,user_id,profile_id,expires_at,revoked_at,created_at FROM subscriptions WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT 200) x`, tenant).Scan(&b)
+	e := s.DB.QueryRow(r.Context(), `SELECT COALESCE(jsonb_agg(x),'[]') FROM (SELECT id,name,user_id,profile_id,expires_at,revoked_at,created_at,version,(revoked_at IS NULL AND expires_at>now()) active,COALESCE((SELECT jsonb_agg(service_id) FROM subscription_services ss WHERE ss.tenant_id=subscriptions.tenant_id AND ss.subscription_id=subscriptions.id),'[]') service_ids,CASE WHEN user_id IS NULL THEN 'shared' ELSE 'user' END mode FROM subscriptions WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT 200) x`, tenant).Scan(&b)
 	if e != nil {
 		return e
 	}
@@ -617,6 +827,9 @@ func (s *Server) subscriptionCreate(w http.ResponseWriter, r *http.Request) erro
 		return e
 	}
 	defer tx.Rollback(r.Context())
+	if e = graphLock(r, tx); e != nil {
+		return e
+	}
 	if b.UserID != "" {
 		var expires time.Time
 		if e = tx.QueryRow(r.Context(), `SELECT expires_at FROM proxy_users WHERE tenant_id=$1 AND id=$2 AND enabled AND expires_at>now()`, tenant, b.UserID).Scan(&expires); e != nil {
@@ -644,7 +857,11 @@ func (s *Server) subscriptionCreate(w http.ResponseWriter, r *http.Request) erro
 		}
 	}
 	id, token := ID(), ID()+ID()
-	_, e = tx.Exec(r.Context(), "INSERT INTO subscriptions(tenant_id,id,name,token_hash,expires_at,user_id,profile_id) VALUES($1,$2,$3,$4,$5,NULLIF($6,''),NULLIF($7,''))", tenant, id, b.Name, Hash(token), time.Now().Add(time.Duration(b.Days)*24*time.Hour), b.UserID, b.ProfileID)
+	sealedToken, e := live.Seal(s.MasterKey, []byte(token))
+	if e != nil {
+		return e
+	}
+	_, e = tx.Exec(r.Context(), "INSERT INTO subscriptions(tenant_id,id,name,token_hash,expires_at,user_id,profile_id,sealed_token) VALUES($1,$2,$3,$4,$5,NULLIF($6,''),NULLIF($7,''),$8)", tenant, id, b.Name, Hash(token), time.Now().Add(time.Duration(b.Days)*24*time.Hour), b.UserID, b.ProfileID, sealedToken)
 	if e != nil {
 		return e
 	}
@@ -675,7 +892,7 @@ func (s *Server) subscriptionCreate(w http.ResponseWriter, r *http.Request) erro
 	if e = tx.Commit(r.Context()); e != nil {
 		return e
 	}
-	send(w, 201, map[string]string{"id": id, "url": origin + "/s/" + token, "notice": "URL shown once; contains proxy credentials. Protect it. Revocation stops downloads, not already imported credentials."})
+	send(w, 201, map[string]string{"id": id, "url": origin + "/s/" + token, "notice": "URL contains proxy credentials. Protect it. Revocation stops downloads, not already imported credentials."})
 	return nil
 }
 func (s *Server) subscriptionRevoke(w http.ResponseWriter, r *http.Request) error {
@@ -707,12 +924,16 @@ func (s *Server) subscriptionRotate(w http.ResponseWriter, r *http.Request) erro
 		return e
 	}
 	token := ID() + ID()
+	sealedToken, e := live.Seal(s.MasterKey, []byte(token))
+	if e != nil {
+		return e
+	}
 	tx, e := s.DB.Begin(r.Context())
 	if e != nil {
 		return e
 	}
 	defer tx.Rollback(r.Context())
-	tag, e := tx.Exec(r.Context(), "UPDATE subscriptions SET token_hash=$3 WHERE tenant_id=$1 AND id=$2 AND revoked_at IS NULL AND expires_at>now()", tenant, r.PathValue("id"), Hash(token))
+	tag, e := tx.Exec(r.Context(), "UPDATE subscriptions SET token_hash=$3,sealed_token=$4 WHERE tenant_id=$1 AND id=$2 AND revoked_at IS NULL AND expires_at>now()", tenant, r.PathValue("id"), Hash(token), sealedToken)
 	if e != nil {
 		return e
 	}
@@ -731,6 +952,7 @@ func (s *Server) subscriptionRotate(w http.ResponseWriter, r *http.Request) erro
 
 func (s *Server) gatewayStatus(w http.ResponseWriter, r *http.Request) error {
 	var b struct {
+		Role   string `json:"role"`
 		Domain string `json:"domain"`
 		HTTPS  bool   `json:"https"`
 		State  string `json:"state"`
@@ -738,8 +960,19 @@ func (s *Server) gatewayStatus(w http.ResponseWriter, r *http.Request) error {
 	if e := decode(w, r, &b); e != nil {
 		return e
 	}
-	if !live.Address(b.Domain) || (b.State != "active" && b.State != "error") {
+	if (b.Domain != "" && !live.Address(b.Domain)) || (b.State != "active" && b.State != "error" && !(b.Role == "subscription" && b.State == "inherited")) {
 		return bad("invalid gateway status")
+	}
+	if b.Role == "subscription" {
+		_, e := s.DB.Exec(r.Context(), `UPDATE site_settings SET share_gateway_domain=$2,share_gateway_state=$3,share_gateway_checked_at=now() WHERE tenant_id=$1`, tenant, b.Domain, b.State)
+		if e != nil {
+			return e
+		}
+		send(w, 200, map[string]bool{"recorded": true})
+		return nil
+	}
+	if b.Role != "" && b.Role != "management" {
+		return bad("unknown gateway role")
 	}
 	_, e := s.DB.Exec(r.Context(), "UPDATE site_settings SET gateway_domain=$2,gateway_https=$3,gateway_state=$4,gateway_checked_at=now() WHERE tenant_id=$1", tenant, b.Domain, b.HTTPS, b.State)
 	if e != nil {

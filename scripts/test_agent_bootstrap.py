@@ -18,14 +18,14 @@ class BootstrapTests(unittest.TestCase):
         exec(compile(source.read_text(encoding='utf-8'),str(source),'exec'),self.module.__dict__)
         self.old_umask=os.umask(0o022); self.addCleanup(os.umask,self.old_umask)
         self.failure=False
-        for relative in ('opt','etc/systemd/system','var/lib'):(self.root/relative).mkdir(parents=True,exist_ok=True)
+        for relative in ('opt','etc/systemd/system','var/lib','usr/local/libexec'):(self.root/relative).mkdir(parents=True,exist_ok=True)
         package=io.BytesIO()
         with zipfile.ZipFile(package,'w') as archive:
-            for name in ('harbor-agent','sing-box','frps','frpc','xray'):archive.writestr(name,b'fake-'+name.encode())
+            for name in ('harbor-agent','harbor-agent-cleanup','sing-box','frps','frpc','xray'):archive.writestr(name,b'fake-'+name.encode())
         self.archive=package.getvalue()
         def mapped(value):
             value=str(value)
-            if value.startswith(('/opt/harbor-agent','/etc/harbor-agent','/etc/systemd/system/harbor-agent.service','/var/lib/harbor-agent')):return self.root/value.lstrip('/')
+            if value.startswith(('/opt/harbor-agent','/etc/harbor-agent','/etc/systemd/system/harbor-agent','/var/lib/harbor-agent','/usr/local/libexec/harbor-agent-cleanup')):return self.root/value.lstrip('/')
             return Path(value)
         def run(arguments,**kwargs):
             if arguments[0]=='id':return subprocess.CompletedProcess(arguments,1)
@@ -63,5 +63,14 @@ class BootstrapTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'Existing Agent'):self.module.main()
         self.module.rollback_install()
         self.assertEqual((folder/'existing').read_text(),'keep')
+
+    def test_patched_core_source_and_license_are_installed_as_data(self):
+        data=io.BytesIO()
+        with zipfile.ZipFile(data,'w') as archive:
+            for name in ('harbor-agent','harbor-agent-cleanup','sing-box','frps','frpc','xray','LICENSE.sing-box','sing-box-source.zip'):archive.writestr(name,b'fixture-'+name.encode())
+        self.archive=data.getvalue();self.module.main()
+        source=self.root/'opt/harbor-agent/sing-box-source.zip'
+        self.assertEqual(source.read_bytes(),b'fixture-sing-box-source.zip')
+        if os.name!='nt':self.assertEqual(source.stat().st_mode&0o777,0o644)
 
 if __name__=='__main__':unittest.main()

@@ -30,7 +30,7 @@ def main():
         archive = fetch('/api/v1/agent/releases/linux-amd64?download=1')
         assert len(archive) == manifest['size'] and hashlib.sha256(archive).hexdigest() == manifest['sha256']
         with zipfile.ZipFile(io.BytesIO(archive)) as package:
-            assert set(package.namelist()) == {'harbor-agent','sing-box','frps','frpc','xray'}
+            assert set(package.namelist()) in ({'harbor-agent','sing-box','frps','frpc','xray'}, {'harbor-agent','sing-box','frps','frpc','xray','LICENSE.sing-box','sing-box-source.zip'})
             binary = package.read('harbor-agent')
         print('PASS: public HTTPS package download, size, SHA-256 and fixed contents', flush=True)
         registration = json.loads(fetch('/api/v1/agent/enroll', {'ticket':ticket}))

@@ -56,7 +56,11 @@ func (s *Server) updateResource(w http.ResponseWriter, r *http.Request) error {
 	}
 	defer tx.Rollback(ctx)
 	var locked string
-	if e = tx.QueryRow(ctx, "SELECT id FROM "+table+" WHERE tenant_id=$1 AND id=$2 FOR UPDATE", tenant, r.PathValue("id")).Scan(&locked); e != nil {
+	active := ""
+	if kind == "hosts" {
+		active = " AND deleted_at IS NULL"
+	}
+	if e = tx.QueryRow(ctx, "SELECT id FROM "+table+" WHERE tenant_id=$1 AND id=$2"+active+" FOR UPDATE", tenant, r.PathValue("id")).Scan(&locked); e != nil {
 		return e
 	}
 	if engine, ok := updates["engine"]; ok {
@@ -89,6 +93,9 @@ func (s *Server) updateResource(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 func (s *Server) deleteResource(w http.ResponseWriter, r *http.Request) error {
+	if r.PathValue("kind") == "hosts" {
+		return s.removeHost(w, r)
+	}
 	kind := r.PathValue("kind")
 	tables := map[string]string{"hosts": "hosts", "nodes": "nodes", "instances": "instances", "tunnels": "tunnels", "routes": "route_plans"}
 	table, ok := tables[kind]
@@ -117,7 +124,11 @@ func (s *Server) deleteResource(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	var locked string
-	if e = tx.QueryRow(ctx, "SELECT id FROM "+table+" WHERE tenant_id=$1 AND id=$2 FOR UPDATE", tenant, id).Scan(&locked); e != nil {
+	active := ""
+	if kind == "hosts" {
+		active = " AND deleted_at IS NULL"
+	}
+	if e = tx.QueryRow(ctx, "SELECT id FROM "+table+" WHERE tenant_id=$1 AND id=$2"+active+" FOR UPDATE", tenant, id).Scan(&locked); e != nil {
 		return e
 	}
 	switch kind {

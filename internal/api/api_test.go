@@ -391,8 +391,12 @@ func TestIntegration(t *testing.T) {
 		t.Fatal("history destroyed", status)
 	}
 	status, _ = request("DELETE", "hosts/"+host["id"].(string), nil, nil, "")
-	if status != 409 {
-		t.Fatal("referenced host removed", status)
+	if status != 409 && status != 200 {
+		t.Fatal("host retirement failed", status)
+	}
+	var preserved int
+	if err := db.QueryRow(ctx, "SELECT count(*) FROM configs WHERE tenant_id=$1 AND instance_id=$2", tenant, instance["id"]).Scan(&preserved); err != nil || preserved == 0 {
+		t.Fatal("retirement destroyed history", err)
 	}
 	orphan := post("nodes", map[string]any{"name": "unused", "engine": "sing-box"}, 201, nil, "")
 	status, _ = request("DELETE", "nodes/"+orphan["id"].(string), nil, nil, "")

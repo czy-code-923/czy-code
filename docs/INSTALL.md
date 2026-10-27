@@ -2,13 +2,23 @@
 
 **给现有总管理端添加其他 VPS：优先使用 [面板一键连接向导](AGENT-CONNECT.md)。** 下文的控制端安装和手动 Agent 配置适用于新建总管理端或高级场景。
 
+## 预编译新总管理端一键安装
+
+README 的 Linux / Windows 命令下载 GitHub 固定版本安装入口，检查平台包 SHA-256，调用 scripts/quickstart.py。需要 Python 3 和已经可用的 Docker；Docker Desktop 要使用 Linux 容器。不会替你关闭 Windows 执行策略；被组织策略拦截时使用已允许的签名或手动方式。
+
+默认安装到 Linux /opt/starhub-control 或 Windows ProgramData/StarhubControl，拒绝覆盖。默认仅回环访问，--public 明确开放 IP:18080 的认证网页；HTTP 凭据会明文传输。可用 --origin 指定外部入口，不会自动创造公网 IP 或配置 DNS/TLS。安装后可在系统设置保存主站 / 独立订阅域名；自动申请与切换证书还需按域名网关章节安装 root 同步器。Windows 使用当前用户登录任务，退出登录后不保证运行；Linux 非 systemd 用 --foreground 接入 OpenRC 或自己的监督器。
+
+控制面原生运行，数据库单个容器约束内存，内部端口全部回环。完整 Agent 包会核验下载，面板一键接入 Linux VPS 无需目标机安装数据库。离线安装可预先准备二进制包及 Agent 分发包；quickstart.py 的自动模式需要下载，完全离线请按下面原生手动方式设置 AGENT_RELEASE_DIR。
+
+Debian/Ubuntu 的 Python 可由发行版仓库安装：apt install python3 curl；Fedora/Rocky/Alma 用 dnf install python3 curl；openSUSE 用 zypper install python3 curl；Alpine 用 apk add python3 curl bash，采用前台/OpenRC。Docker 依赖按官方对应发行版安装，不覆盖现有运行环境。
+
 ## 支持系统与方式
 
 |方式|系统|前提|
 |---|---|---|
 |Compose|Ubuntu/Debian、Rocky/Alma/Fedora、openSUSE、Alpine|已有官方Docker Engine、Compose v2、Python3、bash；Alpine另装bash|
 |Compose|Windows 10/11等受支持Desktop系统|Docker Desktop使用Linux容器；Windows Server使用受支持的Linux VM|
-|源码原生|Linux/Windows amd64、arm64|Go1.25+、Node22.12+；控制面运行还需PostgreSQL17|
+|源码原生|Linux/Windows amd64、arm64|Go1.27.3+、Node22.12+；控制面运行还需PostgreSQL17|
 |预编译原生|Linux/Windows amd64、arm64|手动GitHub Build工作流；控制面需PostgreSQL，Agent不需要|
 |常驻Agent|systemd Linux / Windows桌面|普通用户systemd服务 / 当前用户登录计划任务|
 
@@ -42,6 +52,8 @@ bash scripts/install.sh build
 python scripts/prepare.py
 ```
 
+**预编译包跳过 build 步骤，直接运行 `python scripts/prepare.py`；使用 `bin/` 和随附的 `web/dist`。Compose 必须下载完整源码包，二进制包不含 Compose 构建上下文。**
+
 为本机PostgreSQL创建独立harbor用户和数据库，用随机密码，仅监听回环。给私有.env添加：
 
 ```dotenv
@@ -59,13 +71,13 @@ bash scripts/run-native.sh control
 # PowerShell： ./scripts/run-native.ps1 -Role control
 ```
 
-控制面自动迁移，提供回环8080 API、5173 UI（设置WEB_DIR后）及8091订阅处理器。原生UI固定代理到本机8080，因此此方式保留默认API端口。生产无需Node常驻；若写系统服务，使用专用普通用户、EnvironmentFile、Restart=on-failure、NoNewPrivileges=true，ExecStart指向harbor-control。开发服务器不用于生产。
+控制面自动迁移，提供回环8080 API、5173 UI（设置WEB_DIR后）及8091订阅处理器。原生 UI 默认回环 5173，可通过 WEB_ADDR 明确指定 IP:端口，UI 代理到本机 8080 和 /s/ 的 8091。PUBLIC_ORIGIN 仅在首次安装初始化站点入口。原生UI固定代理到本机8080，因此此方式保留默认API端口。生产无需Node常驻；若写系统服务，使用专用普通用户、EnvironmentFile、Restart=on-failure、NoNewPrivileges=true，ExecStart指向harbor-control。开发服务器不用于生产。
 
 离线源码需提前准备Go/npm缓存，或迁移对应平台的二进制和web/dist。GitHub构建产物仅供原生运行，不包含完整Compose构建上下文。
 
 ## Agent：Linux / Windows
 
-每台设备各自构建并下载固定版本引擎。下载脚本核对官方GitHub SHA-256，只提取白名单二进制，不解压任意路径：
+每台设备使用独立引擎目录。下载脚本核对官方 FRP / Xray GitHub SHA-256；sing-box 使用修复版，预编译分发包从 patched-engines 校验安装，不需要 Go；源码包用 Go 1.27.3+ 自动构建（可用 --go 指定路径）。不静默回退到未修复的官方 sing-box。只提取白名单二进制，不解压任意路径：
 
 ```bash
 python scripts/fetch-engines.py

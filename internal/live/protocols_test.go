@@ -24,7 +24,7 @@ func TestProtocolTemplates(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	for _, kind := range []string{"vless", "hysteria2", "tuic", "trojan", "snell", "xray-vless", "xray-trojan", "vmess", "vmess-plain", "vmess-ws", "xray-vmess", "xray-vmess-plain", "xray-vless-ws", "trojan-ws", "anytls", "chain-vmess-ws", "xray-chain-vless", "vless-reality", "xray-vless-reality", "vless-grpc", "xray-vless-grpc", "managed-vless", "xray-managed-vmess"} {
+	for _, kind := range []string{"vless", "hysteria2", "tuic", "trojan", "snell", "xray-vless", "xray-trojan", "vmess", "vmess-plain", "vmess-ws", "xray-vmess", "xray-vmess-plain", "xray-vless-ws", "trojan-ws", "anytls", "chain-vmess-ws", "xray-chain-vless", "vless-reality", "xray-vless-reality", "vless-grpc", "xray-vless-grpc", "managed-vless", "xray-managed-vmess", "managed-anytls", "managed-trojan", "xray-managed-trojan", "snell-http", "snell-v6", "hysteria2-obfs", "vmess-grpc", "trojan-grpc", "shadowsocks-aead", "xray-shadowsocks", "xray-shadowsocks-aead"} {
 		t.Run(kind, func(t *testing.T) {
 			serverEngine := "sing-box"
 			if strings.HasPrefix(kind, "xray-") {
@@ -42,7 +42,24 @@ func TestProtocolTemplates(t *testing.T) {
 			plain := strings.HasSuffix(kind, "-plain")
 			ws := strings.HasSuffix(kind, "-ws")
 			kind = strings.TrimSuffix(strings.TrimSuffix(kind, "-plain"), "-ws")
-			s := Spec{Engine: serverEngine, Kind: kind, Listen: "127.0.0.1", Address: "127.0.0.1", Port: 25000, Password: Secret()}
+			options := ProtocolOptions{}
+			if kind == "shadowsocks-aead" {
+				kind = "shadowsocks"
+				options.Cipher = "chacha20-ietf-poly1305"
+			}
+			if kind == "snell-http" {
+				kind = "snell"
+				options = ProtocolOptions{SnellVersion: 5, SnellObfs: "http", SnellHost: "bing.com"}
+			}
+			if kind == "snell-v6" {
+				kind = "snell"
+				options = ProtocolOptions{SnellVersion: 6, SnellMode: "unshaped"}
+			}
+			if kind == "hysteria2-obfs" {
+				kind = "hysteria2"
+				options = ProtocolOptions{HY2Obfs: "native-salamander-fixture", UpMbps: 100, DownMbps: 100}
+			}
+			s := Spec{ProtocolOptions: options, Engine: serverEngine, Kind: kind, Listen: "127.0.0.1", Address: "127.0.0.1", Port: 25000, Password: Secret()}
 			if plain {
 				s.TLSMode = "none"
 			}

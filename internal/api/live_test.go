@@ -98,7 +98,10 @@ func TestLiveIntegration(t *testing.T) {
 	call("POST", "instances", map[string]any{"name": "collision", "host_id": h["id"], "node_id": node["id"], "listen_port": 22000}, 409, nil)
 	server := create("frps", 22002, map[string]any{"tunnels": []map[string]any{{"name": "demo", "local_host": "::1", "local_port": 3000, "remote_port": 23000}}})
 	client := call("POST", "live", map[string]any{"name": "client", "host_id": other["id"], "kind": "frpc", "parent_id": server["id"]}, 201, nil)
-	_ = client
+	frpEdit := map[string]any{"name": "edited client", "host_id": other["id"], "kind": "frpc", "parent_id": server["id"], "version": 1, "tunnels": []map[string]any{{"name": "local", "local_host": "127.0.0.1", "local_port": 3001, "remote_port": 23000}}}
+	call("PUT", "live/"+client["id"].(string), frpEdit, 200, nil)
+	call("PUT", "live/"+server["id"].(string), map[string]any{"name": "changed server", "host_id": h["id"], "kind": "frps", "address": "2001:db8::1", "listen": "::1", "port": 22003, "version": 1}, 409, nil)
+	call("DELETE", "live/"+server["id"].(string), nil, 409, nil)
 	call("POST", "subscriptions", map[string]any{"name": "bad", "days": 30, "service_ids": []any{server["id"]}}, 400, nil)
 	sub := call("POST", "subscriptions", map[string]any{"name": "personal", "days": 30, "service_ids": []any{a["id"], upstream["id"]}}, 201, nil)
 	link := sub["url"].(string)

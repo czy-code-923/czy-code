@@ -80,7 +80,14 @@ func (s Spec) renderProxy() (string, map[string][]byte, error) {
 	inbound := map[string]any{"type": s.Kind, "tag": "entry", "listen": s.Listen, "listen_port": s.Port}
 	files := map[string][]byte{}
 	if s.Kind == "snell" {
-		inbound["version"] = 5
+		inbound["version"] = s.snellVersion()
+		if s.snellVersion() == 6 {
+			if s.SnellMode != "" {
+				inbound["mode"] = s.SnellMode
+			}
+		} else if s.SnellObfs != "" {
+			inbound["obfs_mode"] = s.SnellObfs
+		}
 		inbound["psk"] = s.Password
 	} else {
 		files["tls.crt"] = []byte(s.Certificate)
@@ -121,6 +128,17 @@ func (s Spec) renderProxy() (string, map[string][]byte, error) {
 		default:
 			user["password"] = s.Password
 		}
+		if s.Kind == "hysteria2" {
+			if s.UpMbps > 0 {
+				inbound["up_mbps"] = s.UpMbps
+			}
+			if s.DownMbps > 0 {
+				inbound["down_mbps"] = s.DownMbps
+			}
+			if s.HY2Obfs != "" {
+				inbound["obfs"] = map[string]any{"type": "salamander", "password": s.HY2Obfs}
+			}
+		}
 		inbound["users"] = []any{user}
 		if s.ManagedUsers {
 			users := []any{}
@@ -160,18 +178,36 @@ func (s Spec) Client(tag string) (map[string]any, map[string]any, string, error)
 	u := url.URL{Scheme: s.Kind, Host: net.JoinHostPort(s.Address, fmt.Sprint(s.Port)), Fragment: tag}
 	q := url.Values{}
 	if s.Kind == "shadowsocks" {
-		sb["method"] = Method
+		sb["method"] = s.SSMethod()
 		sb["password"] = s.Password
 		mh["type"] = "ss"
-		mh["cipher"] = Method
+		mh["cipher"] = s.SSMethod()
 		mh["password"] = s.Password
 		u.Scheme = "ss"
-		u.User = url.UserPassword(Method, s.Password)
+		u.User = url.UserPassword(s.SSMethod(), s.Password)
 	} else if s.Kind == "snell" {
 		sb["version"] = 4
+		if s.snellVersion() == 6 {
+			sb["version"] = 6
+			if s.SnellMode != "" {
+				sb["mode"] = s.SnellMode
+			}
+		} else if s.SnellObfs != "" {
+			sb["obfs_mode"] = s.SnellObfs
+			if s.SnellHost != "" {
+				sb["obfs_host"] = s.SnellHost
+			}
+		}
 		sb["psk"] = s.Password
 		mh["version"] = 4
 		mh["psk"] = s.Password
+		if s.SnellObfs == "http" {
+			opts := map[string]any{"mode": "http"}
+			if s.SnellHost != "" {
+				opts["host"] = s.SnellHost
+			}
+			mh["obfs-opts"] = opts
+		}
 		u.User = url.User(s.Password)
 		q.Set("version", "4")
 	} else {
@@ -219,6 +255,23 @@ func (s Spec) Client(tag string) (map[string]any, map[string]any, string, error)
 			sb["password"] = s.Password
 			mh["password"] = s.Password
 			u.User = url.User(s.Password)
+		}
+	}
+	if s.Kind == "hysteria2" {
+		if s.UpMbps > 0 {
+			sb["up_mbps"] = s.UpMbps
+			mh["up"] = s.UpMbps
+		}
+		if s.DownMbps > 0 {
+			sb["down_mbps"] = s.DownMbps
+			mh["down"] = s.DownMbps
+		}
+		if s.HY2Obfs != "" {
+			sb["obfs"] = map[string]any{"type": "salamander", "password": s.HY2Obfs}
+			mh["obfs"] = "salamander"
+			mh["obfs-password"] = s.HY2Obfs
+			q.Set("obfs", "salamander")
+			q.Set("obfs-password", s.HY2Obfs)
 		}
 	}
 	if len(s.ALPN) > 0 && s.UsesTLS() {
@@ -282,6 +335,12 @@ func (s Spec) Client(tag string) (map[string]any, map[string]any, string, error)
 		}
 		if s.Transport == "ws" {
 			payload["net"] = "ws"
+			payload["host"] = s.WSHost
+		}
+		if s.Transport == "grpc" {
+			payload["net"] = "grpc"
+			payload["path"] = s.ServiceName
+			payload["type"] = "gun"
 		}
 		raw, _ := json.Marshal(payload)
 		return sb, mh, "vmess://" + base64.StdEncoding.EncodeToString(raw), nil

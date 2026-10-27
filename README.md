@@ -1,24 +1,60 @@
-# Harbor v0.8 — 主机内核与用户授权
+# 星枢 · VPS 多机管理 0.12.0
 
-当前部署模型与验证边界见 [v0.8 架构说明](docs/ARCHITECTURE-v08.md)。
+Vue 3 / TypeScript / Go / PostgreSQL 的个人 VPS 控制面。主流程：**连接主机 → 配置内核与协议入站 → 分配用户 / 用户组 → 客户端策略与规则 → 分享客户端订阅**。首页显示真实流量、额度、主机状态及连接元数据。
 
-# Harbor · VPS 管理平台 v0.7
+本项目已在授权的管理 VPS 部署；新建服务默认停用。演示、配置校验通过与真实内核已运行分别展示。旧版本记录留在 docs/，本版以 [功能检查](docs/FEATURES.md)、[0.10 计量说明](docs/TRAFFIC-v010.md) 为准。
 
-Vue 3 / TypeScript / Go / PostgreSQL 个人控制面：库存、模拟/暂存任务、防火墙策略，以及显式启用的真实 sing-box、跨机 FRP、中转和域名订阅分享。
+## 一键部署新总管理端
 
-**基础控制面已部署到真实 VPS，HTTPS 页面可访问。** 运行目录、登录方式、资源限制、验收与未完成项见 [实际部署记录](docs/DEPLOYMENT-v04.md)。本地模拟通过与真实代理上线是不同状态。
+前提：Python 3、可用的 Docker（Windows 为 Docker Desktop Linux 容器模式）。脚本下载与 CPU 架构匹配的预编译包并校验固定 SHA-256；无需本机 Go / Node。已有安装、同名服务或端口冲突会停止。
 
-## 协议模板
+Linux（Debian / Ubuntu / Rocky / Alma / Fedora / openSUSE 等 systemd 系统）：
 
-已加入 VLESS、Hysteria2、TUIC v5、Trojan、Snell 模板，VLESS/Trojan 可选择 sing-box 或 Xray。详见 [协议、证书、订阅兼容性与验证](docs/PROTOCOLS-v06.md)。新协议需要 Agent 0.6.0。
+```bash
+curl -fL https://github.com/czy-code-923/czy-code/releases/download/v0.12.0-distribution/install-starhub.sh -o /tmp/install-starhub.sh && sudo sh /tmp/install-starhub.sh --public
+```
 
-## 连接其他 VPS
+Windows PowerShell：
 
-这台是总管理端。进入「主机资产 → 新建主机」只填名称，复制自动生成的安装命令，在目标 VPS 执行即可接入。无需填写 HOST_ID/长效令牌、写 Compose 或安装数据库。支持 Linux amd64/arm64 + systemd；命令15分钟有效、单次使用，连接状态依据真实心跳。详见 [一键连接与保护机制](docs/AGENT-CONNECT.md)。
+```powershell
+Invoke-WebRequest https://github.com/czy-code-923/czy-code/releases/download/v0.12.0-distribution/install-starhub.ps1 -OutFile "$env:TEMP/install-starhub.ps1"; & "$env:TEMP/install-starhub.ps1" -Public
+```
 
-## 一键启动
+`--public` / `-Public` 明确启用 IP:18080 的认证网页入口；HTTP 不加密，建议设置 HTTPS 网关。省略此参数则只监听回环。内部 8080 API、8091 分享处理器和 PostgreSQL 均不暴露公网。管理员令牌保存在本机私有 control.env，不打印、不上传。Windows 安装当前用户登录任务，退出登录后不保证运行；Alpine/OpenRC 用包内 `python3 scripts/quickstart.py --foreground` 配置自己的进程监督器。依赖安装与 HTTPS 网关、离线、源码、Compose 方式见 [安装文档](docs/INSTALL.md)。
 
-前提：Docker Engine + Compose v2（Linux）或 Docker Desktop Linux 容器模式（Windows），以及 Python 3。在解压后的源码根目录运行：
+完整源码请下载 Release 附件 **harbor-0.12.0-source.zip**；GitHub 自动生成的 Source code 归档对应标签所指提交，可能早于分发附件。
+
+## 0.12 新增
+
+- 区分节点发布地址与 VPS 出站类型；IPv4 / IPv6 多选，默认使用所选主机 IP，无 IPv6 时禁选；双地址复用同一个入站进程。
+- 用户组统一授权 SS / Snell 与独立用户协议。共享密钥按入口计量，无法伪装成按用户限额或独立撤销。
+- 用户 + 客户端分流策略，Mihomo YAML / 可视化编辑、稳定节点引用、按协议与 IP 类型动态匹配，自动转 sing-box / Xray。
+- Hiddify、NekoBox、v2rayNG、v2rayN、Clash Verge 等客户端选择；完整配置携带规则，URI 仅节点，显式筛选兼容协议。
+- 每月指定日重置（例如 5 日 → 下月 5 日），月末缺日取最后一天，后续保持原设定日。
+- 可选后台域名、IP + 端口、独立订阅域名；默认订阅入口按订阅域名 → 主站域名 → IP 回退。
+- Linux Agent 0.12 受控远程卸载：等待真实回执后清理控制端数据；不会卸载控制面、数据库或其他软件。
+- [本版工作流与限制](docs/WORKFLOW-v012.md)。
+
+## 0.11 新增
+
+- 协议多选 / 全选兼容内核协议，同主机原子保存，端口自动分配，重试不重复创建。
+- 按设置日起每满一月重置，支持自定义周期起点；Clash/Mihomo 原生 YAML 与完整用量响应头。
+- VPS 协议参数 JSON 编辑，客户端 JSON/YAML 模板编辑、订阅绑定用户修改和用量诊断。
+- 星枢品牌与可修改站点名；按功能授权 API 密钥、有效期、限流、撤销及独立前端 CORS。
+- [API 与集成说明](docs/API-INTEGRATIONS.md) · [OpenAPI](docs/openapi.json)。出站策略与受控卸载需要升级 Agent 0.12；已有协议可继续运行。
+
+## 本版功能
+
+- 主机编辑、停用后删除、单次 15 分钟 Agent 接入命令；Agent 主动连出，无需开放目标设备管理端口。
+- 每台主机每种内核合并运行一个进程；VLESS、VMess、Trojan、Hysteria2、TUIC、AnyTLS、Snell、Shadowsocks 模板，含入站编辑、启停和确认停止后删除。
+- 独立用户身份、用户组、到期、流量额度、每日 / 每月 / 手动重置、额度耗尽撤销；共享密码入口按入口统计。
+- sing-box、Xray JSON、Mihomo、Shadowrocket 显式选择；客户端配置模板、链接重新复制、轮换和撤销。客户端能力不支持时明确拒绝导出。
+- IPv4 / IPv6、FRP TCP 穿透、至多 8 跳链式代理；域名 HTTPS、免费 ACME 证书、受限反代网关、防火墙预览和本地受限应用工具。
+- 明暗 / 系统主题、移动端布局、按需加载；连接元数据保留 7 天 / 20,000 条，不记录 HTTPS 页面内容。
+
+## 本地启动
+
+需要 Docker Engine + Compose v2（Windows 使用 Docker Desktop Linux 容器模式）和 Python 3。
 
 ```bash
 bash scripts/install.sh compose
@@ -28,71 +64,63 @@ bash scripts/install.sh compose
 .\scripts\install.ps1 -Mode compose
 ```
 
-打开 <http://127.0.0.1:5173>，用 `.env` 的 `ADMIN_TOKEN` 登录。脚本生成缺失的随机凭据，保留旧密码及 MASTER_KEY。管理端口只映射回环，数据库不发布端口；不要把8080、5173、8091映射到公网。远程管理使用 SSH 转发：
+打开 http://127.0.0.1:5173，使用本机 `.env` 的 `ADMIN_TOKEN`。安装器生成缺失随机凭据并保留现有 `MASTER_KEY`。API、分享端、前端仅绑定回环；数据库不发布公网端口。远程管理经受限 HTTPS 网关或 SSH 转发，详见 [安装](docs/INSTALL.md)。
 
 ```bash
 ssh -N -L 5173:127.0.0.1:5173 YOUR_USER@YOUR_VPS
 ```
 
-## 域名、服务和分享
+## 手动构建与测试
 
-1. 在「域名与分享」设置域名、选择HTTPS；保存是期望设置，界面另列网关实际回报。
-2. 按 [安装文档](docs/INSTALL.md) 安装本地受限域名同步器。它维护自己的nginx站点，处理ACME证书、校验配置后重载，失败恢复。启用计时器后面板更换域名自动同步，DNS需提前配置。
-3. Linux 目标主机优先使用面板一键连接，安装器配置真实服务执行器；Windows 保留独立 Agent 手动登记方式。
-4. 创建Shadowsocks 2022（IPv4/IPv6/域名、最多8跳）或FRP服务端/客户端。默认停用、默认回环监听；核对防火墙及端口后启用。
-5. 选择服务创建有期限订阅，支持sing-box、Mihomo/Clash Meta、Base64 URI列表；链接仅显示一次，可轮换和撤销。只有新鲜回报运行的服务会下发。
-
-无公网IPv4设备的Agent和FRP客户端主动连出，不需要公网管理端口；两端都没有可达入口仍需要中继。IPv6-only入口要求客户端具备IPv6可达性，域名不会自动消除这一限制。
-
-撤销URL不会撤销已导入的代理密码；泄露后需停用并创建替代服务。MASTER_KEY用于加密真实服务凭据，必须和数据库分别安全备份。
-
-## 文档
-
-- [Linux/Windows、Compose/原生/离线、Agent、宝塔网关](docs/INSTALL.md)
-- [域名、订阅、NAT与IPv6](docs/PUBLISH.md)
-- [完整功能检查与边界](docs/FEATURES.md)
-- [v0.4验证记录](docs/VERIFICATION-v04.md)
-- [防火墙与防锁死](docs/FIREWALL.md)
-- [资源优化](docs/PERFORMANCE.md)
-- [OpenAPI](docs/openapi.json)
-- [后续路线](docs/ROADMAP.md)
-
-## 原生手动构建
-
-需要Go 1.25+、Node.js 22.12+、PostgreSQL 17、Python 3：
+源码构建使用 Go **1.27.3+**、Node.js 22.12+、Python 3；原生控制面需要 PostgreSQL 17。构建完成后无需 Node 常驻。
 
 ```bash
 bash scripts/install.sh build
 python scripts/prepare.py
-# 在私有.env加入自己的DATABASE_URL与WEB_DIR（web/dist绝对路径）
+# 在私有 .env 配置 DATABASE_URL 和 WEB_DIR（web/dist 绝对路径）
 bash scripts/run-native.sh control
 ```
 
-Windows使用 `./scripts/install.ps1 -Mode build` 和 `./scripts/run-native.ps1 -Role control`。原生控制面自带回环静态Web服务，不需要Node常驻。手动触发GitHub的Build工作流可生成Linux/Windows amd64/arm64二进制与前端产物；产物包使用原生运行，Compose从完整源码构建。
+Windows 使用 `./scripts/install.ps1 -Mode build` 和 `./scripts/run-native.ps1 -Role control`。Linux / Windows amd64 / arm64 的四平台构建见 GitHub Build 工作流；目标机安装细节见 [INSTALL.md](docs/INSTALL.md)。
 
 ```bash
 go vet ./...
-go test -count=1 ./...
-# 专用测试库，集成测试自动创建/清理隔离schema；不要使用生产库
+# 集成测试只使用专用测试库，自动创建 / 清理隔离 schema
 export TEST_DATABASE_URL='postgres://TEST_USER:TEST_PASSWORD@127.0.0.1:5432/harbor_test?sslmode=disable'
 go test -count=1 ./...
 python scripts/test_domain_sync.py
-cd web
-npm ci
-npm run build
-npm test
+python scripts/test_managed_gateway.py
+python scripts/test_agent_bootstrap.py
+cd web && npm ci && npm test && npm run build
 ```
 
-原生转发测试另需 TEST_SING_BOX_BINARY / TEST_FRPS_BINARY / TEST_FRPC_BINARY 指向官方引擎，缺失时明确跳过。
+## 内核与一键接入包
 
-## 范围与安全
+安装器采用固定下载地址和 SHA-256 校验。当前服务端使用 **sing-box 1.14.4-harbor.1**（官方 1.14.4 源码、修复依赖、Go 1.27.3）、Xray 26.10.21、FRP 0.71.1。修复版是本项目构建，不能冒充官方二进制。
 
-当前是个人管理员版本，预留租户字段不等于完整多租户；没有计费、自助开通、MFA或RBAC。API/Agent没有任意shell、脚本上传或任意原生配置入口，受管引擎由固定参数和本地SHA-256约束。Agent普通用户运行，Linux防火墙和域名网关由独立、管理员安装的本地工具处理。
+```bash
+python scripts/fetch-engines.py
+python scripts/build-agent-releases.py --output agent-releases-v010
+```
 
-库存「中转规划」仍是规划表，真实中转通过「真实服务」下一跳执行；历史模拟/暂存任务与真实服务状态分开。防火墙保存不等于应用，仅管理自有Linux INPUT表，不接管宝塔、Docker NAT、云安全组或Windows Defender Firewall。
+源码包的 fetch-engines.py 自动用 Go 构建修复版；预编译包自带 patched-engines，校验后直接使用，无需 Go。脚本不会覆盖现有 engines/，升级应使用新目录。构建脚本提供完整对应源码 ZIP、GPL 许可和构建回执；Agent 包附带该源码与许可。`AGENT_RELEASE_DIR` 指向新版本目录后，面板可生成目标 VPS 的接入命令，不覆盖已安装的 Agent。
 
-协议依据：[sing-box Shadowsocks](https://sing-box.sagernet.org/configuration/inbound/shadowsocks/)、[FRP TLS验证](https://gofrp.org/en/docs/features/common/network/network-tls/)、[SIP002](https://shadowsocks.org/doc/sip002.html)。官方引擎不随源码分发，下载与使用遵守其各自许可证。
+## 使用与边界
 
-## v0.7 配置管理
+在系统设置修改域名 / HTTPS，网关实际状态另行回报。普通 TLS 需要自己域名对应的证书；**只有 REALITY 的目标与 SNI 可以选大厂候选站点**，仍需从目标 VPS 验证可达性。证书不能用任意大厂域名替代。VMess AEAD 本身不强制证书，是否需要证书取决于外层 TLS。
 
-主机、内核、协议入站/出站分层；带版本编辑、链式节点、ACME证书引用与自动续期、HTTPS反代，详见 [配置管理](docs/CONFIGURATION-v07.md)。
+流量额度用于 6 种具有独立用户认证的模板；Snell / 当前 Shadowsocks 模板使用共享密钥，只能按入口计量。统计约 10 秒上报，短时超额和异常退出时少量计量误差仍可能出现。流量从升级后开始，历史无法补算。详见 [计量](docs/TRAFFIC-v010.md)。
+
+无公网 IPv4 设备可主动连接可达中继；IPv6-only 入口要求客户端具备 IPv6 可达性。系统仍是单管理员个人平台，尚无商业多租户隔离、MFA / OIDC、支付、生产恢复演练或完整负载测试。安全扫描不等于不存在漏洞，见 [安全检查](docs/SECURITY-v010.md)。
+
+订阅 URL 撤销不会收回已下载的代理凭据；需要撤销用户、轮换用户凭据或停用对应入口。数据库和 `MASTER_KEY` 必须分别备份，密钥不能提交 GitHub。
+
+## 文档
+
+- [本版功能与待办](docs/FEATURES.md)
+- [计量、配额与访问记录](docs/TRAFFIC-v010.md)
+- [协议 / CRUD 工作流](docs/WORKFLOW-v09.md)
+- [安全检查与内核构建](docs/SECURITY-v010.md)
+- [主机接入](docs/AGENT-CONNECT.md) · [域名 / NAT / IPv6](docs/PUBLISH.md)
+- [防火墙](docs/FIREWALL.md) · [OpenAPI](docs/openapi.json)
+- [后续路线](docs/ROADMAP.md)

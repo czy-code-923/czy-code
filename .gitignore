@@ -17,6 +17,8 @@ state/
 *.pem
 *.key
 bin/
+.build-cache/
+patched-engines/
 
 agent-releases/*
 !agent-releases/.gitkeep

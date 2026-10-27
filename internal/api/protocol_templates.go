@@ -11,17 +11,23 @@ var protocolCatalog []byte
 
 func (s *Server) protocolTemplates(w http.ResponseWriter, r *http.Request) error {
 	templates := []map[string]any{
-		{"kind": "shadowsocks", "name": "Shadowsocks 2022", "engines": []string{"sing-box"}, "certificate": false},
+		{"kind": "shadowsocks", "name": "Shadowsocks AEAD / 2022", "engines": []string{"sing-box", "xray"}, "certificate": false},
 		{"kind": "vless", "name": "VLESS", "engines": []string{"sing-box", "xray"}, "certificate": true},
 		{"kind": "vmess", "name": "VMess AEAD", "engines": []string{"sing-box", "xray"}, "certificate": true, "optional_tls": true},
 		{"kind": "trojan", "name": "Trojan", "engines": []string{"sing-box", "xray"}, "certificate": true},
 		{"kind": "hysteria2", "name": "Hysteria2", "engines": []string{"sing-box"}, "certificate": true},
 		{"kind": "tuic", "name": "TUIC v5", "engines": []string{"sing-box"}, "certificate": true},
 		{"kind": "anytls", "name": "AnyTLS", "engines": []string{"sing-box"}, "certificate": true, "clients": []string{"sing-box", "mihomo"}},
-		{"kind": "snell", "name": "Snell v4 compatible", "engines": []string{"sing-box"}, "certificate": false, "clients": []string{"sing-box", "mihomo"}},
+		{"kind": "snell", "name": "Snell v4 compatible / v6", "engines": []string{"sing-box"}, "certificate": false, "clients": []string{"sing-box", "mihomo"}},
 	}
 	for _, t := range templates {
 		kind := t["kind"].(string)
+		if _, ok := t["clients"]; !ok {
+			t["clients"] = []string{"sing-box", "mihomo", "shadowrocket"}
+			if kind == "vless" || kind == "vmess" || kind == "trojan" || kind == "shadowsocks" {
+				t["clients"] = []string{"sing-box", "mihomo", "shadowrocket", "xray"}
+			}
+		}
 		t["required"] = []string{"host_id", "engine", "name", "address", "listen", "port"}
 		t["optional"] = []string{"node_id", "next_id"}
 		t["transports"] = []string{"tcp"}
@@ -37,7 +43,8 @@ func (s *Server) protocolTemplates(w http.ResponseWriter, r *http.Request) error
 			t["credential"] = "password (auto-generated or 8-256 bytes)"
 		}
 		if kind == "shadowsocks" {
-			t["credential"] = "32-byte base64 key; fixed 2022-blake3-aes-256-gcm cipher"
+			t["credential"] = "2022 uses a 32-byte base64 key; classic AEAD uses an 8-256 byte password"
+			t["ciphers"] = []string{"2022-blake3-aes-256-gcm", "aes-128-gcm", "aes-256-gcm", "chacha20-ietf-poly1305"}
 		}
 		if t["certificate"] == true {
 			t["security_modes"] = []string{"tls"}
@@ -58,7 +65,15 @@ func (s *Server) protocolTemplates(w http.ResponseWriter, r *http.Request) error
 			t["optional"] = []string{"congestion", "managed_users"}
 			t["credential"] = "UUID and password"
 		}
+		if kind == "snell" {
+			t["optional"] = []string{"next_id", "snell_version", "snell_obfs", "snell_host", "snell_mode"}
+			t["note"] = "Snell 5 server is v4 TCP/UDP compatible; v6 export is sing-box only. No v5 QUIC. New options require Agent 0.9+."
+		}
+		if kind == "anytls" {
+			t["note"] = "TLS certificate and password required; default native padding and session settings. JSON clients only."
+		}
 		if kind == "hysteria2" {
+			t["optional"] = []string{"next_id", "managed_users", "hy2_obfs_password", "up_mbps", "down_mbps"}
 			t["transports"] = []string{"quic/udp"}
 		}
 	}

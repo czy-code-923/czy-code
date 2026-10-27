@@ -1,0 +1,22 @@
+=== Symbol Results ===
+
+Vulnerability #1: GO-2026-5932
+    The golang.org/x/crypto/openpgp package is unmaintained, unsafe by design,
+    and has known security issues
+  More info: https://pkg.go.dev/vuln/GO-2026-5932
+  Module: golang.org/x/crypto
+    Found in: golang.org/x/crypto@v0.57.0
+    Fixed in: N/A
+    Vulnerable symbols found:
+      #1: armor.golang.org/x/crypto/openpgp/armor/*
+      #2: clearsign.golang.org/x/crypto/openpgp/clearsign/*
+      #3: elgamal.golang.org/x/crypto/openpgp/elgamal/*
+      #4: errors.golang.org/x/crypto/openpgp/errors/*
+      #5: openpgp.golang.org/x/crypto/openpgp/*
+      Use '-show traces' to see the other 2 found symbols
+
+Your code is affected by 1 vulnerability from 1 module.
+This scan found no other vulnerabilities in packages you import or modules you
+require.
+Use '-show verbose' for more details.
+exit status 3

@@ -11,6 +11,7 @@ import (
 
 func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request, host string) error {
 	var b struct {
+		Cleanup   bool     `json:"cleanup_capable"`
 		Mode      string   `json:"mode"`
 		Version   string   `json:"version"`
 		Platform  string   `json:"platform"`
@@ -30,22 +31,39 @@ func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request, host string) 
 	}
 	addresses := []string{}
 	primary := ""
+	best := 0
 	for _, value := range b.Addresses {
 		a, e := netip.ParseAddr(value)
 		if e != nil || a.Zone() != "" || a.IsUnspecified() || a.IsMulticast() || a.IsLoopback() || a.IsLinkLocalUnicast() {
 			return bad("invalid interface address")
 		}
 		addresses = append(addresses, a.String())
-		if primary == "" || a.Is4() && !a.IsPrivate() {
+		rank := 1
+		if a.Is4() {
+			rank = 2
+		}
+		if !a.IsPrivate() {
+			rank = 3
+			if a.Is4() {
+				rank = 4
+			}
+		}
+		if rank > best {
+			best = rank
 			primary = a.String()
 		}
 	}
 	raw, _ := json.Marshal(addresses)
-	_, e := s.DB.Exec(r.Context(), "UPDATE hosts SET last_seen=now(),agent_mode=$3,agent_version=CASE WHEN $4<>'' THEN $4 ELSE agent_version END,platform=CASE WHEN $5<>'' THEN $5 ELSE platform END,reported_addresses=$6,address=CASE WHEN address='outbound-agent' AND $7<>'' THEN $7 ELSE address END WHERE tenant_id=$1 AND id=$2", tenant, host, b.Mode, b.Version, b.Platform, raw, primary)
+	_, e := s.DB.Exec(r.Context(), "UPDATE hosts SET last_seen=now(),cleanup_capable=$8,agent_mode=$3,agent_version=CASE WHEN $4<>'' THEN $4 ELSE agent_version END,platform=CASE WHEN $5<>'' THEN $5 ELSE platform END,reported_addresses=$6,address=CASE WHEN address='outbound-agent' AND $7<>'' THEN $7 ELSE address END WHERE tenant_id=$1 AND id=$2", tenant, host, b.Mode, b.Version, b.Platform, raw, primary, b.Cleanup)
 	if e != nil {
 		return e
 	}
-	send(w, 200, map[string]string{"mode": b.Mode})
+	var rid *string
+	var state string
+	if e = s.DB.QueryRow(r.Context(), `SELECT retire_id,retire_state FROM hosts WHERE tenant_id=$1 AND id=$2`, tenant, host).Scan(&rid, &state); e != nil {
+		return e
+	}
+	send(w, 200, map[string]any{"mode": b.Mode, "retire_id": rid, "retire_state": state})
 	return nil
 }
 func (s *Server) claim(w http.ResponseWriter, r *http.Request, host string) error {

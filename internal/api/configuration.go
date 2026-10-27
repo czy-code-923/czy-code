@@ -18,7 +18,7 @@ func (s *Server) checkChain(r *http.Request, tx pgx.Tx, id, nextID string) error
 		seen[nextID] = true
 		depth++
 		var kind string
-		if e := tx.QueryRow(r.Context(), "SELECT kind,COALESCE(next_id,'') FROM live_services WHERE tenant_id=$1 AND id=$2", tenant, nextID).Scan(&kind, &nextID); e != nil {
+		if e := tx.QueryRow(r.Context(), "SELECT kind,COALESCE(next_id,'') FROM live_services WHERE tenant_id=$1 AND id=$2 AND delete_requested_at IS NULL", tenant, nextID).Scan(&kind, &nextID); e != nil {
 			return e
 		}
 		if !live.Proxy(kind) {
@@ -72,7 +72,7 @@ func redactLive(value any) any {
 	case map[string]any:
 		for k, x := range v {
 			switch strings.ToLower(k) {
-			case "password", "uuid", "id", "psk", "key", "token", "privatekey", "private_key":
+			case "password", "uuid", "id", "psk", "key", "token", "privatekey", "private_key", "hy2_obfs_password":
 				v[k] = "[已隐藏]"
 			default:
 				v[k] = redactLive(x)
@@ -93,9 +93,9 @@ func (s *Server) liveDetail(w http.ResponseWriter, r *http.Request) error {
 	if e != nil {
 		return e
 	}
-	var name, host, node, cert, next string
+	var name, host, node, cert, next, parent string
 	var version int
-	if e = s.DB.QueryRow(r.Context(), "SELECT name,host_id,COALESCE(node_id,''),COALESCE(certificate_id,''),COALESCE(next_id,''),version FROM live_services WHERE tenant_id=$1 AND id=$2", tenant, r.PathValue("id")).Scan(&name, &host, &node, &cert, &next, &version); e != nil {
+	if e = s.DB.QueryRow(r.Context(), "SELECT name,host_id,COALESCE(node_id,''),COALESCE(certificate_id,''),COALESCE(next_id,''),COALESCE(parent_id,''),version FROM live_services WHERE tenant_id=$1 AND id=$2", tenant, r.PathValue("id")).Scan(&name, &host, &node, &cert, &next, &parent, &version); e != nil {
 		return e
 	}
 	engine, files, e := spec.Render()
@@ -106,6 +106,7 @@ func (s *Server) liveDetail(w http.ResponseWriter, r *http.Request) error {
 	if e = json.Unmarshal(files["config.json"], &preview); e != nil {
 		return e
 	}
+	spec.HY2Obfs = ""
 	spec.Password = ""
 	spec.UUID = ""
 	spec.PrivateKey = ""
@@ -118,7 +119,7 @@ func (s *Server) liveDetail(w http.ResponseWriter, r *http.Request) error {
 		spec.Outbound.UUID = ""
 		spec.Outbound.StripServerSecrets()
 	}
-	send(w, 200, map[string]any{"id": r.PathValue("id"), "name": name, "host_id": host, "node_id": node, "certificate_id": cert, "next_id": next, "version": version, "spec": spec, "engine": engine, "rendered": redactLive(preview)})
+	send(w, 200, map[string]any{"id": r.PathValue("id"), "name": name, "host_id": host, "node_id": node, "certificate_id": cert, "next_id": next, "parent_id": parent, "version": version, "spec": spec, "engine": engine, "rendered": redactLive(preview)})
 	return nil
 }
 func (s *Server) liveUpdate(w http.ResponseWriter, r *http.Request) error {
@@ -144,17 +145,21 @@ func (s *Server) liveUpdate(w http.ResponseWriter, r *http.Request) error {
 	var version int
 	var host, kind string
 	var enabled bool
-	if e = tx.QueryRow(r.Context(), "SELECT sealed,version,host_id,kind,enabled FROM live_services WHERE tenant_id=$1 AND id=$2 FOR UPDATE", tenant, r.PathValue("id")).Scan(&sealed, &version, &host, &kind, &enabled); e != nil {
+	if e = tx.QueryRow(r.Context(), "SELECT sealed,version,host_id,kind,enabled FROM live_services WHERE tenant_id=$1 AND id=$2 AND delete_requested_at IS NULL FOR UPDATE", tenant, r.PathValue("id")).Scan(&sealed, &version, &host, &kind, &enabled); e != nil {
 		return e
 	}
 	if version != b.Version {
 		return problem{409, "configuration changed; refresh before saving"}
 	}
-	if !live.Proxy(kind) {
-		return problem{409, "FRP tunnel topology requires a replacement instance; existing assignments are retained"}
-	}
 	if b.Kind != kind || b.HostID != host {
 		return bad("host and protocol are immutable; create a replacement deployment")
+	}
+	if !live.Proxy(kind) {
+		plain, e := live.Open(s.MasterKey, sealed)
+		if e != nil {
+			return e
+		}
+		return s.updateFRP(w, r, tx, b, plain, enabled)
 	}
 	raw, e := live.Open(s.MasterKey, sealed)
 	if e != nil {
@@ -164,10 +169,19 @@ func (s *Server) liveUpdate(w http.ResponseWriter, r *http.Request) error {
 	if e = json.Unmarshal(raw, &spec); e != nil {
 		return e
 	}
+	if b.ClearHY2Obfs {
+		b.HY2Obfs = ""
+	}
+	if !b.ClearHY2Obfs && b.HY2Obfs == "" && b.Kind == "hysteria2" {
+		b.HY2Obfs = spec.HY2Obfs
+	}
 	spec.Engine = b.Engine
 	spec.Listen = b.Listen
 	spec.Port = b.Port
 	spec.Address = b.Address
+	if e := s.applyNetwork(r, tx, b, &spec); e != nil {
+		return e
+	}
 	spec.Transport = b.Transport
 	spec.Path = b.Path
 	spec.TLSMode = b.TLSMode
@@ -239,13 +253,16 @@ func (s *Server) liveUpdate(w http.ResponseWriter, r *http.Request) error {
 	if e = tx.QueryRow(r.Context(), "SELECT agent_version FROM hosts WHERE tenant_id=$1 AND id=$2 FOR UPDATE", tenant, host).Scan(&av); e != nil {
 		return e
 	}
+	if spec.RequiresOptions() && !live.OptionsCapable(av) {
+		return problem{409, "upgrade host to Agent 0.9.0 for protocol options"}
+	}
 	if (spec.ManagedUsers || spec.IsReality() || spec.Transport == "grpc") && !live.BundleCapable(av) {
 		return problem{409, "upgrade host to Agent 0.8.0 first"}
 	}
 	if !live.AdvancedCapable(av) {
 		return problem{409, "upgrade host to Agent 0.7.0 before editing configuration"}
 	}
-	if !spec.ManagedUsers {
+	if !spec.ManagedUsers && !sharedGroupProtocol(spec) {
 		var grouped bool
 		if e = tx.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM user_group_services WHERE tenant_id=$1 AND service_id=$2)`, tenant, r.PathValue("id")).Scan(&grouped); e != nil {
 			return e
@@ -265,6 +282,10 @@ func (s *Server) liveUpdate(w http.ResponseWriter, r *http.Request) error {
 		if e = rows.Scan(&data, &parentVersion); e != nil {
 			rows.Close()
 			return e
+		}
+		if spec.RequiresOptions() && !live.OptionsCapable(parentVersion) {
+			rows.Close()
+			return problem{409, "upgrade dependent chain hosts to Agent 0.9.0 for protocol options"}
 		}
 		if !live.AdvancedCapable(parentVersion) {
 			rows.Close()

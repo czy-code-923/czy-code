@@ -26,6 +26,12 @@ type Account struct {
 }
 
 func (s Spec) ClientFormat(format string) error {
+	if s.Kind == "snell" && s.snellVersion() == 6 && format != "sing-box" {
+		return errors.New("Snell v6 is verified only with sing-box 1.14+ JSON; use Snell v4-compatible mode for Mihomo")
+	}
+	if (s.Kind == "snell" || s.Kind == "anytls") && format == "shadowrocket" {
+		return errors.New("this protocol has no verified Shadowrocket URI export; select sing-box or Mihomo")
+	}
 	if s.IsReality() && s.Engine == "xray" && format != "xray" {
 		return errors.New("Xray 26.10.21 REALITY requires a compatible PQ handshake: select Xray JSON or use sing-box REALITY for sing-box/Mihomo clients")
 	}
@@ -49,6 +55,9 @@ func NewReality() *Reality {
 }
 func (s Spec) IsReality() bool { return s.TLSMode == "reality" }
 func (s Spec) validateSecurity(client bool) error {
+	if e := s.validateOptions(); e != nil {
+		return e
+	}
 	if s.Flow != "" && (s.Kind != "vless" || s.Flow != "xtls-rprx-vision" || s.Transport == "ws" || s.Transport == "grpc" || (!s.UsesTLS() && !s.IsReality())) {
 		return errors.New("Vision requires VLESS over TCP with TLS or REALITY")
 	}
@@ -155,6 +164,12 @@ func (s Spec) congestion() string {
 }
 func (s Spec) validateCredential() error {
 	if s.Kind == "vless" || s.Kind == "vmess" {
+		return nil
+	}
+	if s.Kind == "shadowsocks" && s.SSMethod() != Method {
+		if len(s.Password) < 8 || len(s.Password) > 256 || strings.ContainsAny(s.Password, "\r\n\x00") {
+			return errors.New("Shadowsocks AEAD password must contain 8-256 bytes")
+		}
 		return nil
 	}
 	if s.Kind == "shadowsocks" || s.Kind == "frps" || s.Kind == "frpc" {

@@ -16,7 +16,7 @@ case "${1:-compose}" in
     command -v go >/dev/null
     command -v npm >/dev/null
     mkdir -p bin
-    for program in control agent firewall gateway; do CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "bin/harbor-$program" "./cmd/$program"; done
+    for program in control agent agent-cleanup firewall gateway; do CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "bin/harbor-$program" "./cmd/$program"; done
     (cd web && npm ci && npm run build)
     echo 'Built bin/ and web/dist/. See docs/INSTALL.md for PostgreSQL and native service setup.'
     ;;

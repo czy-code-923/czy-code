@@ -41,7 +41,7 @@ def run(argv):
     if len(result.stdout)>1024*1024: raise ValueError('Output too large')
     return result.stdout
 
-def main():
+def main(subscription=False):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--env',required=True)
     parser.add_argument('--gateway',required=True)
@@ -70,10 +70,31 @@ def main():
         with opener.open(request,timeout=10) as response:
             if response.geturl()!=request.full_url: raise ValueError('Control redirects forbidden')
             return json.loads(response.read(65536))
-    site=call('site');domain=domain_name(site['domain']);https=site['https']
+    site=call('site')
+    ip_port=None
+    if subscription:
+        args.out=str(Path(args.out).with_name(Path(args.out).stem+'.subscription.conf'))
+        domain=site.get('share_domain','')
+        if not domain or domain==site.get('domain'):
+            old=Path(args.out)
+            verify_output(old)
+            if old.exists():
+                if not old.read_bytes().startswith(b'# harbor-managed-v1:'): raise ValueError('Unowned subscription vhost')
+                previous=old.read_bytes();old.unlink()
+                try:run([trusted_binary(args.nginx),'-t']);run([trusted_binary(args.nginx),'-s','reload'])
+                except BaseException:old.write_bytes(previous);raise
+            call('site/gateway-status',{'role':'subscription','domain':'','https':True,'state':'inherited'})
+            return
+        domain=domain_name(domain);https=site.get('share_https',True)
+    elif not site['domain']:
+        from urllib.parse import urlsplit
+        parsed=urlsplit(site['ip_origin']);ipaddress.ip_address(parsed.hostname)
+        if parsed.scheme!='http' or not parsed.port or parsed.port in (80,443,8080,8091,5173) or parsed.port<1024:raise ValueError('IP gateway needs explicit HTTP port >=1024, outside internal ports')
+        domain=parsed.hostname;ip_port=parsed.port;https=False
+    else:domain=domain_name(site['domain']);https=site['https']
     if not isinstance(https,bool): raise ValueError('Invalid HTTPS setting')
     if not https and not args.allow_http: raise ValueError('HTTP refused; review risk and explicitly use --allow-http')
-    if args.public_management and not https: raise ValueError('Public management requires HTTPS')
+    # Plain HTTP is an explicit site setting and additionally requires --allow-http.
     for cidr in args.admin_cidrs.split(','):
         network=ipaddress.ip_network(cidr,strict=False)
         if network.prefixlen==0: raise ValueError('Public management CIDR forbidden')
@@ -81,7 +102,9 @@ def main():
     verify_output(output)
     gateway=trusted_binary(args.gateway);nginx=trusted_binary(args.nginx)
     cert=Path('/etc/letsencrypt/live')/domain/'fullchain.pem';key=cert.parent/'privkey.pem'
-    argv=[gateway,'--domain',domain,'--admin-cidrs',args.admin_cidrs,'--https='+str(https).lower()]
+    argv=[gateway,'--domain',('127.0.0.1' if ip_port else domain),'--admin-cidrs',args.admin_cidrs,'--https='+str(https).lower()]
+    if subscription: argv+=['--share-only']
+    if ip_port:argv+=['--listen-port',str(ip_port)]
     if https: argv+=['--cert',str(cert),'--key',str(key)]
     if not args.apply:
         print('Dry run. Domain:',domain,'HTTPS:',https,'managed vhost:',output)
@@ -97,7 +120,7 @@ def main():
     if state_path.exists() and not state_path.is_symlink():
         try: previous=json.loads(state_path.read_text())
         except (ValueError,OSError): pass
-    signature={'domain':domain,'https':https}
+    signature={'domain':domain,'https':https,'ip_port':ip_port,'subscription':subscription}
     if previous.get('signature')==signature and previous.get('failed') and time.time()-previous.get('time',0)<1800:
         raise ValueError('Previous gateway update failed; 30-minute retry backoff. Remove the managed state JSON to retry after repair.')
     if original is not None and not original.startswith(b'# harbor-managed-v1:'):
@@ -137,7 +160,7 @@ def main():
             reload_nginx()
         state_path.write_text(json.dumps({'signature':signature,'failed':False,'time':time.time(),'renewal_check':renewal_check,'cert_mtime':cert_mtime,'key_mtime':key_mtime}))
         state_path.chmod(0o600)
-        call('site/gateway-status',{'domain':domain,'https':https,'state':'active'})
+        call('site/gateway-status',{'role':'subscription' if subscription else 'management','domain':domain if subscription else site['domain'],'https':https,'state':'active'})
         print('Managed gateway applied and nginx reloaded:',domain,'HTTPS:',https)
     except BaseException:
         if not state_path.is_symlink():
@@ -147,7 +170,8 @@ def main():
         else: write(original)
         try: reload_nginx()
         except Exception: pass
-        try: call('site/gateway-status',{'domain':domain,'https':https,'state':'error'})
+        try:
+            call('site/gateway-status',{'role':'subscription' if subscription else 'management','domain':domain if subscription else site['domain'],'https':https,'state':'error'})
         except Exception: pass
         raise
     finally:
@@ -155,3 +179,4 @@ def main():
 
 if __name__=='__main__':
     main()
+    main(subscription=True)

@@ -1,18 +1,22 @@
 {
   "openapi": "3.0.3",
   "info": {
-    "title": "Harbor control plane MVP",
-    "version": "0.8.0",
-    "description": "Single-admin control plane, inventory, safe task staging, opt-in live sing-box/Xray/FRP, subscriptions, domain gateway and single-use outbound Agent enrollment. No arbitrary shell. Firewall changes require the local restricted helper."
+    "title": "星枢 · VPS 多机管理 API",
+    "version": "0.12.0",
+    "description": "Self-workspace API for host agents, proxy protocols, user quotas and client subscriptions. Bearer administrator token or expiring scoped xs_ API key. No arbitrary shell; privileged gateway work and API key administration remain root-only."
   },
   "servers": [
     {
-      "url": "http://127.0.0.1:8080"
+      "url": "/",
+      "description": "Same origin; use your manager HTTPS origin for remote clients"
     }
   ],
   "security": [
     {
       "AdminToken": []
+    },
+    {
+      "ScopedAPIKey": []
     }
   ],
   "paths": {
@@ -2427,25 +2431,25 @@
         }
       },
       "put": {
-        "summary": "Save domain/HTTPS; local gateway helper applies separately",
+        "summary": "Save domain, HTTPS, title and optional CORS origins",
         "responses": {
           "200": {
             "description": "Success"
           },
           "400": {
-            "description": "Invalid typed request"
+            "description": "Validation failure"
           },
           "401": {
-            "description": "Unauthorized"
+            "description": "Invalid, expired or revoked token"
           },
-          "404": {
-            "description": "Unavailable"
+          "403": {
+            "description": "Missing permissions"
           },
           "409": {
-            "description": "Conflict"
+            "description": "Resource/version conflict"
           },
-          "503": {
-            "description": "Not ready"
+          "429": {
+            "description": "API key request limit"
           }
         },
         "requestBody": {
@@ -2455,22 +2459,36 @@
               "schema": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": [
-                  "domain",
-                  "https"
-                ],
                 "properties": {
                   "domain": {
                     "type": "string"
                   },
                   "https": {
                     "type": "boolean"
+                  },
+                  "title": {
+                    "type": "string",
+                    "maxLength": 30
+                  },
+                  "api_origins": {
+                    "type": "array",
+                    "maxItems": 8,
+                    "items": {
+                      "type": "string"
+                    }
                   }
-                }
+                },
+                "required": [
+                  "domain",
+                  "https"
+                ]
               }
             }
           }
-        }
+        },
+        "x-required-scopes": [
+          "site:write"
+        ]
       }
     },
     "/api/v1/site/gateway-status": {
@@ -3623,6 +3641,30 @@
             "description": "Version, port or capability conflict"
           }
         }
+      },
+      "delete": {
+        "summary": "Delete live with dependency and deployment lifecycle checks",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Removed (host history is retained)"
+          },
+          "202": {
+            "description": "Stop requested; Agent acknowledgement required before port release"
+          },
+          "409": {
+            "description": "Referenced by a chain or FRP client"
+          }
+        }
       }
     },
     "/api/v1/certificates": {
@@ -3826,6 +3868,30 @@
             "description": "Version or membership conflict"
           }
         }
+      },
+      "delete": {
+        "summary": "Delete proxy-users with dependency and deployment lifecycle checks",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Removed (host history is retained)"
+          },
+          "202": {
+            "description": "Stop requested; Agent acknowledgement required before port release"
+          },
+          "409": {
+            "description": "Referenced by a chain or FRP client"
+          }
+        }
       }
     },
     "/api/v1/user-groups": {
@@ -3885,6 +3951,30 @@
           },
           "409": {
             "description": "Version or membership conflict"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete user-groups with dependency and deployment lifecycle checks",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Removed (host history is retained)"
+          },
+          "202": {
+            "description": "Stop requested; Agent acknowledgement required before port release"
+          },
+          "409": {
+            "description": "Referenced by a chain or FRP client"
           }
         }
       }
@@ -3948,6 +4038,30 @@
             "description": "Version or membership conflict"
           }
         }
+      },
+      "delete": {
+        "summary": "Delete client-profiles with dependency and deployment lifecycle checks",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Removed (host history is retained)"
+          },
+          "202": {
+            "description": "Stop requested; Agent acknowledgement required before port release"
+          },
+          "409": {
+            "description": "Referenced by a chain or FRP client"
+          }
+        }
       }
     },
     "/api/v1/hosts/{id}/kernels": {
@@ -4007,10 +4121,961 @@
           }
         }
       }
+    },
+    "/api/v1/subscriptions/{id}": {
+      "delete": {
+        "summary": "Delete subscriptions with dependency and deployment lifecycle checks",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Removed (host history is retained)"
+          },
+          "202": {
+            "description": "Stop requested; Agent acknowledgement required before port release"
+          },
+          "409": {
+            "description": "Referenced by a chain or FRP client"
+          }
+        }
+      },
+      "put": {
+        "summary": "Edit metadata, client profile or bind user/shared services; token preserved",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Validation failure"
+          },
+          "401": {
+            "description": "Invalid, expired or revoked token"
+          },
+          "403": {
+            "description": "Missing permissions"
+          },
+          "409": {
+            "description": "Resource/version conflict"
+          },
+          "429": {
+            "description": "API key request limit"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "expires_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "profile_id": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "user_id": {
+                    "type": "string"
+                  },
+                  "service_ids": {
+                    "type": "array",
+                    "maxItems": 64,
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "name",
+                  "expires_at",
+                  "profile_id",
+                  "version"
+                ]
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "subscriptions:write"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/subscriptions/{id}/link": {
+      "get": {
+        "summary": "Recover a link from encrypted token storage using the current site domain",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sensitive URL; no-store"
+          },
+          "409": {
+            "description": "Legacy hash-only subscription: rotate once to recover future links"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard": {
+      "get": {
+        "summary": "Traffic dashboard with actual counters",
+        "responses": {
+          "200": {
+            "description": "Accepted / JSON response"
+          },
+          "400": {
+            "description": "Invalid bounded payload"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "409": {
+            "description": "Referenced / protected resource"
+          }
+        }
+      }
+    },
+    "/api/v1/access-records": {
+      "get": {
+        "summary": "Recent bounded connection metadata; optional user_id and host_id",
+        "responses": {
+          "200": {
+            "description": "Accepted / JSON response"
+          },
+          "400": {
+            "description": "Invalid bounded payload"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "409": {
+            "description": "Referenced / protected resource"
+          }
+        }
+      }
+    },
+    "/api/v1/proxy-users/{id}/reset-traffic": {
+      "post": {
+        "summary": "Reset period use; lifetime/cursors retained",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Validation failure"
+          },
+          "401": {
+            "description": "Invalid, expired or revoked token"
+          },
+          "403": {
+            "description": "Missing permissions"
+          },
+          "409": {
+            "description": "Resource/version conflict"
+          },
+          "429": {
+            "description": "API key request limit"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "restart_cycle": {
+                    "type": "boolean",
+                    "default": false
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "usage:reset"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/maintenance/trials": {
+      "get": {
+        "summary": "Preview disabled Acceptance fixtures",
+        "responses": {
+          "200": {
+            "description": "Accepted / JSON response"
+          },
+          "400": {
+            "description": "Invalid bounded payload"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "409": {
+            "description": "Referenced / protected resource"
+          }
+        }
+      },
+      "post": {
+        "summary": "Remove explicit unprotected Acceptance IDs",
+        "responses": {
+          "200": {
+            "description": "Accepted / JSON response"
+          },
+          "400": {
+            "description": "Invalid bounded payload"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "409": {
+            "description": "Referenced / protected resource"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "ids"
+                ],
+                "properties": {
+                  "ids": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 64,
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent/telemetry": {
+      "get": {
+        "summary": "Own host durable counter baseline",
+        "responses": {
+          "200": {
+            "description": "Accepted / JSON response"
+          },
+          "400": {
+            "description": "Invalid bounded payload"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "409": {
+            "description": "Referenced / protected resource"
+          }
+        },
+        "security": [
+          {
+            "AgentToken": [],
+            "HostID": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "Submit bounded absolute usage and connection metadata",
+        "responses": {
+          "200": {
+            "description": "Accepted / JSON response"
+          },
+          "400": {
+            "description": "Invalid bounded payload"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "409": {
+            "description": "Referenced / protected resource"
+          }
+        },
+        "security": [
+          {
+            "AgentToken": [],
+            "HostID": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "Maximum 512 KiB, 2000 absolute counters, 100 metadata records, 2 statuses"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent/telemetry/baseline": {
+      "post": {
+        "summary": "Own host durable counter baseline",
+        "responses": {
+          "200": {
+            "description": "Accepted / JSON response"
+          },
+          "400": {
+            "description": "Invalid bounded payload"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "409": {
+            "description": "Referenced / protected resource"
+          }
+        },
+        "security": [
+          {
+            "AgentToken": [],
+            "HostID": []
+          }
+        ]
+      }
+    },
+    "/api/v1/live/batch": {
+      "post": {
+        "summary": "Atomically create selected protocols on one host/core",
+        "responses": {
+          "201": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Validation failure"
+          },
+          "401": {
+            "description": "Invalid, expired or revoked token"
+          },
+          "403": {
+            "description": "Missing permissions"
+          },
+          "409": {
+            "description": "Resource/version conflict"
+          },
+          "429": {
+            "description": "API key request limit"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 8,
+                    "items": {
+                      "$ref": "#/components/schemas/LiveInput"
+                    }
+                  },
+                  "start_port": {
+                    "type": "integer",
+                    "minimum": 1024,
+                    "maximum": 65535,
+                    "default": 20000
+                  },
+                  "enabled": {
+                    "type": "boolean",
+                    "default": false
+                  },
+                  "request_key": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{32}$",
+                    "description": "Same key + same body is replayed for 30 days; port=0 auto allocates."
+                  }
+                },
+                "required": [
+                  "items",
+                  "request_key"
+                ]
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "nodes:write"
+        ]
+      }
+    },
+    "/api/v1/api-keys": {
+      "get": {
+        "summary": "List keys; hashes and tokens never returned",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Validation failure"
+          },
+          "401": {
+            "description": "Invalid, expired or revoked token"
+          },
+          "403": {
+            "description": "Missing permissions"
+          },
+          "409": {
+            "description": "Resource/version conflict"
+          },
+          "429": {
+            "description": "API key request limit"
+          }
+        },
+        "x-required-scopes": [
+          "root-administrator"
+        ]
+      },
+      "post": {
+        "summary": "Create scoped key; plaintext returned exactly once",
+        "responses": {
+          "201": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Validation failure"
+          },
+          "401": {
+            "description": "Invalid, expired or revoked token"
+          },
+          "403": {
+            "description": "Missing permissions"
+          },
+          "409": {
+            "description": "Resource/version conflict"
+          },
+          "429": {
+            "description": "API key request limit"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "scopes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "minItems": 1
+                  },
+                  "expires_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "rate_limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 600,
+                    "default": 120
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "required": [
+                  "name",
+                  "scopes",
+                  "expires_at"
+                ]
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "root-administrator"
+        ]
+      }
+    },
+    "/api/v1/api-keys/{id}": {
+      "put": {
+        "summary": "Edit permissions and expiration with optimistic version",
+        "responses": {
+          "201": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Validation failure"
+          },
+          "401": {
+            "description": "Invalid, expired or revoked token"
+          },
+          "403": {
+            "description": "Missing permissions"
+          },
+          "409": {
+            "description": "Resource/version conflict"
+          },
+          "429": {
+            "description": "API key request limit"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "scopes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "minItems": 1
+                  },
+                  "expires_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "rate_limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 600,
+                    "default": 120
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "required": [
+                  "name",
+                  "scopes",
+                  "expires_at"
+                ]
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "root-administrator"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      },
+      "delete": {
+        "summary": "Immediately revoke key permanently",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Validation failure"
+          },
+          "401": {
+            "description": "Invalid, expired or revoked token"
+          },
+          "403": {
+            "description": "Missing permissions"
+          },
+          "409": {
+            "description": "Resource/version conflict"
+          },
+          "429": {
+            "description": "API key request limit"
+          }
+        },
+        "x-required-scopes": [
+          "root-administrator"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/api-capabilities": {
+      "get": {
+        "summary": "API permission catalog and features",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Validation failure"
+          },
+          "401": {
+            "description": "Invalid, expired or revoked token"
+          },
+          "403": {
+            "description": "Missing permissions"
+          },
+          "409": {
+            "description": "Resource/version conflict"
+          },
+          "429": {
+            "description": "API key request limit"
+          }
+        },
+        "x-required-scopes": []
+      }
+    },
+    "/api/v1/session": {
+      "get": {
+        "summary": "Current identity and permissions",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Validation failure"
+          },
+          "401": {
+            "description": "Invalid, expired or revoked token"
+          },
+          "403": {
+            "description": "Missing permissions"
+          },
+          "409": {
+            "description": "Resource/version conflict"
+          },
+          "429": {
+            "description": "API key request limit"
+          }
+        },
+        "x-required-scopes": []
+      }
+    },
+    "/api/v1/openapi": {
+      "get": {
+        "summary": "This OpenAPI contract",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Validation failure"
+          },
+          "401": {
+            "description": "Invalid, expired or revoked token"
+          },
+          "403": {
+            "description": "Missing permissions"
+          },
+          "409": {
+            "description": "Resource/version conflict"
+          },
+          "429": {
+            "description": "API key request limit"
+          }
+        },
+        "x-required-scopes": []
+      }
+    },
+    "/api/v1/subscriptions/{id}/usage": {
+      "get": {
+        "summary": "User quota or shared inbound aggregate",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Validation failure"
+          },
+          "401": {
+            "description": "Invalid, expired or revoked token"
+          },
+          "403": {
+            "description": "Missing permissions"
+          },
+          "409": {
+            "description": "Resource/version conflict"
+          },
+          "429": {
+            "description": "API key request limit"
+          }
+        },
+        "x-required-scopes": [
+          "subscriptions:read"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/subscriptions/{id}/config": {
+      "get": {
+        "summary": "Redacted generated client configuration and response headers",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Validation failure"
+          },
+          "401": {
+            "description": "Invalid, expired or revoked token"
+          },
+          "403": {
+            "description": "Missing permissions"
+          },
+          "409": {
+            "description": "Resource/version conflict"
+          },
+          "429": {
+            "description": "API key request limit"
+          }
+        },
+        "x-required-scopes": [
+          "subscriptions:links"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/branding": {
+      "get": {
+        "summary": "Public title and version",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Validation failure"
+          },
+          "401": {
+            "description": "Invalid, expired or revoked token"
+          },
+          "403": {
+            "description": "Missing permissions"
+          },
+          "409": {
+            "description": "Resource/version conflict"
+          },
+          "429": {
+            "description": "API key request limit"
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/v1/client-catalog": {
+      "get": {
+        "summary": "Supported clients and native formats",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "409": {
+            "description": "Conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/client-policies": {
+      "get": {
+        "summary": "User/client Mihomo routing policies",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "409": {
+            "description": "Conflict"
+          }
+        }
+      },
+      "post": {
+        "summary": "User/client Mihomo routing policies",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "409": {
+            "description": "Conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/client-policies/{id}": {
+      "put": {
+        "summary": "Edit or parse policy",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "409": {
+            "description": "Conflict"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Edit or parse policy",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "409": {
+            "description": "Conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/client-policies/parse": {
+      "post": {
+        "summary": "Edit or parse policy",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "409": {
+            "description": "Conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/hosts/{id}/retirement": {
+      "get": {
+        "summary": "Plan or request acknowledged remote uninstall",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "409": {
+            "description": "Conflict"
+          }
+        }
+      },
+      "post": {
+        "summary": "Plan or request acknowledged remote uninstall",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "409": {
+            "description": "Conflict"
+          }
+        }
+      }
     }
   },
   "components": {
     "securitySchemes": {
+      "HostID": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Host-ID"
+      },
       "AdminToken": {
         "type": "http",
         "scheme": "bearer"
@@ -4018,6 +5083,12 @@
       "AgentToken": {
         "type": "http",
         "scheme": "bearer"
+      },
+      "ScopedAPIKey": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "xs_ API key",
+        "description": "Choose permissions in Settings > API. Never pass the root token to a bot."
       }
     },
     "schemas": {
@@ -4439,6 +5510,11 @@
               "type": "string"
             },
             "maxItems": 16
+          },
+          "online": {
+            "type": "boolean",
+            "readOnly": true,
+            "description": "Database clock freshness, independent of client clock"
           }
         }
       },
@@ -4915,6 +5991,71 @@
           },
           "rotate_credentials": {
             "type": "boolean"
+          },
+          "group_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 200,
+            "description": "Optional; omitted preserves memberships, empty removes all"
+          },
+          "quota_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "readOnly": false
+          },
+          "used_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "readOnly": true
+          },
+          "remaining_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "readOnly": true,
+            "nullable": true
+          },
+          "lifetime_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "readOnly": true
+          },
+          "upload_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "readOnly": true
+          },
+          "download_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "readOnly": true
+          },
+          "reset_strategy": {
+            "type": "string",
+            "enum": [
+              "never",
+              "daily",
+              "monthly",
+              "rolling_monthly"
+            ]
+          },
+          "last_active_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "readOnly": true
+          },
+          "reset_anchor_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Optional cycle anchor; preserve omitted anchor. Original monthly day clamped on short months."
           }
         },
         "required": [
@@ -4982,6 +6123,19 @@
           },
           "test_url": {
             "type": "string"
+          },
+          "extra_text": {
+            "type": "string",
+            "maxLength": 32768,
+            "description": "JSON or YAML client options. Generated credentials/outbounds cannot be replaced; management/inbound listeners restricted to loopback."
+          },
+          "extra_config": {
+            "type": "object",
+            "description": "Alternative JSON object if extra_text omitted"
+          },
+          "version": {
+            "type": "integer",
+            "description": "Required optimistic version on PUT"
           }
         },
         "required": [
@@ -5165,6 +6319,42 @@
           },
           "managed_users": {
             "type": "boolean"
+          },
+          "snell_version": {
+            "type": "integer",
+            "description": "Protocol-specific option; requires Agent 0.9+"
+          },
+          "up_mbps": {
+            "type": "integer",
+            "description": "Protocol-specific option; requires Agent 0.9+"
+          },
+          "down_mbps": {
+            "type": "integer",
+            "description": "Protocol-specific option; requires Agent 0.9+"
+          },
+          "cipher": {
+            "type": "string",
+            "description": "Protocol-specific option; requires Agent 0.9+"
+          },
+          "snell_obfs": {
+            "type": "string",
+            "description": "Protocol-specific option; requires Agent 0.9+"
+          },
+          "snell_host": {
+            "type": "string",
+            "description": "Protocol-specific option; requires Agent 0.9+"
+          },
+          "snell_mode": {
+            "type": "string",
+            "description": "Protocol-specific option; requires Agent 0.9+"
+          },
+          "hy2_obfs_password": {
+            "type": "string",
+            "description": "Protocol-specific option; requires Agent 0.9+"
+          },
+          "clear_hy2_obfs": {
+            "type": "boolean",
+            "description": "Explicitly disable stored Hysteria2 obfuscation"
           }
         }
       }

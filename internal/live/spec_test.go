@@ -20,12 +20,12 @@ func TestSpecAndEncryption(t *testing.T) {
 			t.Fatal("unsafe address", a)
 		}
 	}
-	for _, a := range []string{"https://vps.example.com", "http://vps.example.com"} {
+	for _, a := range []string{"https://vps.example.com", "http://vps.example.com", "https://vps.example.com:444", "http://192.0.2.1:18080", "http://[2001:db8::1]:18080"} {
 		if !Origin(a) {
 			t.Fatal(a)
 		}
 	}
-	for _, a := range []string{"https://vps.example.com/path", "https://a@vps.example.com", "https://vps.example.com?x=y", "https://vps.example.com:444"} {
+	for _, a := range []string{"https://vps.example.com/path", "https://a@vps.example.com", "https://vps.example.com?x=y", "https://vps.example.com:65536"} {
 		if Origin(a) {
 			t.Fatal(a)
 		}

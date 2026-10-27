@@ -27,6 +27,7 @@ type Server struct {
 	MasterKey       []byte
 	AdminToken      string
 	AgentReleaseDir string
+	keyRates        keyLimiter
 }
 type problem struct {
 	status  int
@@ -53,7 +54,10 @@ func send(w http.ResponseWriter, status int, v any) {
 	json.NewEncoder(w).Encode(v)
 }
 func decode(w http.ResponseWriter, r *http.Request, v any) error {
-	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+	return decodeBounded(w, r, v, 64<<10)
+}
+func decodeBounded(w http.ResponseWriter, r *http.Request, v any, limit int64) error {
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
 	d := json.NewDecoder(r.Body)
 	d.DisallowUnknownFields()
 	if e := d.Decode(v); e != nil {
@@ -84,23 +88,30 @@ func wrap(f endpoint) http.HandlerFunc {
 			} else {
 				slog.Error("request failed", "error", e)
 			}
+			if status == 429 && w.Header().Get("Retry-After") == "" {
+				w.Header().Set("Retry-After", "60")
+			}
 			send(w, status, map[string]string{"error": msg})
 		}
 	}
 }
 func (s *Server) admin(f endpoint) http.HandlerFunc {
 	return wrap(func(w http.ResponseWriter, r *http.Request) error {
-		if !equal(r.Header.Get("Authorization"), "Bearer "+s.AdminToken) {
-			return problem{401, "unauthorized"}
+		identity, e := s.authenticateAPI(r)
+		if e != nil {
+			return e
 		}
-		return f(w, r)
+		return f(w, r.WithContext(context.WithValue(r.Context(), identityContext{}, identity)))
 	})
 }
 func (s *Server) agent(f func(http.ResponseWriter, *http.Request, string) error) http.HandlerFunc {
 	return wrap(func(w http.ResponseWriter, r *http.Request) error {
 		host := r.Header.Get("X-Host-ID")
 		var hash string
-		e := s.DB.QueryRow(r.Context(), "SELECT agent_hash FROM hosts WHERE tenant_id=$1 AND id=$2", tenant, host).Scan(&hash)
+		e := s.DB.QueryRow(r.Context(), "SELECT agent_hash FROM hosts WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL", tenant, host).Scan(&hash)
+		if e == pgx.ErrNoRows && r.URL.Path == "/api/v1/agent/retirement/ack" {
+			e = s.DB.QueryRow(r.Context(), `SELECT agent_hash FROM host_retirement_receipts WHERE tenant_id=$1 AND host_id=$2`, tenant, host).Scan(&hash)
+		}
 		if e != nil && !errors.Is(e, pgx.ErrNoRows) {
 			return e
 		}
@@ -114,6 +125,40 @@ func (s *Server) agent(f func(http.ResponseWriter, *http.Request, string) error)
 }
 func (s *Server) Handler() http.Handler {
 	m := http.NewServeMux()
+	m.HandleFunc("GET /api/v1/hosts/{id}/retirement", s.admin(s.retirement))
+	m.HandleFunc("POST /api/v1/hosts/{id}/retirement", s.admin(s.retirement))
+	m.HandleFunc("POST /api/v1/agent/retirement/{action}", s.agent(s.retirementAgent))
+	m.HandleFunc("GET /api/v1/client-catalog", s.admin(s.clientCatalog))
+	m.HandleFunc("GET /api/v1/client-policies", s.admin(s.policies))
+	m.HandleFunc("POST /api/v1/client-policies", s.admin(s.policies))
+	m.HandleFunc("PUT /api/v1/client-policies/{id}", s.admin(s.policies))
+	m.HandleFunc("DELETE /api/v1/client-policies/{id}", s.admin(s.policies))
+	m.HandleFunc("POST /api/v1/client-policies/parse", s.admin(s.parsePolicy))
+	m.HandleFunc("GET /api/v1/branding", wrap(s.branding))
+	m.HandleFunc("GET /api/v1/subscriptions/{id}/{view}", s.admin(s.inspectSubscription))
+	m.HandleFunc("GET /api/v1/session", s.admin(s.apiSession))
+	m.HandleFunc("GET /api/v1/api-capabilities", s.admin(s.apiCapabilities))
+	m.HandleFunc("GET /api/v1/openapi", s.admin(s.openapi))
+	m.HandleFunc("GET /api/v1/api-keys", s.admin(s.keys))
+	m.HandleFunc("POST /api/v1/api-keys", s.admin(s.keys))
+	m.HandleFunc("PUT /api/v1/api-keys/{id}", s.admin(s.keys))
+	m.HandleFunc("DELETE /api/v1/api-keys/{id}", s.admin(s.keys))
+	m.HandleFunc("POST /api/v1/live/batch", s.admin(s.liveBatch))
+	m.HandleFunc("GET /api/v1/maintenance/trials", s.admin(s.trials))
+	m.HandleFunc("POST /api/v1/maintenance/trials", s.admin(s.trials))
+	m.HandleFunc("GET /api/v1/dashboard", s.admin(s.dashboard))
+	m.HandleFunc("GET /api/v1/access-records", s.admin(s.accessRecords))
+	m.HandleFunc("POST /api/v1/proxy-users/{id}/reset-traffic", s.admin(s.resetTraffic))
+	m.HandleFunc("GET /api/v1/agent/telemetry", s.agent(s.telemetry))
+	m.HandleFunc("POST /api/v1/agent/telemetry/baseline", s.agent(s.telemetry))
+	m.HandleFunc("POST /api/v1/agent/telemetry", s.agent(s.telemetry))
+	m.HandleFunc("DELETE /api/v1/proxy-users/{id}", s.admin(s.removeManaged))
+	m.HandleFunc("DELETE /api/v1/user-groups/{id}", s.admin(s.removeManaged))
+	m.HandleFunc("DELETE /api/v1/client-profiles/{id}", s.admin(s.removeManaged))
+	m.HandleFunc("DELETE /api/v1/subscriptions/{id}", s.admin(s.removeManaged))
+	m.HandleFunc("DELETE /api/v1/live/{id}", s.admin(s.liveDelete))
+	m.HandleFunc("PUT /api/v1/subscriptions/{id}", s.admin(s.subscriptionUpdate))
+	m.HandleFunc("GET /api/v1/subscriptions/{id}/link", s.admin(s.subscriptionLink))
 	m.HandleFunc("GET /api/v1/proxy-users", s.admin(s.users))
 	m.HandleFunc("POST /api/v1/proxy-users", s.admin(s.users))
 	m.HandleFunc("PUT /api/v1/proxy-users/{id}", s.admin(s.users))
@@ -185,15 +230,15 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("POST /api/v1/tasks/{id}/cancel", s.admin(s.cancelTask))
 	m.HandleFunc("PATCH /api/v1/{kind}/{id}", s.admin(s.updateResource))
 	m.HandleFunc("DELETE /api/v1/{kind}/{id}", s.admin(s.deleteResource))
-	return m
+	return s.cors(m)
 }
 func audit(ctx context.Context, tx pgx.Tx, actor, action, id string) error {
-	_, e := tx.Exec(ctx, "INSERT INTO audit(tenant_id,actor,action,resource_id) VALUES($1,$2,$3,$4)", tenant, actor, action, id)
+	_, e := tx.Exec(ctx, "INSERT INTO audit(tenant_id,actor,action,resource_id) VALUES($1,$2,$3,$4)", tenant, actorContext(ctx, actor), action, id)
 	return e
 }
 func (s *Server) list(w http.ResponseWriter, r *http.Request) error {
 	// SQL identifiers are selected solely from this fixed allowlist.
-	tables := map[string]string{"hosts": "SELECT tenant_id,id,name,provider,address,last_seen,agent_mode,agent_version,platform,reported_addresses,created_at FROM hosts", "nodes": "SELECT * FROM nodes", "instances": "SELECT * FROM instances", "tunnels": "SELECT * FROM tunnels", "configs": "SELECT * FROM configs", "tasks": "SELECT tenant_id,id,instance_id,config_id,request_key,state,attempts,lease_until,result,created_at,updated_at,mode,operation,artifact_checksum FROM tasks", "audit": "SELECT * FROM audit", "routes": "SELECT * FROM route_plans"}
+	tables := map[string]string{"hosts": "SELECT tenant_id,id,name,provider,address,last_seen,COALESCE(last_seen>now()-interval '90 seconds',false) online,agent_mode,agent_version,platform,reported_addresses,retire_state,retire_requested_at,cleanup_capable,created_at FROM hosts", "nodes": "SELECT * FROM nodes", "instances": "SELECT * FROM instances", "tunnels": "SELECT * FROM tunnels", "configs": "SELECT * FROM configs", "tasks": "SELECT tenant_id,id,instance_id,config_id,request_key,state,attempts,lease_until,result,created_at,updated_at,mode,operation,artifact_checksum FROM tasks", "audit": "SELECT * FROM audit", "routes": "SELECT * FROM route_plans"}
 	tables["firewalls"] = "SELECT tenant_id,id,host_id,name,version,checksum,archived_at,created_at FROM firewall_policies"
 	q, ok := tables[r.PathValue("kind")]
 	if !ok {
@@ -214,8 +259,12 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) error {
 		}
 		offset = v
 	}
+	filter := ""
+	if r.PathValue("kind") == "hosts" {
+		filter = " AND deleted_at IS NULL"
+	}
 	var data json.RawMessage
-	e := s.DB.QueryRow(r.Context(), "SELECT COALESCE(jsonb_agg(to_jsonb(x)),'[]'::jsonb) FROM ("+q+" WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT $2 OFFSET $3) x", tenant, limit, offset).Scan(&data)
+	e := s.DB.QueryRow(r.Context(), "SELECT COALESCE(jsonb_agg(to_jsonb(x)),'[]'::jsonb) FROM ("+q+" WHERE tenant_id=$1"+filter+" ORDER BY created_at DESC LIMIT $2 OFFSET $3) x", tenant, limit, offset).Scan(&data)
 	if e != nil {
 		return e
 	}
@@ -292,7 +341,7 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) error {
 		_, e = tx.Exec(ctx, "INSERT INTO nodes(tenant_id,id,name,engine) VALUES($1,$2,$3,$4)", tenant, id, b.Name, b.Engine)
 	case "instances":
 		var lockedHost string
-		if e = tx.QueryRow(ctx, "SELECT id FROM hosts WHERE tenant_id=$1 AND id=$2 FOR UPDATE", tenant, b.HostID).Scan(&lockedHost); e != nil {
+		if e = tx.QueryRow(ctx, "SELECT id FROM hosts WHERE tenant_id=$1 AND id=$2 AND retire_state='' FOR UPDATE", tenant, b.HostID).Scan(&lockedHost); e != nil {
 			if errors.Is(e, pgx.ErrNoRows) {
 				return problem{409, "host reference does not exist"}
 			}
