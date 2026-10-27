@@ -1,5 +1,8 @@
 name: Verify Harbor
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
@@ -24,6 +27,7 @@ jobs:
       - run: python3 scripts/test_domain_sync.py
       - run: python3 scripts/test_managed_gateway.py
       - run: python3 scripts/test_agent_bootstrap.py
+      - run: python3 scripts/test_engine_installer.py
       - run: go vet ./...
       - run: go test -race -count=1 -v ./...
         env:
@@ -73,3 +77,17 @@ jobs:
           export TEST_FRPC_BINARY="$GITHUB_WORKSPACE/engines/frpc$ext"
           export TEST_XRAY_BINARY="$GITHUB_WORKSPACE/engines/xray$ext"
           go test -count=1 -v ./internal/live ./internal/executor
+
+  quickstart:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download the immutable binary distribution
+        run: |
+          curl --proto '=https' --tlsv1.2 -fL https://github.com/czy-code-923/czy-code/releases/download/v0.12.1-distribution/harbor-0.12.1-linux-amd64.zip -o /tmp/starhub.zip
+          echo '7c045ff307f229e904f5fa533c8fbd1879bdab1c0bd3bb7e5fe613f6281caf0d  /tmp/starhub.zip' | sha256sum --check
+          mkdir /tmp/starhub-distribution
+          unzip -q /tmp/starhub.zip -d /tmp/starhub-distribution
+      - name: Install, enroll, deploy and uninstall on this fresh CI VM
+        run: sudo --preserve-env=GITHUB_ACTIONS,RUNNER_ENVIRONMENT python3 scripts/test_quickstart_e2e.py /tmp/starhub-distribution

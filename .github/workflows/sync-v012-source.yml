@@ -12,14 +12,14 @@ jobs:
         shell: python
         run: |
           import hashlib,io,pathlib,subprocess,urllib.request,zipfile
-          url='https://github.com/czy-code-923/czy-code/releases/download/v0.12.0-distribution/harbor-0.12.0-source.zip'
+          url='https://github.com/czy-code-923/czy-code/releases/download/v0.12.1-distribution/harbor-0.12.1-source.zip'
           with urllib.request.urlopen(url,timeout=90) as response:data=response.read(2<<20)
-          assert hashlib.sha256(data).hexdigest()=='eeff500edd78dfb5f1dd169e8087abccaf4981ca03f012844bf7f7cd84c12764'
+          assert hashlib.sha256(data).hexdigest()=='0b354b6f89e96595e32d1b0961bdb0e559e0377120650f4277075a2e1dc2384f'
           root=pathlib.Path.cwd().resolve();files={}
           with zipfile.ZipFile(io.BytesIO(data)) as archive:
             for item in archive.infolist():
               name=pathlib.PurePosixPath(item.filename)
-              assert name.parts[0]=='harbor-0.12.0' and '..' not in name.parts and not name.is_absolute()
+              assert name.parts[0]=='harbor-0.12.1' and '..' not in name.parts and not name.is_absolute()
               relative=pathlib.Path(*name.parts[1:])
               if not name.parts[1:] or item.is_dir() or relative.as_posix().startswith('.github/workflows/'):continue
               destination=(root/relative).resolve();assert destination.is_relative_to(root) and '.git' not in relative.parts
