@@ -1,6 +1,6 @@
-# 星枢 · VPS 多机管理 0.20.0
+# 星枢 · VPS 多机管理 0.20.1
 
-0.20 修复 Clash Verge / FlClash 开启名额后无法导入，以及不限设备不记录客户端的问题。默认兼容订阅访问模式；严格 HWID 模式单独选择。分享复用用户原链接，整合客户端格式并修复手选小火箭。详见 [当前工作流](docs/WORKFLOW-v020.md)。
+0.20.1 修复 Clash Verge / FlClash 开启名额后无法导入，以及不限设备不记录客户端的问题。默认兼容订阅访问模式；严格 HWID 模式单独选择。分享复用用户原链接，整合客户端格式并修复手选小火箭。详见 [当前工作流](docs/WORKFLOW-v020.md)。
 
 0.15 修复 Telegram 命令接收与 VPS 时钟偏差，发送和接收状态分开显示。机器人查询须启用长轮询并授权用户 ID；私聊可在通知设置中填入当前绑定用户后保存。策略页统一管理客户端配置，等宽列表独立滚动；订阅页只管理分享，历史输出覆盖在策略页高级区域保留。首页显示有限余额、完整日期趋势与用户范围统计，访问记录按需加载。详见 [本版行为与边界](docs/WORKFLOW-v015.md)。
 
@@ -16,18 +16,18 @@ Vue 3 / TypeScript / Go / PostgreSQL 的个人 VPS 控制面。主流程：**连
 Linux（Debian / Ubuntu / Rocky / Alma / Fedora / openSUSE 等 systemd 系统）：
 
 ```bash
-curl -fL https://github.com/czy-code-923/czy-code/releases/download/v0.20.0-distribution/install-starhub.sh -o /tmp/install-starhub.sh && sudo sh /tmp/install-starhub.sh --public
+curl -fL https://github.com/czy-code-923/czy-code/releases/download/v0.20.1-distribution/install-starhub.sh -o /tmp/install-starhub.sh && sudo sh /tmp/install-starhub.sh --public
 ```
 
 Windows PowerShell：
 
 ```powershell
-Invoke-WebRequest https://github.com/czy-code-923/czy-code/releases/download/v0.20.0-distribution/install-starhub.ps1 -OutFile "$env:TEMP/install-starhub.ps1"; & "$env:TEMP/install-starhub.ps1" -Public
+Invoke-WebRequest https://github.com/czy-code-923/czy-code/releases/download/v0.20.1-distribution/install-starhub.ps1 -OutFile "$env:TEMP/install-starhub.ps1"; & "$env:TEMP/install-starhub.ps1" -Public
 ```
 
 `--public` / `-Public` 明确启用 IP:18080 的认证网页入口；HTTP 不加密，建议设置 HTTPS 网关。省略此参数则只监听回环。内部 8080 API、8091 分享处理器和 PostgreSQL 均不暴露公网。管理员令牌保存在本机私有 control.env，不打印、不上传。Windows 安装当前用户登录任务，退出登录后不保证运行；Alpine/OpenRC 用包内 `python3 scripts/quickstart.py --foreground` 配置自己的进程监督器。依赖安装与 HTTPS 网关、离线、源码、Compose 方式见 [安装文档](docs/INSTALL.md)。
 
-完整源码请下载 Release 附件 **harbor-0.20.0-source.zip**；源码附件与发行标签逐文件核对；包含完整前后端、迁移、测试、脚本和文档。
+完整源码请下载 Release 附件 **harbor-0.20.1-source.zip**；源码附件与发行标签逐文件核对；包含完整前后端、迁移、测试、脚本和文档。
 
 ## Linux 一键卸载与面板管理员令牌
 
@@ -61,7 +61,7 @@ Invoke-WebRequest https://raw.githubusercontent.com/czy-code-923/czy-code/main/s
 - 防火墙版本编辑、回收站删除/恢复、本机受控移除和取消，保留独立回滚。
 - 原生配置识别草稿、客户端路由引用检查、可视化规则自动同步、嵌套组展开去重。
 - 空授权账号不再可能变为免认证；新增端口失败时保留完全未变的有效入站。补齐扩展协议的用户流量与访问日志解析。
-- 控制面与 Agent 均为 **0.20.0**；新功能需升级 Agent。
+- 控制面与 Agent 均为 **0.20.1**；新功能需升级 Agent。
 - [0.13 功能、配置、通知与兼容边界](docs/WORKFLOW-v013.md)。
 
 ## 0.12 新增
