@@ -1,4 +1,5 @@
 name: Publish verified Starhub 0.18
+# Native-state tests create private directories explicitly on Linux and Windows.
 on:
   push:
     branches: [main]
@@ -97,3 +98,4 @@ jobs:
         with:
           name: release-018-manifest
           path: .release-cache/manifest.json
+

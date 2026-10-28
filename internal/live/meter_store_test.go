@@ -48,7 +48,11 @@ func TestTrafficLedgerRestartAndBaseline(t *testing.T) {
 }
 
 func TestAccessBatchIsBoundedAndAcknowledgementPreservesNewerBytes(t *testing.T) {
-	r, e := NewRunner(t.TempDir(), map[string]executor.Binary{})
+	dir := t.TempDir()
+	if e := os.Chmod(dir, 0700); e != nil {
+		t.Fatal(e)
+	}
+	r, e := NewRunner(dir, map[string]executor.Binary{})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -74,3 +78,4 @@ func TestAccessBatchIsBoundedAndAcknowledgementPreservesNewerBytes(t *testing.T)
 		t.Fatal("queued records cannot be drained", len(second.Access), e)
 	}
 }
+
