@@ -40,6 +40,9 @@ func (s *Server) ShareHandler() http.Handler {
 	return s.cors(m)
 }
 func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Add("Vary", "User-Agent, X-Hwid")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("X-Robots-Tag", "noindex, nofollow")
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
@@ -82,18 +85,31 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 	if e != nil {
 		return problem{404, "subscription unavailable"}
 	}
+	if profileID != "" {
+		if e = s.DB.QueryRow(r.Context(), `SELECT format,local_port,selection,test_url,extra_config FROM client_profiles WHERE tenant_id=$1 AND id=$2`, tenant, profileID).Scan(&profile.Format, &profile.Port, &profile.Selection, &profile.TestURL, &profile.Extra); e != nil {
+			return e
+		}
+	}
+	client, e := selectedClient(r, profile.Format)
+	if e != nil {
+		return e
+	}
 	if user != "" {
 		var sealed []byte
 		var expires time.Time
 		if e = s.DB.QueryRow(r.Context(), `SELECT sealed,expires_at,quota_bytes,billed_upload_bytes,billed_download_bytes,`+deviceLimitSQL+` FROM proxy_users u WHERE tenant_id=$1 AND id=$2 AND enabled AND expires_at>now() `, tenant, user).Scan(&sealed, &expires, &quota, &upload, &download, &deviceLimit); e != nil {
 			return problem{404, "subscription unavailable"}
 		}
+		if device == "" && r.Context().Value(subscriptionInspectionKey{}) != true {
+			device, e = s.subscriptionDevice(w, r, user, client.ID, deviceLimit)
+			if e != nil {
+				return e
+			}
+		}
 		if device != "" {
 			if e = s.DB.QueryRow(r.Context(), `SELECT sealed,all_nodes,service_ids FROM user_devices WHERE tenant_id=$1 AND id=$2 AND user_id=$3 AND enabled`, tenant, device, user).Scan(&sealed, &deviceAll, &deviceServices); e != nil {
 				return problem{404, "device subscription unavailable"}
 			}
-		} else if deviceLimit > 0 {
-			return problem{409, "此用户已启用设备限制，请使用设备管理中的专属订阅"}
 		}
 		if device != "" && !deviceAll && len(deviceServices) == 0 {
 			return problem{403, "此设备尚未授权任何入站"}
@@ -109,16 +125,8 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 			expiry = expires
 		}
 	}
-	if device != "" {
-		ua := strings.Map(func(c rune) rune {
-			if c < 32 || c == 127 {
-				return -1
-			}
-			return c
-		}, r.UserAgent())
-		if len(ua) > 256 {
-			ua = ua[:256]
-		}
+	if device != "" && r.Context().Value(subscriptionInspectionKey{}) != true {
+		ua := clientMetadata(r.UserAgent(), 256)
 		if _, e = s.DB.Exec(r.Context(), `UPDATE user_devices SET last_subscription_at=now(),user_agent=$3 WHERE tenant_id=$1 AND id=$2`, tenant, device, ua); e != nil {
 			return e
 		}
@@ -129,15 +137,6 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 	}
 	quota, upload, download = usage.Total, usage.Upload, usage.Download
 	quotaReached = user != "" && quota > 0 && usage.Used >= quota
-	if profileID != "" {
-		if e = s.DB.QueryRow(r.Context(), `SELECT format,local_port,selection,test_url,extra_config FROM client_profiles WHERE tenant_id=$1 AND id=$2`, tenant, profileID).Scan(&profile.Format, &profile.Port, &profile.Selection, &profile.TestURL, &profile.Extra); e != nil {
-			return e
-		}
-	}
-	client, e := selectedClient(r, profile.Format)
-	if e != nil {
-		return e
-	}
 	format := client.Format
 	extra := profile.Extra
 	if pc, ok := clientByID(profile.Format); !ok || pc.Format != format {
@@ -199,6 +198,17 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 	}
 	if quotaReached {
 		return sendBlockedClient(w, format, profile.Port)
+	}
+	if user != "" {
+		pending, err := s.subscriptionPending(r.Context(), user, device)
+		if err != nil {
+			return err
+		}
+		if pending > 0 {
+			w.Header().Set("Retry-After", "3")
+			w.Header().Set("X-Starhub-Pending-Nodes", fmt.Sprint(pending))
+			return problem{503, "用户权限或客户端身份正在同步至主机，请稍后更新同一订阅链接；无需重新创建用户或订阅"}
+		}
 	}
 	rows, e := s.DB.Query(r.Context(), `SELECT l.id,l.name,l.host_id,l.sealed FROM live_services l WHERE l.tenant_id=$1 AND (($3='' AND EXISTS(SELECT 1 FROM subscription_services x WHERE x.tenant_id=l.tenant_id AND x.service_id=l.id AND x.subscription_id=$2)) OR ($3<>'' AND EXISTS(SELECT 1 FROM user_group_services gs JOIN user_group_members gm USING(tenant_id,group_id) WHERE gs.tenant_id=l.tenant_id AND gs.service_id=l.id AND gm.user_id=$3))) AND NOT EXISTS (WITH RECURSIVE chain AS (SELECT n.id,n.next_id,n.enabled,n.state,n.version,n.reported_version,n.reported_at,1 depth FROM live_services n WHERE n.tenant_id=l.tenant_id AND n.id=l.next_id UNION ALL SELECT n.id,n.next_id,n.enabled,n.state,n.version,n.reported_version,n.reported_at,c.depth+1 FROM live_services n JOIN chain c ON n.id=c.next_id WHERE n.tenant_id=l.tenant_id AND c.depth<8) SELECT 1 FROM chain WHERE NOT enabled OR state<>'running' OR version<>reported_version OR reported_at IS NULL OR reported_at<now()-interval '45 seconds') AND l.enabled AND l.state='running' AND l.version=l.reported_version AND l.reported_at>now()-interval '45 seconds' ORDER BY l.created_at LIMIT 64`, tenant, id, user)
 	if e != nil {
@@ -265,7 +275,7 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 			if format == "shadowrocket-config" {
 				checkFormat = "shadowrocket"
 			}
-			if client.ID == "v2rayng-uri" {
+			if slices.Contains([]string{"v2rayng-uri", "happ", "v2raytun"}, client.ID) {
 				checkFormat = "xray"
 			}
 			if !client.Full && (endpoint.IsReality() && endpoint.Engine == "xray" || endpoint.Transport == "xhttp" || endpoint.Transport == "kcp" || endpoint.Transport == "httpupgrade") {

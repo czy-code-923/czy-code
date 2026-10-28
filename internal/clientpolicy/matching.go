@@ -11,8 +11,13 @@ type Candidate struct {
 	Port               int
 }
 
-// MatchAlias never broadens a single imported server into every node of a protocol.
-// Endpoints take precedence over display names; ambiguity requires a manual choice.
+type aliasMatch struct {
+	node   Candidate
+	family string
+}
+
+// MatchAlias uses exact protocol/address/port or a unique stable exported tag.
+// A bare protocol or a display-name fragment never selects unrelated nodes.
 func MatchAlias(a Alias, nodes []Candidate) (string, string) {
 	normalize := func(s string) string {
 		s = strings.Trim(strings.TrimSpace(s), "[]")
@@ -21,31 +26,60 @@ func MatchAlias(a Alias, nodes []Candidate) (string, string) {
 		}
 		return strings.ToLower(strings.TrimSuffix(s, "."))
 	}
-	matches := []Candidate{}
+	matches := []aliasMatch{}
 	for _, n := range nodes {
-		if a.Protocol != "" && n.Protocol != a.Protocol {
+		if a.Protocol != "" && normalizeKind(n.Protocol) != normalizeKind(a.Protocol) || a.Port > 0 && a.Port != n.Port {
 			continue
 		}
+		family := ""
 		if a.Server != "" {
 			found := false
 			for _, address := range n.Addresses {
 				if normalize(address) == normalize(a.Server) {
 					found = true
+					family = AddressFamily(strings.Trim(address, "[]"))
+					break
 				}
 			}
-			if !found || (a.Port > 0 && a.Port != n.Port) {
+			if !found {
 				continue
 			}
 		} else if a.Name != n.Name {
-			continue
+			base := n.Name
+			if len(n.ID) >= 8 && a.Name == base+"-"+n.ID[:8] {
+				// A single-address own export is unambiguous; a dual-stack source omitting
+				// the family must remain a manual choice, never silently include both.
+				families := map[string]bool{}
+				for _, address := range n.Addresses {
+					families[AddressFamily(address)] = true
+				}
+				if len(families) != 1 {
+					continue
+				}
+				for f := range families {
+					family = f
+				}
+			} else {
+				for _, address := range n.Addresses {
+					f := AddressFamily(address)
+					short := map[string]string{"ipv4": "v4", "ipv6": "v6", "dns": "域名"}[f]
+					if a.Name == base+"-"+short || a.Name == base+"-"+f || len(n.ID) >= 8 && a.Name == base+"-"+n.ID[:8]+"-"+f {
+						family = f
+						break
+					}
+				}
+				if family == "" {
+					continue
+				}
+			}
 		}
-		matches = append(matches, n)
+		matches = append(matches, aliasMatch{n, family})
 	}
 	if len(matches) > 1 {
-		exact := []Candidate{}
-		for _, n := range matches {
-			if a.Name == n.Name {
-				exact = append(exact, n)
+		exact := []aliasMatch{}
+		for _, m := range matches {
+			if a.Name == m.node.Name {
+				exact = append(exact, m)
 			}
 		}
 		if len(exact) == 1 {
@@ -53,10 +87,10 @@ func MatchAlias(a Alias, nodes []Candidate) (string, string) {
 		}
 	}
 	if len(matches) == 1 {
-		if a.Server != "" {
-			return EndpointReference(matches[0].ID, AddressFamily(strings.Trim(a.Server, "[]"))), "唯一协议、地址族与端点匹配"
+		if matches[0].family != "" {
+			return EndpointReference(matches[0].node.ID, matches[0].family), "唯一协议、地址族与端点匹配"
 		}
-		return "node:" + matches[0].ID, "唯一名称与协议匹配"
+		return "node:" + matches[0].node.ID, "唯一完整名称与协议匹配（该节点全部地址）"
 	}
 	if len(matches) > 1 {
 		return "", "匹配多个节点，请手动选择"

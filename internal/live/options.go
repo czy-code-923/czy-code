@@ -9,15 +9,16 @@ import (
 // ProtocolOptions are a bounded, versioned subset of native engine options.
 // Embedding keeps API, encrypted storage and Agent wire fields identical.
 type ProtocolOptions struct {
-	Cipher       string `json:"cipher,omitempty"`
-	SnellVersion int    `json:"snell_version,omitempty"`
-	SnellObfs    string `json:"snell_obfs,omitempty"`
-	SnellHost    string `json:"snell_host,omitempty"`
-	SnellMode    string `json:"snell_mode,omitempty"`
-	HY2Obfs      string `json:"hy2_obfs_password,omitempty"`
-	HysteriaObfs string `json:"hysteria_obfs_password,omitempty"`
-	UpMbps       int    `json:"up_mbps,omitempty"`
-	DownMbps     int    `json:"down_mbps,omitempty"`
+	ListenNetwork string `json:"listen_network,omitempty"`
+	Cipher        string `json:"cipher,omitempty"`
+	SnellVersion  int    `json:"snell_version,omitempty"`
+	SnellObfs     string `json:"snell_obfs,omitempty"`
+	SnellHost     string `json:"snell_host,omitempty"`
+	SnellMode     string `json:"snell_mode,omitempty"`
+	HY2Obfs       string `json:"hy2_obfs_password,omitempty"`
+	HysteriaObfs  string `json:"hysteria_obfs_password,omitempty"`
+	UpMbps        int    `json:"up_mbps,omitempty"`
+	DownMbps      int    `json:"down_mbps,omitempty"`
 }
 
 func (s Spec) snellVersion() int {
@@ -48,6 +49,9 @@ func OptionsCapable(version string) bool {
 	return major > 0 || minor >= 9
 }
 func (s Spec) validateOptions() error {
+	if s.ListenNetwork != "" && (s.Kind != "shadowsocks" || s.ListenNetwork != "tcp" && s.ListenNetwork != "udp" && s.ListenNetwork != "tcp,udp") {
+		return errors.New("native listen_network is only supported by Shadowsocks: tcp, udp or tcp,udp")
+	}
 	if s.HysteriaObfs != "" && (s.Kind != "hysteria" || len(s.HysteriaObfs) < 8 || len(s.HysteriaObfs) > 256 || strings.ContainsAny(s.HysteriaObfs, "\r\n\x00")) {
 		return errors.New("Hysteria v1 obfuscation requires 8-256 bytes and its own protocol")
 	}

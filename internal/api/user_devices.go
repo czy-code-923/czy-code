@@ -61,7 +61,7 @@ func (s *Server) devices(w http.ResponseWriter, r *http.Request) error {
 			return nil
 		}
 		var raw json.RawMessage
-		e := s.DB.QueryRow(r.Context(), `SELECT COALESCE(jsonb_agg(x),'[]') FROM(SELECT d.id,d.user_id,d.name,d.client_id,d.enabled,d.version,d.all_nodes,d.service_ids,d.created_at,d.last_subscription_at,d.last_connected_at,d.user_agent,CASE WHEN d.last_connected_at>now()-interval '7 days' THEN host(d.last_source_ip) ELSE NULL END source_ip,s.id subscription_id,COALESCE((SELECT sum(c.uplink+c.downlink) FROM traffic_cursors c WHERE c.tenant_id=d.tenant_id AND c.subject_kind='user' AND c.subject_id=d.id),0) raw_lifetime_bytes FROM user_devices d LEFT JOIN subscriptions s ON(s.tenant_id,s.device_id)=(d.tenant_id,d.id) WHERE d.tenant_id=$1 AND d.user_id=$2 ORDER BY d.created_at DESC LIMIT 200)x`, tenant, user).Scan(&raw)
+		e := s.DB.QueryRow(r.Context(), `SELECT COALESCE(jsonb_agg(x),'[]') FROM(SELECT d.id,d.user_id,d.name,d.client_id,d.enabled,d.version,d.all_nodes,d.service_ids,d.registration_source,d.device_os,d.os_version,d.device_model,(d.hwid_hash IS NOT NULL) hwid_registered,d.created_at,d.last_subscription_at,d.last_connected_at,d.user_agent,CASE WHEN d.last_connected_at>now()-interval '7 days' THEN host(d.last_source_ip) ELSE NULL END source_ip,s.id subscription_id,COALESCE((SELECT sum(c.uplink+c.downlink) FROM traffic_cursors c WHERE c.tenant_id=d.tenant_id AND c.subject_kind='user' AND c.subject_id=d.id),0) raw_lifetime_bytes FROM user_devices d LEFT JOIN subscriptions s ON(s.tenant_id,s.device_id)=(d.tenant_id,d.id) WHERE d.tenant_id=$1 AND d.user_id=$2 ORDER BY d.created_at DESC LIMIT 200)x`, tenant, user).Scan(&raw)
 		if e != nil {
 			return e
 		}
@@ -318,4 +318,3 @@ func equalDeviceServices(raw []byte, ids []string) bool {
 	slices.Sort(next)
 	return slices.Equal(previous, next)
 }
-

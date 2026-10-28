@@ -411,10 +411,13 @@ func (s *Server) createLiveTx(r *http.Request, tx pgx.Tx, b liveInput, created *
 	if e = tx.QueryRow(ctx, "SELECT id FROM hosts WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL FOR UPDATE", tenant, b.HostID).Scan(&host); e != nil {
 		return e
 	}
-	if live.Proxy(spec.Kind) && (spec.Kind != "shadowsocks" || spec.RequiresAdvanced()) {
+	if live.Proxy(spec.Kind) && (spec.Kind != "shadowsocks" || spec.RequiresAdvanced() || spec.RequiresV19()) {
 		var version string
 		if e = tx.QueryRow(ctx, "SELECT agent_version FROM hosts WHERE tenant_id=$1 AND id=$2", tenant, host).Scan(&version); e != nil {
 			return e
+		}
+		if spec.RequiresV19() && !live.V19Capable(version) {
+			return problem{409, "upgrade host to Agent 0.19.0 for native listener selection"}
 		}
 		if spec.RequiresV13() && !live.V13Capable(version) {
 			return problem{409, "upgrade host to Agent 0.13.0 for this protocol/transport"}
@@ -525,6 +528,9 @@ func (s *Server) liveToggle(w http.ResponseWriter, r *http.Request) error {
 			}
 			if hasFRPUDP(spec) && !engineUpdateCapable(version) {
 				return problem{409, "FRP UDP requires Agent 0.17 or newer"}
+			}
+			if spec.RequiresV19() && !live.V19Capable(version) {
+				return problem{409, "upgrade host to Agent 0.19.0 for native listener selection"}
 			}
 			if spec.RequiresV13() && !live.V13Capable(version) {
 				return problem{409, "upgrade host to Agent 0.13.0 for this protocol/transport"}
@@ -695,6 +701,9 @@ func (s *Server) liveSync(w http.ResponseWriter, r *http.Request, host string) e
 		if hasFRPUDP(v.Spec) && !engineUpdateCapable(agentVersion) {
 			v.Enabled = false
 		}
+		if v.Spec.RequiresV19() && !live.V19Capable(agentVersion) {
+			v.Enabled = false
+		}
 		if v.Spec.RequiresV13() && !live.V13Capable(agentVersion) {
 			v.Enabled = false
 		}
@@ -733,6 +742,9 @@ func (s *Server) liveSync(w http.ResponseWriter, r *http.Request, host string) e
 			var next live.Spec
 			if e = json.Unmarshal(raw, &next); e != nil {
 				return e
+			}
+			if next.RequiresV19() && !live.V19Capable(agentVersion) {
+				work[i].Enabled = false
 			}
 			if next.RequiresV13() && !live.V13Capable(agentVersion) {
 				work[i].Enabled = false
@@ -828,7 +840,7 @@ func (s *Server) siteOrigin(r *http.Request, share bool) (string, error) {
 }
 func (s *Server) subscriptionList(w http.ResponseWriter, r *http.Request) error {
 	var b json.RawMessage
-	e := s.DB.QueryRow(r.Context(), `SELECT COALESCE(jsonb_agg(x),'[]') FROM (SELECT id,name,user_id,profile_id,expires_at,revoked_at,created_at,version,(revoked_at IS NULL AND expires_at>now()) active,COALESCE((SELECT jsonb_agg(service_id) FROM subscription_services ss WHERE ss.tenant_id=subscriptions.tenant_id AND ss.subscription_id=subscriptions.id),'[]') service_ids,CASE WHEN user_id IS NULL THEN 'shared' ELSE 'user' END mode FROM subscriptions WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT 200) x`, tenant).Scan(&b)
+	e := s.DB.QueryRow(r.Context(), `SELECT COALESCE(jsonb_agg(x),'[]') FROM (SELECT s.id,s.name,s.user_id,s.device_id,s.profile_id,s.expires_at,s.revoked_at,s.created_at,s.version,(s.revoked_at IS NULL AND s.expires_at>now()) active,COALESCE((SELECT jsonb_agg(l.id ORDER BY l.id) FROM live_services l WHERE l.tenant_id=s.tenant_id AND l.delete_requested_at IS NULL AND ((s.user_id IS NULL AND EXISTS(SELECT 1 FROM subscription_services ss WHERE ss.tenant_id=s.tenant_id AND ss.subscription_id=s.id AND ss.service_id=l.id)) OR (s.user_id IS NOT NULL AND EXISTS(SELECT 1 FROM user_group_services gs JOIN user_group_members gm USING(tenant_id,group_id) WHERE gm.tenant_id=s.tenant_id AND gm.user_id=s.user_id AND gs.service_id=l.id))) AND (s.device_id IS NULL OR (l.managed_users AND EXISTS(SELECT 1 FROM user_devices d WHERE d.tenant_id=s.tenant_id AND d.id=s.device_id AND (d.all_nodes OR d.service_ids ? l.id))))),'[]') service_ids,CASE WHEN s.user_id IS NULL THEN 'shared' ELSE 'user' END mode,CASE WHEN s.user_id IS NULL THEN 'shared_selection' WHEN s.device_id IS NULL THEN 'user_groups' ELSE 'device_permission' END membership_mode FROM subscriptions s WHERE s.tenant_id=$1 ORDER BY s.created_at DESC LIMIT 200) x`, tenant).Scan(&b)
 	if e != nil {
 		return e
 	}

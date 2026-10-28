@@ -112,13 +112,16 @@ func (s *Server) importPolicy(w http.ResponseWriter, r *http.Request) error {
 	}
 	mappings := []map[string]string{}
 	known := map[string]bool{"PROXY": true}
+	aliases := map[string]bool{}
 	for _, g := range result.Policy.Groups {
 		known[g.Name] = true
 	}
 	for _, a := range result.Aliases {
+		aliases[a.Name] = true
 		ref, reason := clientpolicy.MatchAlias(a, nodes)
 		mappings = append(mappings, map[string]string{"name": a.Name, "protocol": a.Protocol, "reference": ref, "match_reason": reason})
 		if ref != "" {
+			known[a.Name] = true
 			result.Warnings = append(result.Warnings, "节点别名 "+a.Name+" → "+ref)
 		}
 	}
@@ -126,6 +129,15 @@ func (s *Server) importPolicy(w http.ResponseWriter, r *http.Request) error {
 	for _, ref := range result.Policy.References() {
 		if known[ref] || clientpolicy.Dynamic(ref) {
 			continue
+		}
+		if !aliases[ref] {
+			aliases[ref] = true
+			matched, reason := clientpolicy.MatchAlias(clientpolicy.Alias{Name: ref}, nodes)
+			mappings = append(mappings, map[string]string{"name": ref, "protocol": "", "reference": matched, "match_reason": reason})
+			if matched != "" {
+				known[ref] = true
+				continue
+			}
 		}
 		if !slices.Contains(unresolved, ref) {
 			unresolved = append(unresolved, ref)

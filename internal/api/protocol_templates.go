@@ -32,6 +32,7 @@ func (s *Server) protocolTemplates(w http.ResponseWriter, r *http.Request) error
 	}
 	for _, t := range templates {
 		kind := t["kind"].(string)
+		t["network_note"] = live.NetworkDescription(kind)
 		if _, ok := t["clients"]; !ok {
 			t["clients"] = []string{"sing-box", "mihomo", "shadowrocket"}
 			if kind == "vless" || kind == "vmess" || kind == "trojan" || kind == "shadowsocks" {
@@ -53,7 +54,8 @@ func (s *Server) protocolTemplates(w http.ResponseWriter, r *http.Request) error
 			t["credential"] = "password (auto-generated or 8-256 bytes)"
 		}
 		if kind == "shadowsocks" {
-			t["credential"] = "2022 uses a 32-byte base64 key; classic AEAD uses an 8-256 byte password"
+			t["credential"] = "2022 AES-128 uses a 16-byte base64 key; other 2022 ciphers use 32 bytes; classic AEAD uses an 8-256 byte password"
+			t["listen_networks"] = []string{"tcp,udp", "tcp", "udp"}
 			t["ciphers"] = []string{"2022-blake3-aes-256-gcm", "2022-blake3-aes-128-gcm", "2022-blake3-chacha20-poly1305", "aes-128-gcm", "aes-256-gcm", "chacha20-ietf-poly1305"}
 		}
 		if t["certificate"] == true {

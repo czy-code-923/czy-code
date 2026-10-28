@@ -47,4 +47,3 @@ Telegram 增加只读 /devices；/hosts 显示主机套餐余额与采样状态�
 控制面、前端和 Agent 同升 0.18；迁移 023 增量建立计量和设备数据，不清除节点、订阅与机器人配置。新装 Linux / Windows amd64、arm64 使用 README 的固定版本校验安装器。现有宝塔 /opt/harbor 布局可使用 starhub-v018-update.zip；通用安装不要运行此专用升级器，先备份数据库及私有环境，再按安装文档替换对应组件。
 
 验证包括 PostgreSQL API、游标幂等、周期 max 与校准、倍率响应头、设备权限和撤销、分页、通知去重、真实 Windows 网卡计数、前端交互及 Linux / Windows 原生内核转发。发布流程另在全新 GitHub VM 实测一键安装、Agent 接入、官方内核切换、设备代理传输与受控卸载；独立 API 测试二进制在空目录运行，防止漏打包测试文件。
-

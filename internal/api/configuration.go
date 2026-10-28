@@ -263,6 +263,9 @@ func (s *Server) liveUpdate(w http.ResponseWriter, r *http.Request) error {
 	if e = tx.QueryRow(r.Context(), "SELECT agent_version FROM hosts WHERE tenant_id=$1 AND id=$2 FOR UPDATE", tenant, host).Scan(&av); e != nil {
 		return e
 	}
+	if spec.RequiresV19() && !live.V19Capable(av) {
+		return problem{409, "upgrade host to Agent 0.19.0 for native listener selection"}
+	}
 	if spec.RequiresV13() && !live.V13Capable(av) {
 		return problem{409, "upgrade host to Agent 0.13.0 for this protocol/transport"}
 	}
@@ -295,6 +298,11 @@ func (s *Server) liveUpdate(w http.ResponseWriter, r *http.Request) error {
 		if e = rows.Scan(&data, &parentVersion); e != nil {
 			rows.Close()
 			return e
+		}
+		if spec.RequiresV19() && !live.V19Capable(parentVersion) {
+			rows.Close()
+
+			return problem{409, "upgrade host to Agent 0.19.0 for native listener selection"}
 		}
 		if spec.RequiresV13() && !live.V13Capable(parentVersion) {
 			rows.Close()

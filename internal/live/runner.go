@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -286,17 +285,8 @@ func (r *Runner) Reconcile(ctx context.Context, work []Work) error {
 		p.engine = engine
 		// Port preflight never changes network settings. Actual bind remains the authority.
 		if len(w.Members) == 0 && w.Spec.Kind != "frpc" {
-			ln, e := net.Listen("tcp", net.JoinHostPort(w.Spec.Listen, portString(w.Spec.Port)))
-			if e != nil {
+			if e := preflightAdditional(nil, []Work{w}); e != nil {
 				continue
-			}
-			ln.Close()
-			if w.Spec.Kind == "shadowsocks" || w.Spec.Kind == "hysteria2" || w.Spec.Kind == "tuic" || w.Spec.Kind == "snell" {
-				conn, e := net.ListenPacket("udp", net.JoinHostPort(w.Spec.Listen, portString(w.Spec.Port)))
-				if e != nil {
-					continue
-				}
-				conn.Close()
 			}
 		}
 		args := []string{"-c", "config.json"}

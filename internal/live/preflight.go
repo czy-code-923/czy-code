@@ -70,6 +70,9 @@ func portNetworks(s Spec) []string {
 		return []string{"udp"}
 	}
 	if s.Kind == "shadowsocks" {
+		if s.ListenNetwork == "tcp" || s.ListenNetwork == "udp" {
+			return []string{s.ListenNetwork}
+		}
 		return []string{"tcp", "udp"}
 	}
 	return []string{"tcp"}

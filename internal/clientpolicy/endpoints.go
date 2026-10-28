@@ -7,7 +7,7 @@ import (
 
 func AddressFamily(address string) string {
 	if ip, e := netip.ParseAddr(address); e == nil {
-		if ip.Is4() {
+		if ip.Unmap().Is4() {
 			return "ipv4"
 		}
 		return "ipv6"

@@ -157,12 +157,12 @@ func (s Spec) renderXray() (string, map[string][]byte, error) {
 		settings["accounts"] = accounts
 		if s.Kind == "socks" {
 			settings["auth"] = "password"
-			settings["udp"] = false
+			settings["udp"] = true
 		}
 	} else if s.Kind == "shadowsocks" {
 		settings["method"] = s.SSMethod()
 		settings["password"] = s.Password
-		settings["network"] = "tcp,udp"
+		settings["network"] = s.nativeListenNetwork()
 	} else {
 		settings["users"] = []any{user}
 	}

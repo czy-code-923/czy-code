@@ -29,7 +29,7 @@ def main():
             if check():return
             time.sleep(1)
         raise RuntimeError('Timeout: '+description)
-    assert api('session')['version']=='0.18.0'
+    assert api('session')['version']=='0.19.0'
     site=api('site');assert site['domain']=='' and site['ip_origin']=='http://127.0.0.1:18080'
     assert api('agent/releases/linux-amd64')['size']>1000000
     print('Fresh one-command control installation and no-domain IP access: PASS',flush=True)
@@ -41,7 +41,7 @@ def main():
     result=subprocess.run(['sh','-c',command],stdout=subprocess.DEVNULL)
     if result.returncode:raise RuntimeError('Agent bootstrap failed; enrollment ticket omitted')
     def connected():
-        return any(h['id']==host['id'] and h['agent_version']=='0.18.0' and h['online'] and h['cleanup_capable'] for h in api('hosts'))
+        return any(h['id']==host['id'] and h['agent_version']=='0.19.0' and h['online'] and h['cleanup_capable'] for h in api('hosts'))
     wait(connected,'Agent registration and verified heartbeat')
     wait(lambda:any(k['engine']=='sing-box' and k['ready'] for k in api('hosts/'+host['id']+'/kernels')),'Native kernel capabilities')
     agent_env=Path('/etc/harbor-agent/agent.env')
@@ -79,12 +79,25 @@ def main():
     user=api('proxy-users',{'name':'CI device owner','enabled':True,'expires_at':(datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(days=1)).isoformat(),'quota_bytes':10**9,'billing_mode':'both','multiplier_milli':1500,'max_devices':1})
     api('user-groups',{'name':'CI device grant','user_ids':[user['id']],'service_ids':[managed['id']],'max_devices':2})
     device_path='proxy-users/'+user['id']+'/devices'
-    device=api(device_path,{'name':'CI client','client_id':'sing-box','all_nodes':True},201)
-    api(device_path,{'name':'CI over limit','client_id':'sing-box'},409)
+    subscription=api('subscriptions',{'name':'CI stable HWID subscription','days':1,'user_id':user['id']},201)
+    device_url=subscription['url']+'?client=sing-box'
+    request_headers={'User-Agent':'Starhub-CI/device-client','X-Hwid':'ci-client-installation-0123456789','X-Device-Os':'Linux','X-Ver-Os':'CI','X-Device-Model':'Disposable CI VM'}
+    def download(headers=request_headers):
+        try:
+            with urllib.request.urlopen(urllib.request.Request(device_url,headers=headers),timeout=15) as response:
+                return response.status,response.headers,json.load(response)
+        except urllib.error.HTTPError as error:
+            return error.code,error.headers,None
+    assert download({'User-Agent':'ClashVerge/CI'})[0]==409
+    status,headers,_=download();assert status==503 and headers['Retry-After']=='3'
+    status,headers,_=download({**request_headers,'X-Hwid':'second-ci-installation-0123456789'});assert status==403 and headers['X-Hwid-Max-Devices-Reached']=='true'
+    device=api(device_path)[0]
+    assert device['registration_source']=='subscription_hwid' and device['device_os']=='Linux'
+    device['url']=device_url
     def deployed():
         return any(v['id']==managed['id'] and v['state']=='running' and v['reported_version']==v['version'] for v in api('live'))
     wait(deployed,'Device-specific identity deployment')
-    with urllib.request.urlopen(urllib.request.Request(device['url'],headers={'User-Agent':'Starhub-CI/device-client'}),timeout=15) as response:
+    with urllib.request.urlopen(urllib.request.Request(device['url'],headers=request_headers),timeout=15) as response:
         exported=json.load(response)
     outbound=next(v for v in exported['outbounds'] if v['type']=='vmess')
     outbound['tag']='device-proxy'
@@ -118,7 +131,7 @@ def main():
                         rows=api('access-records/page?device_id='+device['id'])['items']
                         return any(v['source_ip']=='127.0.0.1' and v['total_bytes'] is not None and v['total_bytes']>0 for v in rows)
                     wait(recorded,'Connection metadata with device and actual bytes')
-                    with urllib.request.urlopen(device['url'],timeout=15) as response:
+                    with urllib.request.urlopen(urllib.request.Request(device['url'],headers=request_headers),timeout=15) as response:
                         fields=dict(part.strip().split('=',1) for part in response.headers['Subscription-Userinfo'].split(';'))
                     assert int(fields['upload'])+int(fields['download'])>=bill['used_bytes']
                     current=next(v for v in api(device_path) if v['id']==device['id'])
@@ -131,6 +144,9 @@ def main():
                     except subprocess.TimeoutExpired:client.kill();client.wait()
     finally:target.shutdown();target.server_close();thread.join(timeout=5)
     print('Real device transfer, multiplier billing, metadata, subscription usage and revocation: PASS',flush=True)
+    assert download()[0]==403
+    print('Automatic HWID registration, unsupported/over-limit feedback and disabled-client rejection: PASS',flush=True)
+
 
     api('hosts/'+host['id']+'/retirement',{},202)
     api('hosts/'+host['id']+'/rotate-agent-token',{},404)
@@ -139,7 +155,17 @@ def main():
     wait(lambda:all(not Path(path).exists() for path in paths),'Agent files and units fully removed',30)
     assert all(v['id']!=row['id'] for v in api('live'))
     api('agent/heartbeat',{},401,agent=credentials)
-    assert api('session')['version']=='0.18.0' and root.joinpath('control.env').exists()
+    assert api('session')['version']=='0.19.0' and root.joinpath('control.env').exists()
     subprocess.run(['docker','exec','starhub-control-db','pg_isready','-U','harbor','-d','harbor'],check=True,stdout=subprocess.DEVNULL)
     print('Remote Agent files and control-side deployment data removed; manager and database preserved: PASS',flush=True)
+    # This is an isolated CI VM. Verify both safe uninstall and explicit purge.
+    tool=distribution/'scripts/uninstall.py'
+    subprocess.run([sys.executable,str(tool),'--layout','quickstart','--apply'],check=True)
+    assert root.joinpath('control.env').exists() and not root.joinpath('bin').exists()
+    subprocess.run(['docker','volume','inspect','starhub-control-pgdata'],check=True,stdout=subprocess.DEVNULL)
+    subprocess.run([sys.executable,str(tool),'--layout','quickstart','--apply','--purge-data'],check=True)
+    assert not root.exists()
+    assert subprocess.run(['docker','volume','inspect','starhub-control-pgdata'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode!=0
+    print('One-command panel uninstall preserves data by default; explicit purge is bounded: PASS',flush=True)
+
 if __name__=='__main__':main()

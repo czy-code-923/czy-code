@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -97,6 +98,16 @@ func (s *Server) inspectSubscription(w http.ResponseWriter, r *http.Request) err
 	if len(sealed) == 0 {
 		return problem{409, "legacy link must be rotated before preview"}
 	}
+	var hwidRequired bool
+	var maxDevices int
+	if user != "" {
+		if e = s.DB.QueryRow(r.Context(), `SELECT (s.device_id IS NULL AND `+deviceLimitSQL+`>0),`+deviceLimitSQL+` FROM subscriptions s JOIN proxy_users u ON(u.tenant_id,u.id)=(s.tenant_id,s.user_id) WHERE s.tenant_id=$1 AND s.id=$2`, tenant, id).Scan(&hwidRequired, &maxDevices); e != nil {
+			return e
+		}
+		if hwidRequired && r.PathValue("view") == "config" {
+			return problem{409, "此订阅按客户端 x-hwid 自动登记并生成独立身份，管理员配置预览不会创建虚假设备；请用实际客户端导入后检查设备列表"}
+		}
+	}
 	token, e := live.Open(s.MasterKey, sealed)
 	if e != nil {
 		return e
@@ -114,7 +125,7 @@ func (s *Server) inspectSubscription(w http.ResponseWriter, r *http.Request) err
 			query.Set(key, value)
 		}
 	}
-	preview := httptest.NewRequest("GET", origin+"/s/"+string(token)+"?"+query.Encode(), nil).WithContext(r.Context())
+	preview := httptest.NewRequest("GET", origin+"/s/"+string(token)+"?"+query.Encode(), nil).WithContext(context.WithValue(r.Context(), subscriptionInspectionKey{}, true))
 	preview.SetPathValue("token", string(token))
 	preview.Header.Set("User-Agent", r.Header.Get("User-Agent"))
 	recorder := httptest.NewRecorder()
@@ -145,8 +156,10 @@ func (s *Server) inspectSubscription(w http.ResponseWriter, r *http.Request) err
 		reason, stage := "订阅已生成，可导入所选客户端；客户端本机合并配置需另行核对", "ready"
 		if !ready {
 			reason, stage = "用户流量额度已用尽，当前输出为拒绝连接配置", "quota"
+		} else if hwidRequired {
+			reason = "订阅链接可分享；客户端必须回传有效 x-hwid，首次导入自动登记设备，超过设备上限会明确拒绝。不支持 HWID 的普通 Clash/Mihomo 无法在设备限制开启时导入"
 		}
-		send(w, 200, map[string]any{"ready": ready, "stage": stage, "status": 200, "reason": reason, "content_type": recorder.Header().Get("Content-Type"), "excluded_nodes": recorder.Header().Get("X-Starhub-Excluded-Nodes"), "warnings": recorder.Header().Get("X-Starhub-Policy-Warnings")})
+		send(w, 200, map[string]any{"ready": ready, "stage": stage, "status": 200, "reason": reason, "hwid_required": hwidRequired, "max_devices": maxDevices, "content_type": recorder.Header().Get("Content-Type"), "excluded_nodes": recorder.Header().Get("X-Starhub-Excluded-Nodes"), "warnings": recorder.Header().Get("X-Starhub-Policy-Warnings")})
 		return nil
 	}
 	var config any

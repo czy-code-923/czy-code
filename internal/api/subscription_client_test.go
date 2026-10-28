@@ -13,6 +13,9 @@ func TestSubscriptionClientPrecedence(t *testing.T) {
 		{"", "Mozilla/5.0", "mihomo", "mihomo"},
 		{"", "", "", "sing-box"},
 		{"", "sing-box/1.14", "mihomo", "sing-box"},
+		{"", "Happ/fixture", "sing-box", "base64"},
+		{"", "v2RayTun/fixture", "sing-box", "base64"},
+		{"?client=mihomo", "Happ/fixture", "sing-box", "mihomo"},
 		{"?client=clash-verge-rev", "", "", "mihomo"},
 	} {
 		r := httptest.NewRequest("GET", "http://localhost/s/test"+c.query, nil)
@@ -20,6 +23,14 @@ func TestSubscriptionClientPrecedence(t *testing.T) {
 		got, e := selectedClient(r, c.profile)
 		if e != nil || got.Format != c.want {
 			t.Fatalf("%+v got %+v %v", c, got, e)
+		}
+	}
+}
+
+func TestPolicyAddressFamilyUsesCanonicalIP(t *testing.T) {
+	for address, family := range map[string]string{"::ffff:192.0.2.1": "ipv4", "2001:db8::1": "ipv6", "192.0.2.1": "ipv4", "node.example.test": "dns"} {
+		if policyFamily(address) != family {
+			t.Fatalf("%s family mismatch", address)
 		}
 	}
 }

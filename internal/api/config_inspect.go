@@ -83,6 +83,9 @@ func inspectInbound(engine string, m map[string]any) inspectedInbound {
 	if kind == "shadowsocks" {
 		in["cipher"] = settings["method"]
 		in["password"] = settings["password"]
+		if network := text(settings["network"]); network != "" {
+			in["listen_network"] = network
+		}
 	}
 	if kind == "snell" {
 		in["password"] = settings["psk"]

@@ -239,7 +239,8 @@ func (p Policy) Resolve(nodes []Node, bindings map[string]string) (Result, error
 	for _, g := range p.Groups {
 		names[g.Name] = true
 	}
-	needsProxy := slices.Contains(p.References(), "PROXY") || len(p.Rules) == 0 && len(p.Groups) == 0
+	hasDefaultRule := len(p.Rules) > 0 && strings.HasPrefix(p.Rules[len(p.Rules)-1], "MATCH,")
+	needsProxy := slices.Contains(p.References(), "PROXY") || len(p.Groups) == 0 && !hasDefaultRule
 	if !names["PROXY"] && needsProxy {
 		p.Groups = append(p.Groups, Group{Name: "PROXY", Type: "select", Proxies: []string{"ALL"}})
 		names["PROXY"] = true
@@ -254,6 +255,33 @@ func (p Policy) Resolve(nodes []Node, bindings map[string]string) (Result, error
 			return []string{ref}
 		}
 		tags := []string{}
+		if !Dynamic(ref) && bindings[ref] == "" {
+			// A generated endpoint tag is more precise than another node's display
+			// name. Legacy names must identify one node, even if it has two IPs.
+			for _, n := range nodes {
+				if ref == n.Tag && !slices.Contains(tags, n.Tag) {
+					tags = append(tags, n.Tag)
+				}
+			}
+			if len(tags) > 0 {
+				return tags
+			}
+			ids := map[string]bool{}
+			for _, n := range nodes {
+				if n.Name == ref {
+					ids[n.ID] = true
+				}
+			}
+			if len(ids) != 1 {
+				return nil
+			}
+			for _, n := range nodes {
+				if ids[n.ID] && !slices.Contains(tags, n.Tag) {
+					tags = append(tags, n.Tag)
+				}
+			}
+			return tags
+		}
 		for _, n := range nodes {
 			if id, family, ok := EndpointIdentity(ref); ok {
 				if id == n.ID && family == n.Family {
@@ -267,7 +295,7 @@ func (p Policy) Resolve(nodes []Node, bindings map[string]string) (Result, error
 				}
 				continue
 			}
-			if ref == "ALL" || ref == n.Tag || ref == n.Name || bindings[ref] == n.ID || ref == "node:"+n.ID || ref == "host:"+n.Host || ref == "protocol:"+n.Protocol || ref == "family:"+n.Family {
+			if ref == "ALL" || ref == "node:"+n.ID || ref == "host:"+n.Host || ref == "protocol:"+n.Protocol || ref == "family:"+n.Family {
 				if !slices.Contains(tags, n.Tag) {
 					tags = append(tags, n.Tag)
 				}

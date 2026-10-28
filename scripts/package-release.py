@@ -16,12 +16,12 @@ import urllib.request
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.18.0"
-PREVIOUS = "0.17.0"
+VERSION = "0.19.0"
+PREVIOUS = "0.18.0"
 REPOSITORY = "czy-code-923/czy-code"
 BASE = f"https://github.com/{REPOSITORY}/releases/download/v{VERSION}-distribution/"
 OLD_BASE = f"https://github.com/{REPOSITORY}/releases/download/v{PREVIOUS}-distribution/"
-PINNED = {'harbor-0.17.0-linux-amd64.zip': 'd69fa6fc9e0697e24ae2fdd944209ab69201aa10284ac4d148b79fbfd8d44cd0', 'harbor-0.17.0-linux-arm64.zip': '674507cf3fdfe50b20a057551f2dbe4c3122d80ad9554f75d304c452b6c61b82', 'harbor-0.17.0-windows-amd64.zip': '61e829e3743fcf1673d194bfa225fedca39b7de8ef7ad8999e2b0f8d655d1b22', 'harbor-0.17.0-windows-arm64.zip': '6ca3ea004389eb87e49f49f76f098f39c5ba3852f93cbd8aaf05b9a277b4ff18', 'install-starhub.ps1': '853b53cb50580e6bc4c493ff66ec0ea24d7aef943d3a509bca2cffb980de02e5', 'install-starhub.sh': '64e7ea23a71926748b3d6ffed43258bf0c3e38a9c899316fe368c73def8eb2cf', 'starhub-v017-update.zip': 'cf39675b3d0d394bafaecc0e66f5f343559d607da2332e47be5dbb40b8f4afeb'}
+PINNED = {'harbor-0.18.0-linux-amd64.zip': '7920470f3d51d34b3d915f7bef6ddb661299a9384e1dbe532db2edf8562c5c87', 'harbor-0.18.0-linux-arm64.zip': '68f455d72adbe47c55817b677a4e2c068e7980a7e9709a767fc6a8be9da10e4b', 'harbor-0.18.0-windows-amd64.zip': '7f57e4299907eacb2db2eb2ddb35ee4214ec92222992b282a7e9045bf5913a5f', 'harbor-0.18.0-windows-arm64.zip': '7f7d31d4c6294e4a30fe23a68fbf62b8753095b2a869d260fb8e5841852add0a', 'install-starhub.ps1': 'f21c276c7c3353442e0e11c0513f7ca9b20b1df5f2eaa956080f2bfb5309a91b', 'install-starhub.sh': '897859a96fe8e92562c43353cbfa02eed92d80b360c2ac55c004093b76317b10', 'starhub-v018-update.zip': 'ddb8e4df62fafa927ea023c4b5b1893993272b55a8050f57dbea24e9ee3827d0'}
 ENGINE_VERSIONS = {"sing-box": "v1.14.4", "xray": "v26.10.21", "frp": "v0.71.1"}
 
 
@@ -102,10 +102,18 @@ def main():
     if not os.environ.get("TEST_DATABASE_URL"):
         raise RuntimeError("Release packaging requires PostgreSQL-backed standalone API verification")
     subprocess.run([str(api_tests), "-test.count=1"], cwd=clean, check=True)
-    update = out / "starhub-v018-update.zip"
-    with zipfile.ZipFile(previous("starhub-v017-update.zip")) as old, zipfile.ZipFile(update, "w", zipfile.ZIP_DEFLATED) as archive:
-        apply = old.read("apply.py").decode("utf-8").replace("v017", "v018").replace("V017", "V018").replace(PREVIOUS, VERSION)
+    update = out / "starhub-v019-update.zip"
+    with zipfile.ZipFile(previous("starhub-v018-update.zip")) as old, zipfile.ZipFile(update, "w", zipfile.ZIP_DEFLATED) as archive:
+        apply = old.read("apply.py").decode("utf-8").replace("v018", "v019").replace("V018", "V019").replace(PREVIOUS, VERSION)
+        marker = "run('systemctl','start','harbor-control')"
+        install_tools = "\n".join("    shutil.copyfile(stage/'"+name+"',root/'"+name+"');(root/'"+name+"').chmod(0o700)" for name in ("uninstall.py", "admin-token.py")) + "\n    "
+        if marker not in apply:
+            raise RuntimeError("Expected safe updater tool installation point is missing")
+        apply = apply.replace("    " + marker, install_tools + marker, 1)
+        compile(apply, "apply.py", "exec")
         archive.writestr("apply.py", apply)
+        for name in ("uninstall.py", "admin-token.py"):
+            archive.write(ROOT / "scripts" / name, name)
         archive.write(api_tests, "api-tests")
         for name in ("harbor-control", "harbor-agent", "harbor-firewall", "harbor-agent-cleanup"):
             archive.write(binaries["linux-amd64"] / name, name)

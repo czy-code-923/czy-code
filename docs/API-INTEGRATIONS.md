@@ -1,4 +1,6 @@
-# 星枢 API 与外部集成（0.18）
+# 星枢 API 与外部集成（0.19）
+
+0.19 修复订阅动态成员，新增客户端 X-Hwid 自动识别与标准错误响应；SS 增加 listen_network 字段，需要 Agent 0.19。详见 [本版说明](WORKFLOW-v019.md)。
 
 0.18 增加主机套餐计量 / 校准、用户倍率与方向、设备 CRUD / 专属订阅 / 节点权限、连接元数据分页与 Telegram 统计。参数和资源边界见 [0.18 API 说明](WORKFLOW-v018.md#api--telegram) 及 [OpenAPI](openapi.json)。设备名单权限与读取订阅密钥权限独立，外部面板应只申请实际需要的 scopes。
 

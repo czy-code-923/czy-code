@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "星枢 · VPS 多机管理 API",
-    "version": "0.18.0",
+    "version": "0.19.0",
     "description": "Self-workspace API for host agents, proxy protocols, user quotas and client subscriptions. Bearer administrator token or expiring scoped xs_ API key. No arbitrary shell; privileged gateway work and API key administration remain root-only."
   },
   "servers": [
@@ -6339,7 +6339,7 @@
     },
     "/api/v1/proxy-users/{id}/devices": {
       "get": {
-        "summary": "List registered device credentials and self-reported client metadata; devices:read",
+        "summary": "List automatically identified HWID clients and legacy devices; devices:read; never returns the HWID hash or credentials",
         "parameters": [
           {
             "name": "id",
@@ -6370,7 +6370,7 @@
         }
       },
       "post": {
-        "summary": "Register per-device credentials and subscription; devices:write and devices:links",
+        "summary": "Legacy/manual independent identity API; primary flow automatically registers X-Hwid clients on the stable user subscription URL",
         "parameters": [
           {
             "name": "id",
@@ -8071,6 +8071,15 @@
           },
           "clear_hysteria_obfs": {
             "type": "boolean"
+          },
+          "listen_network": {
+            "type": "string",
+            "enum": [
+              "tcp,udp",
+              "tcp",
+              "udp"
+            ],
+            "description": "Shadowsocks native OS listener networks, separate from transport framing. Absent defaults to TCP+UDP. Requires Agent 0.19."
           }
         }
       },

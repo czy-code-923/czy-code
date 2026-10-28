@@ -51,7 +51,7 @@ def main():
     if os.name=='nt':
         identity=run('whoami',capture_output=True,text=True).stdout.strip()
         run('icacls',str(root),'/inheritance:r','/grant:r',identity+':(OI)(CI)F','*S-1-5-18:(OI)(CI)F','*S-1-5-32-544:(OI)(CI)F',stdout=subprocess.DEVNULL)
-    shutil.copytree(source/'bin',root/'bin');shutil.copytree(source/'web/dist',root/'web')
+    shutil.copyfile(source/'scripts/uninstall.py',root/'uninstall.py');shutil.copyfile(source/'scripts/admin-token.py',root/'admin-token.py');shutil.copytree(source/'bin',root/'bin');shutil.copytree(source/'web/dist',root/'web')
     if os.name!='nt':
         for binary in (root/'bin').iterdir():binary.chmod(0o755)
     distribution=json.loads((source/'scripts/quickstart-distribution.json').read_text(encoding='utf-8'))

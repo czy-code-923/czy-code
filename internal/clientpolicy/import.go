@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 type Alias struct {
@@ -233,6 +235,19 @@ func Import(source string) (ImportResult, error) {
 			r.Warnings = append(r.Warnings, "已识别节点别名；全部密码、UUID、私钥和原始节点定义已丢弃")
 		}
 	}
+	aliasNames := map[string]bool{}
+	for _, alias := range r.Aliases {
+		valid := strings.TrimSpace(alias.Name) != "" && len([]rune(alias.Name)) <= 256 && utf8.ValidString(alias.Name) && !strings.Contains(alias.Name, ",")
+		for _, c := range alias.Name {
+			if unicode.IsControl(c) {
+				valid = false
+			}
+		}
+		if !valid || aliasNames[alias.Name] {
+			return r, errors.New("导入节点名称不能为空或重复；请先为每个节点设置唯一名称")
+		}
+		aliasNames[alias.Name] = true
+	}
 	for i := range r.Policy.Groups {
 		name := r.Policy.Groups[i].Name
 		replacement := name
@@ -272,6 +287,7 @@ func Import(source string) (ImportResult, error) {
 func array(v any) []any { a, _ := v.([]any); return a }
 func str(v any) string  { s, _ := v.(string); return s }
 func normalizeKind(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
 	switch s {
 	case "ss":
 		return "shadowsocks"

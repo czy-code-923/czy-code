@@ -86,10 +86,10 @@ func (s *Server) cors(next http.Handler) http.Handler {
 			return
 		}
 		w.Header().Set("Access-Control-Allow-Origin", origin)
-		w.Header().Set("Access-Control-Expose-Headers", "Subscription-Userinfo,Profile-Title,Profile-Update-Interval,Content-Disposition")
+		w.Header().Set("Access-Control-Expose-Headers", "Subscription-Userinfo,Profile-Title,Profile-Update-Interval,Content-Disposition,Retry-After,X-Hwid-Active,X-Hwid-Not-Supported,X-Hwid-Max-Devices-Reached,X-Hwid-Limit,X-Starhub-Device-Error,X-Starhub-Device-Recognition,X-Starhub-Pending-Nodes")
 		if r.Method == "OPTIONS" {
 			w.Header().Set("Access-Control-Allow-Methods", "GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Authorization,Content-Type,Idempotency-Key")
+			w.Header().Set("Access-Control-Allow-Headers", "Authorization,Content-Type,Idempotency-Key,X-Hwid,X-Device-Os,X-Ver-Os,X-Device-Model")
 			w.Header().Set("Access-Control-Max-Age", "600")
 			w.WriteHeader(204)
 			return

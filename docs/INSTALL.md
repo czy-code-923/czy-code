@@ -131,3 +131,39 @@ sudo python3 /opt/harbor/domain-sync.py \
 - Linux Agent：systemctl stop harbor-agent；Windows停止HarborAgent任务或前台Agent，会清理受管引擎。
 - 域名失败检查journalctl、DNS、证书和nginx -t。修复后可删除该自有vhost的.state.json解除退避，不删除其他站点。
 - 恢复必须同时具备数据库与原MASTER_KEY；生成新密钥不能解密旧服务。
+
+
+## 获取管理员登录令牌与卸载
+
+只在自己的本机 / SSH 终端查看已有令牌，不要把输出上传到 GitHub、日志或聊天。不会重置令牌：
+
+```bash
+# 本次宝塔布局
+sudo sed -n 's/^ADMIN_TOKEN=//p' /etc/harbor/control.env
+# 一键新装 Linux 布局
+sudo sed -n 's/^ADMIN_TOKEN=//p' /opt/starhub-control/control.env
+# 源码 / 自选私有环境文件：只打印 ADMIN_TOKEN
+python3 scripts/admin-token.py --env /ABSOLUTE/PRIVATE/.env
+```
+
+Windows PowerShell（当前用户一键安装）：
+
+```powershell
+Get-Content -LiteralPath "$env:ProgramData\StarhubControl\control.env" | Where-Object { $_.StartsWith('ADMIN_TOKEN=') } | ForEach-Object { $_.Substring(12) }
+```
+
+一键卸载面板运行组件，**默认保留数据库卷、私有配置和所有备份**。下面是项目脚本，下载后可先去掉 --apply 查看计划：
+
+```bash
+curl -fL https://raw.githubusercontent.com/czy-code-923/czy-code/main/scripts/uninstall.py -o /tmp/starhub-uninstall.py && sudo python3 /tmp/starhub-uninstall.py --apply
+```
+
+Windows（需要 Python 3；只卸载所选安装目录和对应的当前用户任务）：
+
+```powershell
+Invoke-WebRequest https://raw.githubusercontent.com/czy-code-923/czy-code/main/scripts/uninstall.py -OutFile "$env:TEMP\starhub-uninstall.py"; python "$env:TEMP\starhub-uninstall.py" --apply
+```
+
+`--purge-data` 会**不可恢复地删除该项目数据库卷和私有配置**，必须自行确认备份；默认不执行。保留的数据会阻止新装脚本覆盖，恢复请走安装文档的备份恢复流程。宝塔已有域名反代在宝塔中单独关闭；Nginx、其他网站、Let's Encrypt、Docker、系统防火墙和其他 VPS 上的 Agent 不会被删除。先从面板逐台退役远程 Agent，再卸载总管理端。
+
+[网络 / 封装语义与协议核验](PROTOCOLS-v019.md) · [完整卸载脚本](../scripts/uninstall.py)

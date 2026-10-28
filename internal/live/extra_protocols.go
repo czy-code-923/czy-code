@@ -86,7 +86,7 @@ func (s Spec) extraClient(tag string) (map[string]any, map[string]any, string, e
 	if kind == "socks" {
 		sb["version"] = "5"
 		mh["type"] = "socks5"
-		mh["udp"] = false
+		mh["udp"] = true
 		scheme = "socks5"
 	}
 	q := url.Values{}

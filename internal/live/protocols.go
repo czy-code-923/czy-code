@@ -189,6 +189,10 @@ func (s Spec) Client(tag string) (map[string]any, map[string]any, string, error)
 	u := url.URL{Scheme: s.Kind, Host: net.JoinHostPort(s.Address, fmt.Sprint(s.Port)), Fragment: tag}
 	q := url.Values{}
 	if s.Kind == "shadowsocks" {
+		mh["udp"] = s.ListenNetwork != "tcp"
+		if s.ListenNetwork == "tcp" || s.ListenNetwork == "udp" {
+			sb["network"] = s.ListenNetwork
+		}
 		sb["method"] = s.SSMethod()
 		sb["password"] = s.Password
 		mh["type"] = "ss"

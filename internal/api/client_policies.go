@@ -33,6 +33,8 @@ var clients = []clientInfo{
 	{"v2rayn", "v2rayN", "xray", true, "完整 Xray 自定义配置"},
 	{"shadowrocket", "Shadowrocket 节点列表", "shadowrocket", false, "URI 列表不携带策略组或分流规则"},
 	{"v2rayng-uri", "v2rayNG 节点列表", "base64", false, "只导入兼容节点；策略规则需完整 JSON 模式"},
+	{"happ", "Happ · HWID 自动设备", "base64", false, "兼容 Xray 的 URI 节点列表，需开启客户端 HWID；不携带交互策略组，Xray 新版 REALITY 使用完整 Xray JSON"},
+	{"v2raytun", "v2RayTun · HWID 自动设备", "base64", false, "兼容 Xray 的 URI 节点列表；需支持设备标识的版本并开启相应功能，不携带 Mihomo 交互策略组"},
 	{"nekobox-uri", "NekoBox 节点列表", "base64", false, "URI 列表不携带策略规则"},
 	{"base64", "通用 Base64 节点列表", "base64", false, "不携带策略组或规则"},
 }
@@ -285,15 +287,7 @@ func (s *Server) applyClientPolicy(r *http.Request, user, client, format string,
 	return base, warnings, e
 }
 func policyFamily(address string) string {
-	if strings.Contains(address, ":") {
-		return "ipv6"
-	}
-	for _, r := range address {
-		if (r < '0' || r > '9') && r != '.' {
-			return "dns"
-		}
-	}
-	return "ipv4"
+	return clientpolicy.AddressFamily(address)
 }
 func selectedClient(r *http.Request, profile string) (clientInfo, error) {
 	id := r.URL.Query().Get("client")
@@ -307,6 +301,10 @@ func selectedClient(r *http.Request, profile string) (clientInfo, error) {
 			id = "mihomo"
 		case strings.Contains(ua, "v2rayng"):
 			id = "v2rayng"
+		case strings.Contains(ua, "v2raytun"):
+			id = "v2raytun"
+		case strings.Contains(ua, "happ"):
+			id = "happ"
 		case strings.Contains(ua, "shadowrocket"):
 			id = "shadowrocket"
 		case strings.Contains(ua, "hiddify"):

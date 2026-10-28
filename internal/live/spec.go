@@ -269,7 +269,11 @@ func (s Spec) Render() (engineResult string, fileResult map[string][]byte, errRe
 		if s.Peer != nil {
 			out = map[string]any{"type": "shadowsocks", "tag": "egress", "server": s.Peer.Address, "server_port": s.Peer.Port, "method": Method, "password": s.Peer.Password}
 		}
-		config = map[string]any{"log": map[string]any{"level": "warn"}, "inbounds": []any{map[string]any{"type": "shadowsocks", "tag": "entry", "listen": s.Listen, "listen_port": s.Port, "method": s.SSMethod(), "password": s.Password}}, "outbounds": []any{out}, "route": map[string]any{"final": "egress"}}
+		in := map[string]any{"type": "shadowsocks", "tag": "entry", "listen": s.Listen, "listen_port": s.Port, "method": s.SSMethod(), "password": s.Password}
+		if s.ListenNetwork == "tcp" || s.ListenNetwork == "udp" {
+			in["network"] = s.ListenNetwork
+		}
+		config = map[string]any{"log": map[string]any{"level": "warn"}, "inbounds": []any{in}, "outbounds": []any{out}, "route": map[string]any{"final": "egress"}}
 	} else {
 		files["tls.crt"] = []byte(s.Certificate)
 		auth := map[string]any{"method": "token", "token": s.Password}
