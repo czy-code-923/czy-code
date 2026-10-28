@@ -116,7 +116,7 @@ func TestDeviceSlotsBillingAndSubscriptionIdentity(t *testing.T) {
 	nid := node["id"].(string)
 	h.call("POST", "live/"+nid+"/toggle", map[string]any{"enabled": true}, 200, nil)
 	expiry := time.Now().Add(24 * time.Hour)
-	user := obj018(h.call("POST", "proxy-users", map[string]any{"name": "Alice", "enabled": true, "expires_at": expiry, "quota_bytes": 1000, "billing_mode": "both", "multiplier_milli": 1500, "max_devices": 1}, 200, nil))
+	user := obj018(h.call("POST", "proxy-users", map[string]any{"name": "Alice", "enabled": true, "expires_at": expiry, "quota_bytes": 1000, "billing_mode": "both", "multiplier_milli": 1500, "max_devices": 1, "device_limit_mode": "hwid"}, 200, nil))
 	uid := user["id"].(string)
 	h.call("POST", "user-groups", map[string]any{"name": "group", "user_ids": []string{uid}, "service_ids": []string{nid}, "max_devices": 2}, 200, nil)
 	base := "proxy-users/" + uid + "/devices"
@@ -295,4 +295,3 @@ func TestMetadataPageAllRowsAndOrdering(t *testing.T) {
 		t.Fatal("expired metadata visible")
 	}
 }
-

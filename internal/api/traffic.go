@@ -152,6 +152,11 @@ func (s *Server) telemetry(w http.ResponseWriter, r *http.Request, host string) 
 		if err != nil {
 			return err
 		}
+		if tag.RowsAffected() > 0 && user != "" && device == "" {
+			if _, e = tx.Exec(r.Context(), `UPDATE subscription_clients SET last_connected_at=now() WHERE tenant_id=$1 AND user_id=$2 AND source_ip=$3::inet AND last_subscription_at>now()-interval '7 days'`, tenant, user, ip.String()); e != nil {
+				return e
+			}
+		}
 		if tag.RowsAffected() > 0 && device != "" {
 			if _, e = tx.Exec(r.Context(), `UPDATE user_devices SET last_connected_at=now(),last_source_ip=$3::inet WHERE tenant_id=$1 AND id=$2`, tenant, device, ip.String()); e != nil {
 				return e

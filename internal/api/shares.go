@@ -74,6 +74,7 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 	}
 	var id, user, profileID, name, device string
 	var deviceLimit int
+	var deviceMode string
 	deviceAll := true
 	var deviceServices []string
 	var account live.Account
@@ -97,11 +98,15 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 	if user != "" {
 		var sealed []byte
 		var expires time.Time
-		if e = s.DB.QueryRow(r.Context(), `SELECT sealed,expires_at,quota_bytes,billed_upload_bytes,billed_download_bytes,`+deviceLimitSQL+` FROM proxy_users u WHERE tenant_id=$1 AND id=$2 AND enabled AND expires_at>now() `, tenant, user).Scan(&sealed, &expires, &quota, &upload, &download, &deviceLimit); e != nil {
+		if e = s.DB.QueryRow(r.Context(), `SELECT sealed,expires_at,quota_bytes,billed_upload_bytes,billed_download_bytes,`+deviceLimitSQL+`,device_limit_mode FROM proxy_users u WHERE tenant_id=$1 AND id=$2 AND enabled AND expires_at>now() `, tenant, user).Scan(&sealed, &expires, &quota, &upload, &download, &deviceLimit, &deviceMode); e != nil {
 			return problem{404, "subscription unavailable"}
 		}
 		if device == "" && r.Context().Value(subscriptionInspectionKey{}) != true {
-			device, e = s.subscriptionDevice(w, r, user, client.ID, deviceLimit)
+			if deviceMode == "compatible" || deviceLimit == 0 {
+				e = s.observeSubscription(w, r, user, client.ID)
+			} else {
+				device, e = s.subscriptionDevice(w, r, user, client.ID, deviceLimit)
+			}
 			if e != nil {
 				return e
 			}
@@ -409,7 +414,7 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 			return err
 		}
 		if policy != nil && r.URL.Query().Get("client") != "" && r.URL.Query().Get("policy") != "nodes-only" {
-			return problem{422, "URI 节点列表不能携带策略规则；请选择完整配置，或明确添加 policy=nodes-only"}
+			w.Header().Set("X-Starhub-Policy-Warnings", "1")
 		}
 		w.Header().Set("X-Starhub-Excluded-Nodes", fmt.Sprint(excluded))
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")

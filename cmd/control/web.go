@@ -38,7 +38,7 @@ func webServer(ctx context.Context, dir string) error {
 	if e != nil {
 		return e
 	}
-	mux.Handle("/s/", httputil.NewSingleHostReverseProxy(shareTarget))
+	mux.Handle("/s/", shareProxy(shareTarget))
 	mux.Handle("/healthz", proxy)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -104,4 +104,26 @@ func localListenerURL(key, fallback string) (*url.URL, error) {
 		return nil, errors.New(key + " requires IP:port")
 	}
 	return &url.URL{Scheme: "http", Host: net.JoinHostPort(host, port)}, nil
+}
+
+// Preserve only the origin asserted by a local, trusted gateway. Public peers
+// cannot forge another client's subscription slot with X-Real-IP.
+func shareProxy(target *url.URL) *httputil.ReverseProxy {
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	director := proxy.Director
+	proxy.Director = func(r *http.Request) {
+		host, _, _ := net.SplitHostPort(r.RemoteAddr)
+		peer := net.ParseIP(host)
+		asserted := net.ParseIP(r.Header.Get("X-Real-IP"))
+		origin := peer
+		if peer != nil && peer.IsLoopback() && asserted != nil && !asserted.IsUnspecified() {
+			origin = asserted
+		}
+		r.Header.Del("X-Real-IP")
+		if origin != nil {
+			r.Header.Set("X-Real-IP", origin.String())
+		}
+		director(r)
+	}
+	return proxy
 }

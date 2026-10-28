@@ -1,4 +1,4 @@
 // Package buildinfo keeps the control plane and Agent on one release identity.
 package buildinfo
 
-const Version = "0.19.0"
+const Version = "0.20.0"

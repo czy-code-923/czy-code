@@ -65,6 +65,7 @@ location ^~ /s/ {
  proxy_pass http://127.0.0.1:8091;
  proxy_set_header Host $host;
  proxy_set_header Authorization "";
+ proxy_set_header X-Real-IP $remote_addr;
  proxy_hide_header Server;
  proxy_read_timeout 20s;
  proxy_buffering off;

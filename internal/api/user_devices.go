@@ -16,14 +16,14 @@ const deviceLimitSQL = `COALESCE(LEAST(NULLIF(u.max_devices,0),(SELECT min(NULLI
 
 func checkDevicePolicies(ctx context.Context, tx pgx.Tx) error {
 	var invalid bool
-	e := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM proxy_users u WHERE tenant_id=$1 AND `+deviceLimitSQL+`>0 AND (SELECT count(*) FROM user_devices d WHERE d.tenant_id=u.tenant_id AND d.user_id=u.id AND d.enabled)>`+deviceLimitSQL+`)`, tenant).Scan(&invalid)
+	e := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM proxy_users u WHERE tenant_id=$1 AND `+deviceLimitSQL+`>0 AND CASE WHEN u.device_limit_mode='hwid' THEN (SELECT count(*) FROM user_devices d WHERE d.tenant_id=u.tenant_id AND d.user_id=u.id AND d.enabled) ELSE (SELECT count(*) FROM subscription_clients c WHERE c.tenant_id=u.tenant_id AND c.user_id=u.id AND c.enabled AND c.last_subscription_at>now()-interval '7 days') END>`+deviceLimitSQL+`)`, tenant).Scan(&invalid)
 	if e != nil {
 		return e
 	}
 	if invalid {
 		return problem{409, "设备数超过新的用户/用户组限制，请先停用多余设备"}
 	}
-	e = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM live_services l WHERE l.tenant_id=$1 AND l.managed_users AND (SELECT count(*) FROM (SELECT u.id FROM proxy_users u WHERE u.tenant_id=l.tenant_id AND u.enabled AND `+deviceLimitSQL+`=0 AND EXISTS(SELECT 1 FROM user_group_members gm JOIN user_group_services gs USING(tenant_id,group_id) WHERE gm.tenant_id=u.tenant_id AND gm.user_id=u.id AND gs.service_id=l.id) UNION SELECT d.id FROM user_devices d JOIN proxy_users u ON (u.tenant_id,u.id)=(d.tenant_id,d.user_id) WHERE d.tenant_id=l.tenant_id AND d.enabled AND (d.all_nodes OR d.service_ids ? l.id) AND u.enabled AND EXISTS(SELECT 1 FROM user_group_members gm JOIN user_group_services gs USING(tenant_id,group_id) WHERE gm.tenant_id=u.tenant_id AND gm.user_id=u.id AND gs.service_id=l.id)) identities)>500)`, tenant).Scan(&invalid)
+	e = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM live_services l WHERE l.tenant_id=$1 AND l.managed_users AND (SELECT count(*) FROM (SELECT u.id FROM proxy_users u WHERE u.tenant_id=l.tenant_id AND u.enabled AND (u.device_limit_mode='compatible' OR `+deviceLimitSQL+`=0) AND EXISTS(SELECT 1 FROM user_group_members gm JOIN user_group_services gs USING(tenant_id,group_id) WHERE gm.tenant_id=u.tenant_id AND gm.user_id=u.id AND gs.service_id=l.id) UNION SELECT d.id FROM user_devices d JOIN proxy_users u ON (u.tenant_id,u.id)=(d.tenant_id,d.user_id) WHERE d.tenant_id=l.tenant_id AND d.enabled AND (d.all_nodes OR d.service_ids ? l.id) AND u.enabled AND EXISTS(SELECT 1 FROM user_group_members gm JOIN user_group_services gs USING(tenant_id,group_id) WHERE gm.tenant_id=u.tenant_id AND gm.user_id=u.id AND gs.service_id=l.id)) identities)>500)`, tenant).Scan(&invalid)
 	if e != nil {
 		return e
 	}
@@ -65,8 +65,17 @@ func (s *Server) devices(w http.ResponseWriter, r *http.Request) error {
 		if e != nil {
 			return e
 		}
+		raw, e = s.appendObservedClients(r, user, raw)
+		if e != nil {
+			return e
+		}
 		send(w, 200, raw)
 		return nil
+	}
+	if id != "" {
+		if handled, err := s.observedClientAction(w, r, user, id); handled {
+			return err
+		}
 	}
 	tx, e := s.DB.Begin(r.Context())
 	if e != nil {

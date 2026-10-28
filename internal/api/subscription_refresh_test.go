@@ -28,7 +28,7 @@ func newSubscriptionFixture(t *testing.T, limit int) subscriptionFixture {
 	h.call("PUT", "site", map[string]any{"domain": "vps.example.com", "https": true}, 200, nil)
 	f := subscriptionFixture{h: h, host: host}
 	f.node = f.addNode("original", 26019)
-	u := obj018(h.call("POST", "proxy-users", map[string]any{"name": "existing-user", "enabled": true, "expires_at": time.Now().Add(24 * time.Hour), "max_devices": limit}, 200, nil))
+	u := obj018(h.call("POST", "proxy-users", map[string]any{"name": "existing-user", "enabled": true, "expires_at": time.Now().Add(24 * time.Hour), "max_devices": limit, "device_limit_mode": "hwid"}, 200, nil))
 	f.user = u["id"].(string)
 	g := obj018(h.call("POST", "user-groups", map[string]any{"name": "existing-group", "user_ids": []string{f.user}, "service_ids": []string{f.node}}, 200, nil))
 	f.group = g["id"].(string)

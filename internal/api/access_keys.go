@@ -107,6 +107,9 @@ func requiredScopes(r *http.Request) []string {
 	case "engine-releases":
 		return []string{"kernels:read"}
 	case "proxy-users":
+		if len(a) > 2 && a[2] == "subscription" {
+			return []string{"users:read", "subscriptions:write", "subscriptions:links"}
+		}
 		if len(a) > 2 && a[2] == "devices" {
 			if len(a) > 4 {
 				return []string{"devices:links"}
@@ -221,7 +224,7 @@ func (s *Server) apiSession(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 func (s *Server) apiCapabilities(w http.ResponseWriter, r *http.Request) error {
-	send(w, 200, map[string]any{"version": buildinfo.Version, "scopes": apiScopes, "openapi": "/api/v1/openapi", "features": []string{"os_host_traffic", "host_quota_calibration", "user_billing_modes", "user_traffic_multiplier", "device_credential_slots", "access_metadata_pagination", "policy_workspace", "client_configuration_import", "shadowrocket_rules", "protocol_layers", "telegram_notifications", "configuration_inspect", "firewall_versions", "protocol_batch", "rolling_monthly", "client_json_templates", "subscription_usage", "scoped_api_keys", "client_policies", "dual_stack_endpoints", "host_retirement", "independent_share_domain"}})
+	send(w, 200, map[string]any{"version": buildinfo.Version, "scopes": apiScopes, "openapi": "/api/v1/openapi", "features": []string{"os_host_traffic", "host_quota_calibration", "user_billing_modes", "user_traffic_multiplier", "device_credential_slots", "compatible_subscription_observations", "canonical_user_subscription", "access_metadata_pagination", "policy_workspace", "client_configuration_import", "shadowrocket_rules", "protocol_layers", "telegram_notifications", "configuration_inspect", "firewall_versions", "protocol_batch", "rolling_monthly", "client_json_templates", "subscription_usage", "scoped_api_keys", "client_policies", "dual_stack_endpoints", "host_retirement", "independent_share_domain"}})
 	return nil
 }
 func (s *Server) keys(w http.ResponseWriter, r *http.Request) error {

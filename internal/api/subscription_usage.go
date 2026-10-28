@@ -101,7 +101,7 @@ func (s *Server) inspectSubscription(w http.ResponseWriter, r *http.Request) err
 	var hwidRequired bool
 	var maxDevices int
 	if user != "" {
-		if e = s.DB.QueryRow(r.Context(), `SELECT (s.device_id IS NULL AND `+deviceLimitSQL+`>0),`+deviceLimitSQL+` FROM subscriptions s JOIN proxy_users u ON(u.tenant_id,u.id)=(s.tenant_id,s.user_id) WHERE s.tenant_id=$1 AND s.id=$2`, tenant, id).Scan(&hwidRequired, &maxDevices); e != nil {
+		if e = s.DB.QueryRow(r.Context(), `SELECT (s.device_id IS NULL AND u.device_limit_mode='hwid' AND `+deviceLimitSQL+`>0),`+deviceLimitSQL+` FROM subscriptions s JOIN proxy_users u ON(u.tenant_id,u.id)=(s.tenant_id,s.user_id) WHERE s.tenant_id=$1 AND s.id=$2`, tenant, id).Scan(&hwidRequired, &maxDevices); e != nil {
 			return e
 		}
 		if hwidRequired && r.PathValue("view") == "config" {

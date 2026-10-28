@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "星枢 · VPS 多机管理 API",
-    "version": "0.19.0",
+    "version": "0.20.0",
     "description": "Self-workspace API for host agents, proxy protocols, user quotas and client subscriptions. Bearer administrator token or expiring scoped xs_ API key. No arbitrary shell; privileged gateway work and API key administration remain root-only."
   },
   "servers": [
@@ -6367,7 +6367,8 @@
           "409": {
             "description": "Stale version, backwards counter, active device limit or identity capacity conflict"
           }
-        }
+        },
+        "description": "Returns HWID identities and ordinary subscription observations (registration_source=observed_client). Observations contain self-reported UA/OS and source IP, last_subscription_at, approximate source-associated last_connected_at; never expose fingerprint or credentials. Compatibility records expire after 7 days and count subscription downloads, not concurrent physical hardware."
       },
       "post": {
         "summary": "Legacy/manual independent identity API; primary flow automatically registers X-Hwid clients on the stable user subscription URL",
@@ -6710,6 +6711,37 @@
           }
         },
         "description": "Returns items,total,page,limit,pages and retention metadata. Nullable per-connection bytes indicate the kernel did not provide them. At most 100 observations per Agent report, 7 days / 20,000 retained rows per workspace. Does not contain HTTPS contents or URL paths."
+      }
+    },
+    "/api/v1/proxy-users/{id}/subscription": {
+      "post": {
+        "summary": "Open or create the canonical user subscription; reuses an existing active generic URL",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "id, url (sensitive), reused; requires users:read + subscriptions:write + subscriptions:links"
+          }
+        }
       }
     }
   },
@@ -7742,6 +7774,15 @@
             "maximum": 20,
             "default": 0,
             "description": "0 adds no limit. Effective limit is strictest nonzero user/group value. Enabling a limit removes the generic user credential; use per-device subscriptions. This is credential slot enforcement, not physical hardware attestation."
+          },
+          "device_limit_mode": {
+            "type": "string",
+            "enum": [
+              "compatible",
+              "hwid"
+            ],
+            "default": "compatible",
+            "description": "Compatible counts 7-day subscription observations by source IP + client format, not physical devices. Strict mode requires X-Hwid and deploys independent identities."
           }
         },
         "required": [
@@ -7777,6 +7818,15 @@
             "minimum": 0,
             "maximum": 20,
             "default": 0
+          },
+          "device_limit_mode": {
+            "type": "string",
+            "enum": [
+              "compatible",
+              "hwid"
+            ],
+            "default": "compatible",
+            "description": "Compatible counts 7-day subscription observations by source IP + client format, not physical devices. Strict mode requires X-Hwid and deploys independent identities."
           }
         },
         "required": [

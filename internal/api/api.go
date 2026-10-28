@@ -140,6 +140,7 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("POST /api/v1/hosts/{id}/retirement", s.admin(s.retirement))
 	m.HandleFunc("POST /api/v1/agent/retirement/{action}", s.agent(s.retirementAgent))
 	m.HandleFunc("GET /api/v1/client-catalog", s.admin(s.clientCatalog))
+	m.HandleFunc("POST /api/v1/proxy-users/{id}/subscription", s.admin(s.userSubscription))
 	m.HandleFunc("GET /api/v1/client-policies", s.admin(s.policies))
 	m.HandleFunc("POST /api/v1/client-policies", s.admin(s.policies))
 	m.HandleFunc("PUT /api/v1/client-policies/{id}", s.admin(s.policies))

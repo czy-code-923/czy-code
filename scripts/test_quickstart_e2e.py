@@ -29,7 +29,7 @@ def main():
             if check():return
             time.sleep(1)
         raise RuntimeError('Timeout: '+description)
-    assert api('session')['version']=='0.19.0'
+    assert api('session')['version']=='0.20.0'
     site=api('site');assert site['domain']=='' and site['ip_origin']=='http://127.0.0.1:18080'
     assert api('agent/releases/linux-amd64')['size']>1000000
     print('Fresh one-command control installation and no-domain IP access: PASS',flush=True)
@@ -41,7 +41,7 @@ def main():
     result=subprocess.run(['sh','-c',command],stdout=subprocess.DEVNULL)
     if result.returncode:raise RuntimeError('Agent bootstrap failed; enrollment ticket omitted')
     def connected():
-        return any(h['id']==host['id'] and h['agent_version']=='0.19.0' and h['online'] and h['cleanup_capable'] for h in api('hosts'))
+        return any(h['id']==host['id'] and h['agent_version']=='0.20.0' and h['online'] and h['cleanup_capable'] for h in api('hosts'))
     wait(connected,'Agent registration and verified heartbeat')
     wait(lambda:any(k['engine']=='sing-box' and k['ready'] for k in api('hosts/'+host['id']+'/kernels')),'Native kernel capabilities')
     agent_env=Path('/etc/harbor-agent/agent.env')
@@ -76,7 +76,7 @@ def main():
     # A real per-device VMess identity transfers data through the installed Agent.
     managed=api('live',{'name':'CI device VMess','host_id':host['id'],'engine':'sing-box','kind':'vmess','listen':'127.0.0.1','address':'127.0.0.1','port':24790,'tls_mode':'none','managed_users':True},201)
     api('live/'+managed['id']+'/toggle',{'enabled':True})
-    user=api('proxy-users',{'name':'CI device owner','enabled':True,'expires_at':(datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(days=1)).isoformat(),'quota_bytes':10**9,'billing_mode':'both','multiplier_milli':1500,'max_devices':1})
+    user=api('proxy-users',{'name':'CI device owner','enabled':True,'expires_at':(datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(days=1)).isoformat(),'quota_bytes':10**9,'billing_mode':'both','multiplier_milli':1500,'max_devices':1,'device_limit_mode':'hwid'})
     api('user-groups',{'name':'CI device grant','user_ids':[user['id']],'service_ids':[managed['id']],'max_devices':2})
     device_path='proxy-users/'+user['id']+'/devices'
     subscription=api('subscriptions',{'name':'CI stable HWID subscription','days':1,'user_id':user['id']},201)
@@ -148,6 +148,22 @@ def main():
     print('Automatic HWID registration, unsupported/over-limit feedback and disabled-client rejection: PASS',flush=True)
 
 
+    # Ordinary Clash clients import immediately in compatible mode, no HWID needed.
+    api('proxy-users/'+user['id'],{'name':'CI compatible owner','enabled':True,'expires_at':(datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(days=1)).isoformat(),'max_devices':2,'device_limit_mode':'compatible'},method='PUT')
+    wait(deployed,'Compatible parent identity applied')
+    canonical=api('proxy-users/'+user['id']+'/subscription',{})
+    assert canonical['id']==subscription['id'] and canonical['reused'] and canonical['url']==subscription['url']
+    for ua in ('Clash-Verge/CI','FlClash/CI'):
+        with urllib.request.urlopen(urllib.request.Request(canonical['url']+'?client=mihomo',headers={'User-Agent':ua}),timeout=15) as response:
+            assert response.status==200 and response.headers['X-Starhub-Device-Recognition']=='source_and_client'
+            assert b'proxies:' in response.read()
+    observed=[v for v in api(device_path) if v['registration_source']=='observed_client']
+    assert len(observed)==1 and observed[0]['user_agent']=='FlClash/CI' and observed[0]['source_ip']
+    with urllib.request.urlopen(urllib.request.Request(canonical['url'],headers={'User-Agent':'Shadowrocket/CI'}),timeout=15) as response:auto=response.read()
+    with urllib.request.urlopen(canonical['url']+'?client=shadowrocket',timeout=15) as response:manual=response.read()
+    assert auto==manual and auto
+    print('Clash Verge + FlClash compatible imports, canonical reuse, client metadata and Shadowrocket parity: PASS',flush=True)
+
     api('hosts/'+host['id']+'/retirement',{},202)
     api('hosts/'+host['id']+'/rotate-agent-token',{},404)
     wait(lambda:all(h['id']!=host['id'] for h in api('hosts')),'Root cleanup and authenticated purge acknowledgement',150)
@@ -155,7 +171,7 @@ def main():
     wait(lambda:all(not Path(path).exists() for path in paths),'Agent files and units fully removed',30)
     assert all(v['id']!=row['id'] for v in api('live'))
     api('agent/heartbeat',{},401,agent=credentials)
-    assert api('session')['version']=='0.19.0' and root.joinpath('control.env').exists()
+    assert api('session')['version']=='0.20.0' and root.joinpath('control.env').exists()
     subprocess.run(['docker','exec','starhub-control-db','pg_isready','-U','harbor','-d','harbor'],check=True,stdout=subprocess.DEVNULL)
     print('Remote Agent files and control-side deployment data removed; manager and database preserved: PASS',flush=True)
     # This is an isolated CI VM. Verify both safe uninstall and explicit purge.

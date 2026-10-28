@@ -138,8 +138,8 @@ sudo python3 /opt/harbor/domain-sync.py \
 只在自己的本机 / SSH 终端查看已有令牌，不要把输出上传到 GitHub、日志或聊天。不会重置令牌：
 
 ```bash
-# 本次宝塔布局
-sudo sed -n 's/^ADMIN_TOKEN=//p' /etc/harbor/control.env
+# 已有星枢管理安装：自动定位控制面配置（不是宝塔令牌）
+sudo python3 /opt/harbor/admin-token.py
 # 一键新装 Linux 布局
 sudo sed -n 's/^ADMIN_TOKEN=//p' /opt/starhub-control/control.env
 # 源码 / 自选私有环境文件：只打印 ADMIN_TOKEN
@@ -167,3 +167,5 @@ Invoke-WebRequest https://raw.githubusercontent.com/czy-code-923/czy-code/main/s
 `--purge-data` 会**不可恢复地删除该项目数据库卷和私有配置**，必须自行确认备份；默认不执行。保留的数据会阻止新装脚本覆盖，恢复请走安装文档的备份恢复流程。宝塔已有域名反代在宝塔中单独关闭；Nginx、其他网站、Let's Encrypt、Docker、系统防火墙和其他 VPS 上的 Agent 不会被删除。先从面板逐台退役远程 Agent，再卸载总管理端。
 
 [网络 / 封装语义与协议核验](PROTOCOLS-v019.md) · [完整卸载脚本](../scripts/uninstall.py)
+
+当前订阅与客户端限制说明见 [0.20 工作流](WORKFLOW-v020.md)。Linux / Windows 通用安装、卸载、面板令牌命令置于 [README](../README.md) 前部。

@@ -56,7 +56,7 @@ func (s *Server) Reap(ctx context.Context) error {
 		return e
 	}
 	if e == nil {
-		for _, q := range []string{`DELETE FROM host_retirement_receipts WHERE tenant_id=$1 AND completed_at<now()-interval '30 days'`, `DELETE FROM access_observations WHERE tenant_id=$1 AND observed_at<now()-interval '7 days'`, `UPDATE user_devices SET last_source_ip=NULL WHERE tenant_id=$1 AND last_source_ip IS NOT NULL AND (last_connected_at IS NULL OR last_connected_at<now()-interval '7 days')`, `DELETE FROM traffic_daily WHERE tenant_id=$1 AND day<(now() AT TIME ZONE 'Asia/Shanghai')::date-90`, `DELETE FROM deployment_batches WHERE tenant_id=$1 AND created_at<now()-interval '30 days'`} {
+		for _, q := range []string{`DELETE FROM subscription_clients WHERE tenant_id=$1 AND last_subscription_at<now()-interval '7 days'`, `DELETE FROM host_retirement_receipts WHERE tenant_id=$1 AND completed_at<now()-interval '30 days'`, `DELETE FROM access_observations WHERE tenant_id=$1 AND observed_at<now()-interval '7 days'`, `UPDATE user_devices SET last_source_ip=NULL WHERE tenant_id=$1 AND last_source_ip IS NOT NULL AND (last_connected_at IS NULL OR last_connected_at<now()-interval '7 days')`, `DELETE FROM traffic_daily WHERE tenant_id=$1 AND day<(now() AT TIME ZONE 'Asia/Shanghai')::date-90`, `DELETE FROM deployment_batches WHERE tenant_id=$1 AND created_at<now()-interval '30 days'`} {
 			if _, e = tx.Exec(ctx, q, tenant); e != nil {
 				return e
 			}
@@ -64,4 +64,3 @@ func (s *Server) Reap(ctx context.Context) error {
 	}
 	return tx.Commit(ctx)
 }
-

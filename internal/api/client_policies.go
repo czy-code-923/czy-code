@@ -41,8 +41,11 @@ var clients = []clientInfo{
 
 func clientByID(id string) (clientInfo, bool) {
 	id = strings.ToLower(strings.TrimSpace(id))
-	if id == "clash" || id == "clash-meta" || id == "clashverge" || id == "clash-verge-rev" {
+	if id == "clash" || id == "clash-meta" || id == "clashverge" || id == "clash-verge-rev" || id == "flclash" {
 		id = "mihomo"
+	}
+	if id == "shadowracket" || id == "shadownracket" || id == "shadowrocket-uri" {
+		id = "shadowrocket"
 	}
 	for _, c := range clients {
 		if c.ID == strings.ToLower(id) {

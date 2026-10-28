@@ -48,6 +48,7 @@ func (s *Server) users(w http.ResponseWriter, r *http.Request) error {
 		Billing    *string    `json:"billing_mode"`
 		Multiplier *int       `json:"multiplier_milli"`
 		MaxDevices *int       `json:"max_devices"`
+		DeviceMode *string    `json:"device_limit_mode"`
 		Anchor     *time.Time `json:"reset_anchor_at"`
 	}
 	if e := decode(w, r, &b); e != nil {
@@ -164,6 +165,14 @@ func (s *Server) users(w http.ResponseWriter, r *http.Request) error {
 			return bad("multiplier_milli must be 1-100000")
 		}
 		if _, e = tx.Exec(r.Context(), `UPDATE proxy_users SET multiplier_milli=$3 WHERE tenant_id=$1 AND id=$2`, tenant, id, *b.Multiplier); e != nil {
+			return e
+		}
+	}
+	if b.DeviceMode != nil {
+		if *b.DeviceMode != "compatible" && *b.DeviceMode != "hwid" {
+			return bad("invalid device_limit_mode")
+		}
+		if _, e = tx.Exec(r.Context(), `UPDATE proxy_users SET device_limit_mode=$3 WHERE tenant_id=$1 AND id=$2`, tenant, id, *b.DeviceMode); e != nil {
 			return e
 		}
 	}
@@ -389,7 +398,7 @@ func (s *Server) materializeAccounts(r *http.Request, tx pgx.Tx, id string, spec
 		return nil
 	}
 	spec.Accounts = []live.Account{}
-	rows, e := tx.Query(r.Context(), `WITH eligible AS (SELECT DISTINCT u.* FROM proxy_users u JOIN user_group_members m ON (u.tenant_id,u.id)=(m.tenant_id,m.user_id) JOIN user_group_services g ON (g.tenant_id,g.group_id)=(m.tenant_id,m.group_id) WHERE u.tenant_id=$1 AND g.service_id=$2 AND u.enabled AND u.expires_at>now() AND (u.quota_bytes=0 OR (u.used_bytes<u.quota_bytes AND EXISTS(SELECT 1 FROM telemetry_status t JOIN live_services l ON (l.tenant_id,l.host_id,l.engine)=(t.tenant_id,t.host_id,t.engine) WHERE l.tenant_id=u.tenant_id AND l.id=$2 AND t.state='collecting' AND t.reported_at>now()-interval '30 seconds')))) SELECT u.id,u.sealed FROM eligible u WHERE `+deviceLimitSQL+`=0 UNION ALL SELECT d.id,d.sealed FROM eligible u JOIN user_devices d ON (d.tenant_id,d.user_id)=(u.tenant_id,u.id) WHERE d.enabled AND (d.all_nodes OR d.service_ids ? $2) ORDER BY id LIMIT 501`, tenant, id)
+	rows, e := tx.Query(r.Context(), `WITH eligible AS (SELECT DISTINCT u.* FROM proxy_users u JOIN user_group_members m ON (u.tenant_id,u.id)=(m.tenant_id,m.user_id) JOIN user_group_services g ON (g.tenant_id,g.group_id)=(m.tenant_id,m.group_id) WHERE u.tenant_id=$1 AND g.service_id=$2 AND u.enabled AND u.expires_at>now() AND (u.quota_bytes=0 OR (u.used_bytes<u.quota_bytes AND EXISTS(SELECT 1 FROM telemetry_status t JOIN live_services l ON (l.tenant_id,l.host_id,l.engine)=(t.tenant_id,t.host_id,t.engine) WHERE l.tenant_id=u.tenant_id AND l.id=$2 AND t.state='collecting' AND t.reported_at>now()-interval '30 seconds')))) SELECT u.id,u.sealed FROM eligible u WHERE (u.device_limit_mode='compatible' OR `+deviceLimitSQL+`=0) UNION ALL SELECT d.id,d.sealed FROM eligible u JOIN user_devices d ON (d.tenant_id,d.user_id)=(u.tenant_id,u.id) WHERE d.enabled AND (d.all_nodes OR d.service_ids ? $2) ORDER BY id LIMIT 501`, tenant, id)
 	if e != nil {
 		return e
 	}

@@ -1,17 +1,13 @@
-<!-- 0.14 workspace update -->
+# 星枢 · VPS 多机管理 0.20.0
 
-0.14 新增四分区客户端工作区：基础、DNS、策略组与规则。默认模板基于提供的 Mihomo Max（21 组 / 186 规则），无服务器凭据。支持配置识别、节点映射、单项编辑、客户端转换预览和 Shadowrocket 配套节点/分流链接。具体转换差异见 [0.14 使用说明](docs/WORKFLOW-v014.md)。
-
-# 星枢 · VPS 多机管理 0.19.0
-
-0.19 修复原用户订阅新增节点后的动态同步，改为客户端 HWID 自动识别设备，优化策略组单独选择 IPv4 / IPv6，并区分协议封装与 TCP / UDP 监听。附管理员令牌读取与卸载命令。详见 [本版工作流](docs/WORKFLOW-v019.md)。
+0.20 修复 Clash Verge / FlClash 开启名额后无法导入，以及不限设备不记录客户端的问题。默认兼容订阅访问模式；严格 HWID 模式单独选择。分享复用用户原链接，整合客户端格式并修复手选小火箭。详见 [当前工作流](docs/WORKFLOW-v020.md)。
 
 0.15 修复 Telegram 命令接收与 VPS 时钟偏差，发送和接收状态分开显示。机器人查询须启用长轮询并授权用户 ID；私聊可在通知设置中填入当前绑定用户后保存。策略页统一管理客户端配置，等宽列表独立滚动；订阅页只管理分享，历史输出覆盖在策略页高级区域保留。首页显示有限余额、完整日期趋势与用户范围统计，访问记录按需加载。详见 [本版行为与边界](docs/WORKFLOW-v015.md)。
 
 
 Vue 3 / TypeScript / Go / PostgreSQL 的个人 VPS 控制面。主流程：**连接主机 → 配置内核与协议入站 → 分配用户 / 用户组 → 客户端策略与规则 → 分享客户端订阅**。首页显示真实流量、额度、主机状态及连接元数据。
 
-本项目已在授权的管理 VPS 部署；新建服务默认停用。演示、配置校验通过与真实内核已运行分别展示。旧版本记录留在 docs/，计量与设备权限以 [0.18 使用说明](docs/WORKFLOW-v018.md) 为准，其他功能见 [功能检查](docs/FEATURES.md)。
+本项目已在授权的管理 VPS 部署；新建服务默认停用。演示、配置校验通过与真实内核已运行分别展示。旧版本记录留在 docs/，计量见 [0.18 使用说明](docs/WORKFLOW-v018.md)，客户端与分享以 [0.20 工作流](docs/WORKFLOW-v020.md) 为准，其他功能见 [功能检查](docs/FEATURES.md)。
 
 ## 一键部署新总管理端
 
@@ -20,18 +16,43 @@ Vue 3 / TypeScript / Go / PostgreSQL 的个人 VPS 控制面。主流程：**连
 Linux（Debian / Ubuntu / Rocky / Alma / Fedora / openSUSE 等 systemd 系统）：
 
 ```bash
-curl -fL https://github.com/czy-code-923/czy-code/releases/download/v0.19.0-distribution/install-starhub.sh -o /tmp/install-starhub.sh && sudo sh /tmp/install-starhub.sh --public
+curl -fL https://github.com/czy-code-923/czy-code/releases/download/v0.20.0-distribution/install-starhub.sh -o /tmp/install-starhub.sh && sudo sh /tmp/install-starhub.sh --public
 ```
 
 Windows PowerShell：
 
 ```powershell
-Invoke-WebRequest https://github.com/czy-code-923/czy-code/releases/download/v0.19.0-distribution/install-starhub.ps1 -OutFile "$env:TEMP/install-starhub.ps1"; & "$env:TEMP/install-starhub.ps1" -Public
+Invoke-WebRequest https://github.com/czy-code-923/czy-code/releases/download/v0.20.0-distribution/install-starhub.ps1 -OutFile "$env:TEMP/install-starhub.ps1"; & "$env:TEMP/install-starhub.ps1" -Public
 ```
 
 `--public` / `-Public` 明确启用 IP:18080 的认证网页入口；HTTP 不加密，建议设置 HTTPS 网关。省略此参数则只监听回环。内部 8080 API、8091 分享处理器和 PostgreSQL 均不暴露公网。管理员令牌保存在本机私有 control.env，不打印、不上传。Windows 安装当前用户登录任务，退出登录后不保证运行；Alpine/OpenRC 用包内 `python3 scripts/quickstart.py --foreground` 配置自己的进程监督器。依赖安装与 HTTPS 网关、离线、源码、Compose 方式见 [安装文档](docs/INSTALL.md)。
 
-完整源码请下载 Release 附件 **harbor-0.19.0-source.zip**；源码附件与发行标签逐文件核对；包含完整前后端、迁移、测试、脚本和文档。
+完整源码请下载 Release 附件 **harbor-0.20.0-source.zip**；源码附件与发行标签逐文件核对；包含完整前后端、迁移、测试、脚本和文档。
+
+## Linux 一键卸载与面板管理员令牌
+
+以下令牌用于**星枢面板登录与 API**，与宝塔登录无关。命令只在自己的终端显示现有 ADMIN_TOKEN，不重新生成。
+
+```bash
+# Linux 通用卸载：默认保留数据库、私有配置和备份；去掉 --apply 可预览
+curl -fL https://raw.githubusercontent.com/czy-code-923/czy-code/main/scripts/uninstall.py -o /tmp/starhub-uninstall.py && sudo python3 /tmp/starhub-uninstall.py --apply
+# Linux 通用：自动定位已安装面板的私有配置，只显示面板令牌
+curl -fL https://raw.githubusercontent.com/czy-code-923/czy-code/main/scripts/admin-token.py -o /tmp/starhub-admin-token.py && sudo python3 /tmp/starhub-admin-token.py
+# 当前管理 VPS 已安装的工具
+sudo python3 /opt/harbor/admin-token.py
+sudo python3 /opt/harbor/uninstall.py --apply
+# 源码 / Compose 安装，在项目目录读取自己的 .env
+python3 scripts/admin-token.py --env .env
+```
+
+Windows PowerShell：
+
+```powershell
+Invoke-WebRequest https://raw.githubusercontent.com/czy-code-923/czy-code/main/scripts/uninstall.py -OutFile "$env:TEMP/starhub-uninstall.py"; python "$env:TEMP/starhub-uninstall.py" --apply
+Invoke-WebRequest https://raw.githubusercontent.com/czy-code-923/czy-code/main/scripts/admin-token.py -OutFile "$env:TEMP/starhub-admin-token.py"; python "$env:TEMP/starhub-admin-token.py"
+```
+
+需要 Python 3；删除运行组件默认保留数据，重新安装不会覆盖保留数据。彻底清数据需自行备份并显式添加 `--purge-data`。远程 Agent 应先在主机页逐台退役。独立 Nginx / 宝塔站点等外部软件不会被删除。其他布局可用 `--env` 指定私有环境文件。不要把令牌输出贴到聊天、日志或 GitHub。
 
 ## 0.13 新增与修正
 
@@ -40,7 +61,7 @@ Invoke-WebRequest https://github.com/czy-code-923/czy-code/releases/download/v0.
 - 防火墙版本编辑、回收站删除/恢复、本机受控移除和取消，保留独立回滚。
 - 原生配置识别草稿、客户端路由引用检查、可视化规则自动同步、嵌套组展开去重。
 - 空授权账号不再可能变为免认证；新增端口失败时保留完全未变的有效入站。补齐扩展协议的用户流量与访问日志解析。
-- 控制面与 Agent 均为 **0.19.0**；新功能需升级 Agent。
+- 控制面与 Agent 均为 **0.20.0**；新功能需升级 Agent。
 - [0.13 功能、配置、通知与兼容边界](docs/WORKFLOW-v013.md)。
 
 ## 0.12 新增
@@ -145,37 +166,6 @@ fetch-engines.py 下载官方发行文件，无需 Go。使用 --sing-box-versio
 - [后续路线](docs/ROADMAP.md)
 
 
-## 获取管理员登录令牌与卸载
+## 卸载与管理员令牌
 
-只在自己的本机 / SSH 终端查看已有令牌，不要把输出上传到 GitHub、日志或聊天。不会重置令牌：
-
-```bash
-# 本次宝塔布局
-sudo sed -n 's/^ADMIN_TOKEN=//p' /etc/harbor/control.env
-# 一键新装 Linux 布局
-sudo sed -n 's/^ADMIN_TOKEN=//p' /opt/starhub-control/control.env
-# 源码 / 自选私有环境文件：只打印 ADMIN_TOKEN
-python3 scripts/admin-token.py --env /ABSOLUTE/PRIVATE/.env
-```
-
-Windows PowerShell（当前用户一键安装）：
-
-```powershell
-Get-Content -LiteralPath "$env:ProgramData\StarhubControl\control.env" | Where-Object { $_.StartsWith('ADMIN_TOKEN=') } | ForEach-Object { $_.Substring(12) }
-```
-
-一键卸载面板运行组件，**默认保留数据库卷、私有配置和所有备份**。下面是项目脚本，下载后可先去掉 --apply 查看计划：
-
-```bash
-curl -fL https://raw.githubusercontent.com/czy-code-923/czy-code/main/scripts/uninstall.py -o /tmp/starhub-uninstall.py && sudo python3 /tmp/starhub-uninstall.py --apply
-```
-
-Windows（需要 Python 3；只卸载所选安装目录和对应的当前用户任务）：
-
-```powershell
-Invoke-WebRequest https://raw.githubusercontent.com/czy-code-923/czy-code/main/scripts/uninstall.py -OutFile "$env:TEMP\starhub-uninstall.py"; python "$env:TEMP\starhub-uninstall.py" --apply
-```
-
-`--purge-data` 会**不可恢复地删除该项目数据库卷和私有配置**，必须自行确认备份；默认不执行。保留的数据会阻止新装脚本覆盖，恢复请走安装文档的备份恢复流程。宝塔已有域名反代在宝塔中单独关闭；Nginx、其他网站、Let's Encrypt、Docker、系统防火墙和其他 VPS 上的 Agent 不会被删除。先从面板逐台退役远程 Agent，再卸载总管理端。
-
-[网络 / 封装语义与协议核验](docs/PROTOCOLS-v019.md) · [完整卸载脚本](scripts/uninstall.py)
+Linux / Windows 通用命令见本文前部，更多布局见 [安装文档](docs/INSTALL.md)。令牌是星枢面板的 ADMIN_TOKEN。

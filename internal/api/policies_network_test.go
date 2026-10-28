@@ -148,7 +148,7 @@ func TestPoliciesNetworksAndRetirement(t *testing.T) {
 		t.Fatal("Shadowrocket rules configuration invalid")
 	}
 
-	request("?client=shadowrocket", 422)
+	request("?client=shadowrocket", 200)
 	request("?client=shadowrocket&policy=nodes-only", 200)
 	// An explicit user/client policy overrides global routing and is editable with optimistic locking.
 	own := object(call("POST", "client-policies", map[string]any{"name": "own", "user_id": uid, "client_id": "mihomo", "source": "rules: [\"DOMAIN-SUFFIX,example.com,DIRECT\",\"MATCH,REJECT\"]"}, 200, nil))
