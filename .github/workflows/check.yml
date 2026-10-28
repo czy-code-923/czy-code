@@ -90,7 +90,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Download the immutable binary distribution
         run: |
-          curl --proto '=https' --tlsv1.2 -fL https://github.com/czy-code-923/czy-code/releases/download/v0.21.0-distribution/harbor-0.21.0-linux-amd64.zip -o /tmp/starhub.zip
+          curl --proto '=https' --tlsv1.2 -fL https://github.com/czy-code-923/czy-code/releases/download/v0.21.1-distribution/harbor-0.21.1-linux-amd64.zip -o /tmp/starhub.zip
           python3 -c 'import json; print(json.load(open("scripts/distribution-checksums.json"))["sha256"]["linux-amd64"]+"  /tmp/starhub.zip")' | sha256sum --check
           mkdir /tmp/starhub-distribution
           unzip -q /tmp/starhub.zip -d /tmp/starhub-distribution

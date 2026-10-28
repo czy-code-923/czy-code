@@ -16,12 +16,12 @@ import urllib.request
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.21.0"
-PREVIOUS = "0.20.1"
+VERSION = "0.21.1"
+PREVIOUS = "0.21.0"
 REPOSITORY = "czy-code-923/czy-code"
 BASE = f"https://github.com/{REPOSITORY}/releases/download/v{VERSION}-distribution/"
 OLD_BASE = f"https://github.com/{REPOSITORY}/releases/download/v{PREVIOUS}-distribution/"
-PINNED = {'starhub-v0201-update.zip': 'f2466a3bded9f0ded5c8457a97c949fd91914a5089ce621686d9acb9ca7a16b8'}
+PINNED = {'starhub-v021-update.zip': 'afc5df1515e18b72e8027d67c45de5287b19c408de80f990e9cebcf34f112824'}
 ENGINE_VERSIONS = {"sing-box": "v1.14.4", "xray": "v26.10.21", "frp": "v0.71.1"}
 
 
@@ -102,9 +102,9 @@ def main():
     if not os.environ.get("TEST_DATABASE_URL"):
         raise RuntimeError("Release packaging requires PostgreSQL-backed standalone API verification")
     subprocess.run([str(api_tests), "-test.count=1"], cwd=clean, check=True)
-    update = out / "starhub-v021-update.zip"
-    with zipfile.ZipFile(previous("starhub-v0201-update.zip")) as old, zipfile.ZipFile(update, "w", zipfile.ZIP_DEFLATED) as archive:
-        apply = old.read("apply.py").decode("utf-8").replace("v0201", "v021").replace("V0201", "V021").replace(PREVIOUS, VERSION)
+    update = out / "starhub-v0211-update.zip"
+    with zipfile.ZipFile(previous("starhub-v021-update.zip")) as old, zipfile.ZipFile(update, "w", zipfile.ZIP_DEFLATED) as archive:
+        apply = old.read("apply.py").decode("utf-8").replace("v021", "v0211").replace("V021", "V0211").replace(PREVIOUS, VERSION)
         # Keep the managed Nginx gateway binary in backup, update and rollback.
         gateway_tuple = "('control','agent','firewall','gateway')"
         if gateway_tuple not in apply:

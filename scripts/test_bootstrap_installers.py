@@ -24,6 +24,7 @@ sleep(){ return 0; }
 install_base(){ exit 41; };install_docker(){ exit 42; }
 docker(){ case "$*" in *--format*) printf linux;; esac; }
 ensure_environment
+[ "$STARHUB_VERSION" = "__VERSION__" ] || exit 43
 ''')
         self.assertEqual(r.returncode,0,r.stderr+r.stdout)
     def test_missing_dependencies_install_and_start_engine(self):
