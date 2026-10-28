@@ -38,7 +38,7 @@ Agent 0.18 每约 10 秒读取 Linux / Windows 系统网卡累计 RX / TX，持�
 
 新增 GET/PUT /api/v1/hosts/{id}/traffic、POST .../traffic/calibrate；主机创建 / 修改支持 traffic 对象。更新与校准需要读取版本，陈旧版本返回 409。查看使用 usage:read，配置 hosts:write，校准 usage:reset。主机删除级联清理计量与游标，仍使用受控远程卸载流程。
 
-新增 /api/v1/proxy-users/{id}/devices CRUD 与 /{device}/link；创建要求 devices:write + devices:links，列表 devices:read，编辑 / 删除 devices:write，恢复分享链接 devices:links。读权限不能得到 UUID、密码或链接。用户 CRUD 增加 billing_mode、multiplier_milli、max_devices，组权限增加 max_devices。连接分页为 GET /api/v1/access-records/page，权限 usage:read。完整参数见 [OpenAPI](openapi.json)。
+新增 /api/v1/proxy-users/{id}/devices CRUD 与 /{device}/link；创建要求 devices:write + devices:links，列表 devices:read，编辑 / 删除 devices:write，恢复分享链接 devices:links。读权限不能得到 UUID、密码或链接。用户 CRUD 增加 billing_mode、multiplier_milli、max_devices，组权限增加 max_devices。连接分页为 GET /api/v1/access-records/page，权限 access:read（与普通用量权限分开）。完整参数见 [OpenAPI](openapi.json)。
 
 Telegram 增加只读 /devices；/hosts 显示主机套餐余额与采样状态，/users 显示倍率，/traffic 区分代理原始量和计费量。设置可以选择 host_quota / device_limit 告警与 devices 定时报告。新增告警默认关闭，旧机器人绑定和命令授权保留；阈值触发与去重，不发送凭据、来源 IP、UA 或订阅链接。
 
