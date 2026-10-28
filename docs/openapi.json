@@ -7818,15 +7818,6 @@
             "minimum": 0,
             "maximum": 20,
             "default": 0
-          },
-          "device_limit_mode": {
-            "type": "string",
-            "enum": [
-              "compatible",
-              "hwid"
-            ],
-            "default": "compatible",
-            "description": "Compatible counts 7-day subscription observations by source IP + client format, not physical devices. Strict mode requires X-Hwid and deploys independent identities."
           }
         },
         "required": [

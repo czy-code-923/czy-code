@@ -1,5 +1,5 @@
 name: Publish verified Starhub 0.20.1
-# Observed client identity is read-only; user-facing names remain editable.
+# Client recognition mode belongs to users; groups provide only inherited limits.
 on:
   push:
     branches: [main]
