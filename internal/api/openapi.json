@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "星枢 · VPS 多机管理 API",
-    "version": "0.21.1",
+    "version": "0.22.0",
     "description": "Self-workspace API for host agents, proxy protocols, user quotas and client subscriptions. Bearer administrator token or expiring scoped xs_ API key. No arbitrary shell; privileged gateway work and API key administration remain root-only."
   },
   "servers": [
@@ -7783,6 +7783,36 @@
             ],
             "default": "compatible",
             "description": "Compatible counts 7-day subscription observations by source IP + client format, not physical devices. Strict mode requires X-Hwid and deploys independent identities."
+          },
+          "metered_nodes": {
+            "type": "integer",
+            "description": "Number of authorized inbounds using independent managed identities; only these can produce personal bills."
+          },
+          "shared_entries": {
+            "type": "array",
+            "description": "Authorized shared-key entry totals for all clients; never personal user usage and not deducted from personal quota.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "upload_bytes": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "download_bytes": {
+                  "type": "integer",
+                  "format": "int64"
+                }
+              }
+            }
           }
         },
         "required": [

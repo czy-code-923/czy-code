@@ -37,6 +37,7 @@ def remove(path,roots):
 
 def owned_units(root,layout):
     names=['starhub-control.service'] if layout=='quickstart' else ['harbor-control.service','harbor-agent.service','harbor-domain-sync.service','harbor-domain-sync.timer','harbor-managed-gateway.service','harbor-managed-gateway.timer','harbor-backup.service','harbor-backup.timer']
+    names += ['starhub-panel-rescue.service']
     found=[]
     for name in names:
         path=Path('/etc/systemd/system')/name
@@ -76,7 +77,7 @@ def plan(root,layout,purge,windows=False):
     if not (root/'bin'/('harbor-control.exe' if windows else 'harbor-control')).is_file():
         # A previous safe uninstall may have retained only data; allow explicit purge.
         if not purge:raise ValueError('Control binary missing; installation may already be uninstalled')
-    paths=[root/p for p in ('bin','web','agent-releases','run-control.ps1','uninstall.py','admin-token.py')]
+    paths=[root/p for p in ('bin','web','agent-releases','run-control.ps1','uninstall.py','admin-token.py','panel-access.py','panel-access.json')]
     if layout=='legacy':paths.extend(p for p in root.glob('agent-releases-v[0-9]*') if p.is_dir() and re.fullmatch(r'agent-releases-v[0-9]+',p.name))
     if purge:
         paths=[root]

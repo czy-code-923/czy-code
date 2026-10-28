@@ -2,6 +2,7 @@
 import {it,expect,vi} from 'vitest'
 import {mount,flushPromises} from '@vue/test-utils'
 import Subscriptions from './Subscriptions.vue'
+vi.mock('qrcode',()=>({default:{toDataURL:vi.fn(async()=> 'data:image/png;base64,bG9jYWw=')}}))
 it('defaults a share to automatic recognition and prevents copying a stopped-node subscription',async()=>{
  let ready=false
  const api=vi.fn(async(path:string)=>{
@@ -31,5 +32,18 @@ it('opens the existing user share without an add-subscription modal',async()=>{
  expect(w.text()).not.toContain('＋ 添加订阅')
  await w.get('select[aria-label=客户端格式]').setValue('shadowrocket');await flushPromises()
  expect((w.get('input[readonly]').element as HTMLInputElement).value).toContain('?client=shadowrocket&policy=nodes-only')
+ w.unmount()
+})
+
+it('separates app formats and generates a QR locally only after a successful check',async()=>{
+ const api=vi.fn(async(p:string)=>p==='proxy-users/u/subscription'?{id:'s',url:'https://example.test/s/private',reused:true}:p==='proxy-users'?[{id:'u',name:'Alice',active:true}]:p.startsWith('subscriptions/s/check')?{ready:true,reason:'ok'}:[])
+ const w=mount(Subscriptions,{props:{api,initialUser:'u'}});await flushPromises()
+ await w.get('select[aria-label=客户端格式]').setValue('v2rayng');await flushPromises()
+ expect((w.get('input[readonly]').element as HTMLInputElement).value).toContain('client=v2rayng&policy=nodes-only')
+ await w.findAll('button').find(b=>b.text()==='二维码导入')!.trigger('click');await flushPromises()
+ expect(w.get('.share-qr img').attributes('src')).toBe('data:image/png;base64,bG9jYWw=')
+ await w.get('select[aria-label=客户端格式]').setValue('hiddify');await flushPromises()
+ expect(w.find('.share-qr').exists()).toBe(false)
+ expect((w.get('input[readonly]').element as HTMLInputElement).value).toContain('client=hiddify')
  w.unmount()
 })

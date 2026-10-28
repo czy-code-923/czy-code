@@ -17,6 +17,10 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "panel-web" {
+		runPanelWeb()
+		return
+	}
 	token := os.Getenv("ADMIN_TOKEN")
 	if len(token) < 32 {
 		log.Fatal("ADMIN_TOKEN must contain at least 32 bytes")

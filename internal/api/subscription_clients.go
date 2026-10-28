@@ -42,6 +42,12 @@ func (s *Server) observeSubscription(w http.ResponseWriter, r *http.Request, use
 	family := client
 	if c, ok := clientByID(client); ok {
 		family = c.Format
+		if client == "v2rayng" || client == "v2rayn" {
+			family = "xray"
+		}
+		if client == "nekobox" {
+			family = "sing-box"
+		}
 	}
 	key := ip + "/" + family
 	if subscriptionHWIDPattern.MatchString(hwid) {

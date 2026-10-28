@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"gopkg.in/yaml.v3"
@@ -139,9 +140,11 @@ func TestPoliciesNetworksAndRetirement(t *testing.T) {
 	if xr.Header().Get("X-Starhub-Excluded-Nodes") != "2" {
 		t.Fatal("unsupported Snell not filtered", xr.Header())
 	}
-	if !strings.Contains(xr.Body.String(), "routing") {
-		t.Fatal("v2rayNG custom JSON needs routing")
+	decoded, err := base64.StdEncoding.DecodeString(xr.Body.String())
+	if err != nil || len(strings.Fields(string(decoded))) != 4 {
+		t.Fatal("v2rayNG must receive selectable compatible URI nodes", err)
 	}
+	request("?client=xray", 200)
 	request("?client=hiddify", 200)
 	sr := request("?client=shadowrocket-config", 200)
 	if !strings.Contains(sr.Body.String(), "[Rule]") || !strings.Contains(sr.Body.String(), "FINAL,PROXY") || strings.Contains(sr.Body.String(), "vmess://") {

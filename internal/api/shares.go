@@ -273,18 +273,7 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 				naiveMap = "MAP " + spec.ServerName + " " + target
 			}
 			tag := clientpolicy.ExportName(name, address)
-			checkFormat := format
-			if format == "shadowrocket-config" {
-				checkFormat = "shadowrocket"
-			}
-			if slices.Contains([]string{"v2rayng-uri", "happ", "v2raytun"}, client.ID) {
-				checkFormat = "xray"
-			}
-			if !client.Full && (endpoint.IsReality() && endpoint.Engine == "xray" || endpoint.Transport == "xhttp" || endpoint.Transport == "kcp" || endpoint.Transport == "httpupgrade") {
-				excluded++
-				continue
-			}
-			if err := endpoint.ClientFormat(checkFormat); err != nil {
+			if err := compatibleClient(client, endpoint); err != nil {
 				excluded++
 				continue
 			}
@@ -312,6 +301,9 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 	if err := clientpolicy.ValidateExportNames(nodes); err != nil {
 		return problem{422, err.Error()}
 	}
+	w.Header().Set("X-Starhub-Excluded-Nodes", fmt.Sprint(excluded))
+	w.Header().Set("X-Starhub-Included-Nodes", fmt.Sprint(len(nodes)))
+	w.Header().Set("X-Starhub-Client", client.ID)
 	if len(out) == 0 {
 		if excluded > 0 {
 			return problem{422, "所选客户端不兼容已授权的节点协议，请选择兼容客户端"}
@@ -330,6 +322,7 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 		if err != nil {
 			return err
 		}
+		appSingBoxConfig(client, config)
 		send(w, 200, config)
 	case "xray":
 		if profile.Selection == "urltest" {

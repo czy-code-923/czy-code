@@ -175,6 +175,7 @@ func (s *Server) previewPolicy(w http.ResponseWriter, r *http.Request) error {
 	defer rows.Close()
 	nodes := []clientpolicy.Node{}
 	outs := []any{}
+	excluded := 0
 	for rows.Next() {
 		var n clientpolicy.Node
 		var address string
@@ -189,6 +190,10 @@ func (s *Server) previewPolicy(w http.ResponseWriter, r *http.Request) error {
 		var spec live.Spec
 		if e = json.Unmarshal(raw, &spec); e != nil {
 			return e
+		}
+		if err := compatibleClient(c, spec); err != nil {
+			excluded++
+			continue
 		}
 		addresses := spec.EndpointAddresses
 		if len(addresses) == 0 {
@@ -234,7 +239,7 @@ func (s *Server) previewPolicy(w http.ResponseWriter, r *http.Request) error {
 			return bad(e.Error())
 		}
 	}
-	send(w, 200, map[string]any{"preview_only": true, "config": config, "warnings": warnings, "note": "仅编译预览，节点是本地不可用占位，不含身份信息；实际订阅仅包含该用户已授权且运行中的兼容节点"})
+	send(w, 200, map[string]any{"preview_only": true, "config": config, "warnings": warnings, "excluded_nodes": excluded, "note": "仅编译预览，节点是本地不可用占位，不含身份信息；实际订阅仅包含该用户已授权且运行中的兼容节点"})
 	return nil
 }
 

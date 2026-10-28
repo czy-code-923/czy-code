@@ -335,7 +335,8 @@ func (p Policy) Resolve(nodes []Node, bindings map[string]string) (Result, error
 			}
 		}
 		if len(refs) == 0 {
-			refs = []string{"REJECT"}
+			r.Blocked[g.Name] = true
+			continue
 		}
 		g.Proxies = refs
 		if g.Interval == 0 {
@@ -345,6 +346,31 @@ func (p Policy) Resolve(nodes []Node, bindings map[string]string) (Result, error
 			g.URL = "https://www.gstatic.com/generate_204"
 		}
 		r.Groups = append(r.Groups, g)
+	}
+	// Filtering a protocol may empty a group, including groups which refer to
+	// that group. Remove these recursively; dangling rule targets fail closed.
+	for changed := true; changed; {
+		changed = false
+		kept := []Group{}
+		for _, g := range r.Groups {
+			refs := []string{}
+			for _, ref := range g.Proxies {
+				if !r.Blocked[ref] {
+					refs = append(refs, ref)
+				}
+			}
+			if len(refs) == 0 {
+				r.Blocked[g.Name] = true
+				changed = true
+				continue
+			}
+			g.Proxies = refs
+			kept = append(kept, g)
+		}
+		r.Groups = kept
+	}
+	for name := range r.Blocked {
+		delete(names, name)
 	}
 	implicit := map[string]string{}
 	for _, line := range p.Rules {
@@ -371,8 +397,13 @@ func (p Policy) Resolve(nodes []Node, bindings map[string]string) (Result, error
 	}
 	if len(r.Rules) == 0 || !strings.HasPrefix(r.Rules[len(r.Rules)-1], "MATCH,") {
 		fallback := "PROXY"
-		if !names[fallback] && len(p.Groups) > 0 {
-			fallback = p.Groups[0].Name
+		if !names[fallback] {
+			fallback = "REJECT"
+			if len(r.Groups) > 0 {
+				fallback = r.Groups[0].Name
+			} else if len(nodes) > 0 {
+				fallback = nodes[0].Tag
+			}
 		}
 		r.Rules = append(r.Rules, "MATCH,"+fallback)
 	}

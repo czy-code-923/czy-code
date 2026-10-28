@@ -1,4 +1,6 @@
-# 星枢 · VPS 多机管理 0.21.1
+# 星枢 · VPS 多机管理 0.22.0
+
+本版修复 App 订阅适配：v2rayNG / v2rayN / NekoBox 默认返回可单选的节点列表，Hiddify 按其能力过滤协议；sing-box / SFA 配置包含 TUN 和选择接口。分享前检查兼容性，提供本地生成二维码。用户权限页可见时每 30 秒刷新，个人账单与共享入口用量分列。[0.22 工作流与兼容范围](docs/WORKFLOW-v022.md)。
 
 订阅节点的 IPv4 / 域名入口保留后台原名，IPv6 使用「原名-v6」。例如 `snell_pro` / `snell_pro-v6`，不附加随机 ID；策略仍按稳定端点引用选择，改名不会改变授权。重名、与策略组或客户端保留名称冲突时明确提示修改，不生成无法导入的配置。[本版说明](docs/WORKFLOW-v021.md)。
 
@@ -11,18 +13,53 @@
 Linux（Debian 11+ / Ubuntu 22.04+、Fedora、Rocky / Alma / RHEL 8+ / CentOS Stream、openSUSE / SLES 的 systemd 系统；需 root 或 sudo）：
 
 ```bash
-sh -c 'set -eu; S=; if [ "$(id -u)" != 0 ]; then command -v sudo >/dev/null || { echo "Run as root"; exit 1; }; S=sudo; fi; if ! command -v curl >/dev/null; then if command -v apt-get >/dev/null; then $S apt-get update; $S apt-get install -y curl ca-certificates; elif command -v dnf >/dev/null; then $S dnf install -y curl ca-certificates; elif command -v zypper >/dev/null; then $S zypper --non-interactive install curl ca-certificates; elif command -v apk >/dev/null; then $S apk add --no-cache curl ca-certificates; else echo "Install curl first on this OS"; exit 1; fi; fi; F=$(mktemp); curl --proto "=https" --tlsv1.2 -fL https://github.com/czy-code-923/czy-code/releases/download/v0.21.1-distribution/install-starhub.sh -o "$F"; $S sh "$F" --public; rm -f "$F"'
+sh -c 'set -eu; S=; if [ "$(id -u)" != 0 ]; then command -v sudo >/dev/null || { echo "Run as root"; exit 1; }; S=sudo; fi; if ! command -v curl >/dev/null; then if command -v apt-get >/dev/null; then $S apt-get update; $S apt-get install -y curl ca-certificates; elif command -v dnf >/dev/null; then $S dnf install -y curl ca-certificates; elif command -v zypper >/dev/null; then $S zypper --non-interactive install curl ca-certificates; elif command -v apk >/dev/null; then $S apk add --no-cache curl ca-certificates; else echo "Install curl first on this OS"; exit 1; fi; fi; F=$(mktemp); curl --proto "=https" --tlsv1.2 -fL https://github.com/czy-code-923/czy-code/releases/download/v0.22.0-distribution/install-starhub.sh -o "$F"; $S sh "$F" --public; rm -f "$F"'
 ```
 
 Windows 10/11 **管理员 PowerShell**：自动寻找或安装 Python、WinGet、Docker Desktop / WSL 组件，启动并等待 Linux 引擎。首次启用 WSL 需要重启时会提示，重启后重跑同一命令；不会自动重启、切换已有 Windows 容器或跳过 Docker 首次许可 / 虚拟化要求。Windows Server 使用 Linux 虚拟机。
 
 ```powershell
-Invoke-WebRequest https://github.com/czy-code-923/czy-code/releases/download/v0.21.1-distribution/install-starhub.ps1 -OutFile "$env:TEMP/install-starhub.ps1"; & "$env:TEMP/install-starhub.ps1" -Public
+Invoke-WebRequest https://github.com/czy-code-923/czy-code/releases/download/v0.22.0-distribution/install-starhub.ps1 -OutFile "$env:TEMP/install-starhub.ps1"; & "$env:TEMP/install-starhub.ps1" -Public
 ```
 
 默认公开 IP:18080 的认证网页（HTTP）；安装后可在设置绑定域名和 HTTPS。内部 API、分享处理器及数据库仍只监听回环。若要仅本机访问，去掉 `--public` / `-Public`。Windows 默认当前用户登录任务；Linux 服务由 systemd 管理。Alpine / OpenRC 可自动准备依赖，但面板用包内 `quickstart.py --foreground` 配合自己的监督器。环境安装不会卸载旧 Docker、清理镜像/数据或放开数据库端口。
 
-[完整源码与四平台附件](https://github.com/czy-code-923/czy-code/releases/tag/v0.21.1-distribution) · [手动 / Compose / 离线安装](docs/INSTALL.md)
+[完整源码与四平台附件](https://github.com/czy-code-923/czy-code/releases/tag/v0.22.0-distribution) · [手动 / Compose / 离线安装](docs/INSTALL.md)
+
+## 查询面板地址与临时 IP 备用入口
+
+查询配置地址、原生监听地址、备用入口状态（不显示登录令牌）。新安装默认根目录为 `/opt/starhub-control`；当前管理 VPS 为 `/opt/harbor`，脚本可自动识别。
+
+```bash
+curl -fL https://raw.githubusercontent.com/czy-code-923/czy-code/main/scripts/panel-access.py -o /tmp/starhub-panel-access.py && sudo python3 /tmp/starhub-panel-access.py status
+```
+
+当前管理 VPS 可直接查询：
+
+```bash
+sudo python3 /opt/harbor/panel-access.py status
+```
+
+域名故障时临时开启 **IP:18081，30 分钟自动关闭**，不更改域名或订阅设置。HTTP 未加密，可信网络才显式启用；平时关闭，公网 API / 数据库端口继续只在回环。若主机或云防火墙阻止 18081，需仅放行此网页端口；脚本不会改全局防火墙。
+
+```bash
+sudo python3 /opt/harbor/panel-access.py enable-ip --allow-http --minutes 30
+```
+
+手动关闭：
+
+```bash
+sudo python3 /opt/harbor/panel-access.py disable-ip
+```
+
+明确需要常开可加 `--persistent`，不推荐在不可信网络长期使用 HTTP。也可通过 SSH 加密转发现有回环网页，无需开放任何备用公网端口：
+
+```bash
+ssh -N -L 18080:127.0.0.1:5173 YOUR_USER@YOUR_VPS
+# 本机浏览器打开 http://127.0.0.1:18080
+```
+
+新安装把本地脚本路径换为 `/opt/starhub-control/panel-access.py`，转发目标换为查询返回的 `web_listener`。Windows 可运行 `python "$env:ProgramData/StarhubControl/panel-access.py" status`；临时运行加 `enable-ip --allow-http --foreground`，窗口必须保留，超时或 Ctrl+C 关闭。Compose 使用自己的端口映射与 SSH 转发，详情见 [安装文档](docs/INSTALL.md)。
 
 ## Linux 一键卸载
 
@@ -79,7 +116,7 @@ Nginx / 宝塔站点、Docker 本身及其他软件不会随面板卸载。更�
 - 防火墙版本编辑、回收站删除/恢复、本机受控移除和取消，保留独立回滚。
 - 原生配置识别草稿、客户端路由引用检查、可视化规则自动同步、嵌套组展开去重。
 - 空授权账号不再可能变为免认证；新增端口失败时保留完全未变的有效入站。补齐扩展协议的用户流量与访问日志解析。
-- 控制面与 Agent 均为 **0.21.1**；新功能需升级 Agent。
+- 控制面与 Agent 均为 **0.22.0**；新功能需升级 Agent。
 - [0.13 功能、配置、通知与兼容边界](docs/WORKFLOW-v013.md)。
 
 ## 0.12 新增

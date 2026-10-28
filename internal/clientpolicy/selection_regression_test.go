@@ -36,7 +36,7 @@ func TestRawNamesCannotBroadenAnExactExportTagOrAmbiguousNode(t *testing.T) {
 	}
 	p.Groups[0].Proxies = []string{"same"}
 	r, e = p.Resolve(nodes, nil)
-	if e != nil || !slices.Equal(r.Groups[0].Proxies, []string{"REJECT"}) {
+	if e != nil || len(r.Groups) != 0 || !slices.Equal(r.Rules, []string{"MATCH,REJECT"}) {
 		t.Fatal("ambiguous name broadened", r, e)
 	}
 	r, e = p.Resolve(nodes, map[string]string{"same": "one"})

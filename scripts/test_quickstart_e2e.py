@@ -30,10 +30,34 @@ def main():
             if check():return
             time.sleep(1)
         raise RuntimeError('Timeout: '+description)
-    assert api('session')['version']=='0.21.1'
+    assert api('session')['version']=='0.22.0'
     site=api('site');assert site['domain']=='' and site['ip_origin']=='http://127.0.0.1:18080'
     assert api('agent/releases/linux-amd64')['size']>1000000
     print('Fresh one-command control installation and no-domain IP access: PASS',flush=True)
+    access=root/'panel-access.py'
+    status=json.loads(subprocess.check_output([sys.executable,str(access),'status'],text=True))
+    assert status['panel_url']=='http://127.0.0.1:18080' and not status['recovery']['active']
+    denied=subprocess.run([sys.executable,str(access),'enable-ip'],capture_output=True,text=True)
+    assert denied.returncode!=0 and '--allow-http' in denied.stderr
+    subprocess.run([sys.executable,str(access),'enable-ip','--allow-http','--bind','127.0.0.1','--ip','127.0.0.1','--port','18081','--minutes','1'],check=True)
+    wait(lambda:subprocess.run(['systemctl','is-active','--quiet','starhub-panel-rescue.service']).returncode==0,'Recovery service ready',10)
+    status=json.loads(subprocess.check_output([sys.executable,str(access),'status'],text=True))
+    assert status['recovery']['active'] and status['recovery']['expires_at']
+    recovery='http://127.0.0.1:18081'
+    def recovery_status(origin,authorized=True):
+        headers={'Origin':origin,'Host':'192.0.2.1:18081'}
+        if authorized:headers['Authorization']='Bearer '+env['ADMIN_TOKEN']
+        try:
+            with urllib.request.urlopen(urllib.request.Request(recovery+'/api/v1/session',headers=headers),timeout=5) as response:return response.status
+        except urllib.error.HTTPError as e:return e.code
+    assert recovery_status('http://192.0.2.1:18081')==200
+    assert recovery_status('http://192.0.2.1:18081',False)==401
+    assert recovery_status('http://other.example')==403
+    subprocess.run([sys.executable,str(access),'disable-ip'],check=True)
+    assert not json.loads(subprocess.check_output([sys.executable,str(access),'status'],text=True))['recovery']['active']
+    ttl_process=subprocess.Popen([str(root/'bin/harbor-control'),'panel-web','--addr','127.0.0.1:18082','--dir',str(root/'web'),'--ttl','1s'],env={**os.environ,**env})
+    assert ttl_process.wait(timeout=8)==0
+    print('Panel address query, authenticated same-origin IP recovery, cross-origin denial and automatic expiry: PASS',flush=True)
     host=api('hosts',{'name':'CI disposable Agent'},201)
     path='hosts/'+host['id']+'/enrollment'
     api(path,{},400)
@@ -42,7 +66,7 @@ def main():
     result=subprocess.run(['sh','-c',command],stdout=subprocess.DEVNULL)
     if result.returncode:raise RuntimeError('Agent bootstrap failed; enrollment ticket omitted')
     def connected():
-        return any(h['id']==host['id'] and h['agent_version']=='0.21.1' and h['online'] and h['cleanup_capable'] for h in api('hosts'))
+        return any(h['id']==host['id'] and h['agent_version']=='0.22.0' and h['online'] and h['cleanup_capable'] for h in api('hosts'))
     wait(connected,'Agent registration and verified heartbeat')
     wait(lambda:any(k['engine']=='sing-box' and k['ready'] for k in api('hosts/'+host['id']+'/kernels')),'Native kernel capabilities')
     agent_env=Path('/etc/harbor-agent/agent.env')
@@ -172,7 +196,7 @@ def main():
     wait(lambda:all(not Path(path).exists() for path in paths),'Agent files and units fully removed',30)
     assert all(v['id']!=row['id'] for v in api('live'))
     api('agent/heartbeat',{},401,agent=credentials)
-    assert api('session')['version']=='0.21.1' and root.joinpath('control.env').exists()
+    assert api('session')['version']=='0.22.0' and root.joinpath('control.env').exists()
     subprocess.run(['docker','exec','starhub-control-db','pg_isready','-U','harbor','-d','harbor'],check=True,stdout=subprocess.DEVNULL)
     print('Remote Agent files and control-side deployment data removed; manager and database preserved: PASS',flush=True)
     # This is an isolated CI VM. Verify both safe uninstall and explicit purge.

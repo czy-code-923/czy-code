@@ -36,3 +36,16 @@ func TestShareProxyReplacesSpoofedPublicOrigin(t *testing.T) {
 		}
 	}
 }
+
+func TestRecoveryOriginDoesNotGrantCrossOriginAccess(t *testing.T) {
+	for _, v := range []struct {
+		origin string
+		want   bool
+	}{{"http://192.0.2.1:18081", true}, {"http://evil.example", false}, {"https://192.0.2.1:18081", false}, {"http://192.0.2.1:18081/path", false}, {"null", false}} {
+		r := httptest.NewRequest("POST", "http://192.0.2.1:18081/api/v1/hosts", nil)
+		r.Header.Set("Origin", v.origin)
+		if sameWebOrigin(r) != v.want {
+			t.Fatal(v)
+		}
+	}
+}

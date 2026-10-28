@@ -48,7 +48,7 @@ func TestPolicyWorkspaceEndpoints(t *testing.T) {
 		t.Fatal("import mutated stored policies", e)
 	}
 	call("POST", "client-policies", map[string]any{"name": "Max default", "client_id": "all", "source": source}, 200)
-	for _, client := range []string{"mihomo", "hiddify", "v2rayng", "shadowrocket-config"} {
+	for _, client := range []string{"mihomo", "hiddify", "xray", "shadowrocket-config"} {
 		out := call("POST", "client-policies/preview", map[string]any{"source": source, "client_id": client}, 200)
 		if out["preview_only"] != true {
 			t.Fatal("preview can be mistaken for deployable configuration")
@@ -59,6 +59,7 @@ func TestPolicyWorkspaceEndpoints(t *testing.T) {
 		}
 	}
 	call("POST", "client-policies/preview", map[string]any{"source": source, "client_id": "base64"}, 400)
+	call("POST", "client-policies/preview", map[string]any{"source": source, "client_id": "v2rayng"}, 400)
 	r := httptest.NewRequest("POST", "/api/v1/client-policies/import", strings.NewReader(`{"source":"rules: ['MATCH,DIRECT']"}`))
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)

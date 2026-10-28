@@ -31,6 +31,15 @@ func webServer(ctx context.Context, dir string) error {
 		return e
 	}
 	proxy := httputil.NewSingleHostReverseProxy(target)
+	baseDirector := proxy.Director
+	proxy.Director = func(r *http.Request) {
+		// This is a same-origin UI gateway. Other origins still reach the API's
+		// explicit CORS allowlist; no new cross-origin permission is created.
+		if sameWebOrigin(r) {
+			r.Header.Del("Origin")
+		}
+		baseDirector(r)
+	}
 	files := http.FileServerFS(root.FS())
 	mux := http.NewServeMux()
 	mux.Handle("/api/", proxy)
@@ -86,6 +95,18 @@ func webServer(ctx context.Context, dir string) error {
 		return nil
 	}
 	return e
+}
+
+func sameWebOrigin(r *http.Request) bool {
+	u, err := url.Parse(r.Header.Get("Origin"))
+	if err != nil || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
+		return false
+	}
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	return u.Scheme == scheme && strings.EqualFold(u.Host, r.Host)
 }
 
 func localListenerURL(key, fallback string) (*url.URL, error) {

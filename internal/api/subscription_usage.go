@@ -159,7 +159,7 @@ func (s *Server) inspectSubscription(w http.ResponseWriter, r *http.Request) err
 		} else if hwidRequired {
 			reason = "订阅链接可分享；客户端必须回传有效 x-hwid，首次导入自动登记设备，超过设备上限会明确拒绝。不支持 HWID 的普通 Clash/Mihomo 无法在设备限制开启时导入"
 		}
-		send(w, 200, map[string]any{"ready": ready, "stage": stage, "status": 200, "reason": reason, "hwid_required": hwidRequired, "max_devices": maxDevices, "content_type": recorder.Header().Get("Content-Type"), "excluded_nodes": recorder.Header().Get("X-Starhub-Excluded-Nodes"), "warnings": recorder.Header().Get("X-Starhub-Policy-Warnings")})
+		send(w, 200, map[string]any{"ready": ready, "stage": stage, "status": 200, "reason": reason, "hwid_required": hwidRequired, "max_devices": maxDevices, "content_type": recorder.Header().Get("Content-Type"), "included_nodes": recorder.Header().Get("X-Starhub-Included-Nodes"), "client": recorder.Header().Get("X-Starhub-Client"), "excluded_nodes": recorder.Header().Get("X-Starhub-Excluded-Nodes"), "warnings": recorder.Header().Get("X-Starhub-Policy-Warnings")})
 		return nil
 	}
 	var config any

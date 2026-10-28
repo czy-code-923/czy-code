@@ -16,12 +16,12 @@ import urllib.request
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.21.1"
-PREVIOUS = "0.21.0"
+VERSION = "0.22.0"
+PREVIOUS = "0.21.1"
 REPOSITORY = "czy-code-923/czy-code"
 BASE = f"https://github.com/{REPOSITORY}/releases/download/v{VERSION}-distribution/"
 OLD_BASE = f"https://github.com/{REPOSITORY}/releases/download/v{PREVIOUS}-distribution/"
-PINNED = {'starhub-v021-update.zip': 'afc5df1515e18b72e8027d67c45de5287b19c408de80f990e9cebcf34f112824'}
+PINNED = {'starhub-v0211-update.zip': '9d3120845676dfc6c3c5401e012f250057ce988afffa9d519c167e39f51bf2f0'}
 ENGINE_VERSIONS = {"sing-box": "v1.14.4", "xray": "v26.10.21", "frp": "v0.71.1"}
 
 
@@ -102,9 +102,9 @@ def main():
     if not os.environ.get("TEST_DATABASE_URL"):
         raise RuntimeError("Release packaging requires PostgreSQL-backed standalone API verification")
     subprocess.run([str(api_tests), "-test.count=1"], cwd=clean, check=True)
-    update = out / "starhub-v0211-update.zip"
-    with zipfile.ZipFile(previous("starhub-v021-update.zip")) as old, zipfile.ZipFile(update, "w", zipfile.ZIP_DEFLATED) as archive:
-        apply = old.read("apply.py").decode("utf-8").replace("v021", "v0211").replace("V021", "V0211").replace(PREVIOUS, VERSION)
+    update = out / "starhub-v022-update.zip"
+    with zipfile.ZipFile(previous("starhub-v0211-update.zip")) as old, zipfile.ZipFile(update, "w", zipfile.ZIP_DEFLATED) as archive:
+        apply = old.read("apply.py").decode("utf-8").replace("v0211", "v022").replace("V0211", "V022").replace(PREVIOUS, VERSION)
         # Keep the managed Nginx gateway binary in backup, update and rollback.
         gateway_tuple = "('control','agent','firewall','gateway')"
         if gateway_tuple not in apply:
@@ -118,9 +118,11 @@ def main():
             raise RuntimeError("Expected safe updater tool installation point is missing")
         if "shutil.copyfile(stage/'uninstall.py'" not in apply:
             apply = apply.replace("    " + marker, install_tools + marker, 1)
+        if "shutil.copyfile(stage/'panel-access.py'" not in apply:
+            apply=apply.replace("    "+marker,"    shutil.copyfile(stage/'panel-access.py',root/'panel-access.py');(root/'panel-access.py').chmod(0o700)\n    "+marker,1)
         compile(apply, "apply.py", "exec")
         archive.writestr("apply.py", apply)
-        for name in ("uninstall.py", "admin-token.py"):
+        for name in ("uninstall.py", "admin-token.py", "panel-access.py"):
             archive.write(ROOT / "scripts" / name, name)
         archive.write(api_tests, "api-tests")
         for name in ("harbor-control", "harbor-agent", "harbor-firewall", "harbor-agent-cleanup", "harbor-gateway"):

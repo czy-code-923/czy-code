@@ -102,3 +102,7 @@ POST 可携带 `Idempotency-Key: order-123`，同一密钥身份、同一内容�
 创建后以用户组授权实际入站，再通过现有 `/subscriptions` 创建绑定该用户的订阅；查询/导出链接需 subscriptions:links，不由 users:read 自动授予。SS/Snell 共享密钥不能实现独立用户级精确计量和撤销，按原有共享入口订阅规则处理。
 
 当前只有 self 工作区、最多 500 用户、无账单和支付流程。PUT 不是 PATCH，必须带必填基础字段。平台不保证终端已缓存凭据在离线 Agent 上立即失效；变更需要 Agent 在线同步。接口响应不会返回用户凭据密文。
+
+## 0.22 计量与客户端能力
+
+用户列表与机场 API 返回 `metered_nodes`、`shared_entries`。共享入口上传/下载是所有使用者的入口累计，不可当作该用户账单。`used_bytes` 与 `Subscription-Userinfo` 仍是独立身份的计费后用量。`client-catalog` 的 `format` 与 `full_config` 定义实际输出能力；v2rayNG / v2rayN / NekoBox 为节点 URI 订阅，不携带路由。分享检查返回 `client`、`included_nodes`、`excluded_nodes`；无兼容端点为 422，尚未同步为 503。
