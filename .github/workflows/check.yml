@@ -29,6 +29,7 @@ jobs:
       - run: python3 scripts/test_agent_bootstrap.py
       - run: python3 scripts/test_engine_installer.py
       - run: python3 scripts/test_uninstall.py
+      - run: python3 scripts/test_bootstrap_installers.py
       - run: go vet ./...
       - run: go test -race -count=1 -v ./...
         env:
@@ -56,6 +57,8 @@ jobs:
       - run: npm test
 
   native:
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -87,7 +90,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Download the immutable binary distribution
         run: |
-          curl --proto '=https' --tlsv1.2 -fL https://github.com/czy-code-923/czy-code/releases/download/v0.20.1-distribution/harbor-0.20.1-linux-amd64.zip -o /tmp/starhub.zip
+          curl --proto '=https' --tlsv1.2 -fL https://github.com/czy-code-923/czy-code/releases/download/v0.21.0-distribution/harbor-0.21.0-linux-amd64.zip -o /tmp/starhub.zip
           python3 -c 'import json; print(json.load(open("scripts/distribution-checksums.json"))["sha256"]["linux-amd64"]+"  /tmp/starhub.zip")' | sha256sum --check
           mkdir /tmp/starhub-distribution
           unzip -q /tmp/starhub.zip -d /tmp/starhub-distribution

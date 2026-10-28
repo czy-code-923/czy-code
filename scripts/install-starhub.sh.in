@@ -1,0 +1,71 @@
+#!/bin/sh
+# Release packaging replaces version and package digest placeholders.
+set -eu
+VERSION='__VERSION__'
+log() { printf '%s\n' "[Starhub] $*"; }
+have_python() { for candidate in python3 /usr/bin/python3 python3.13 python3.12 python3.11 python3.9; do if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c 'import sys;sys.exit(sys.version_info < (3,9))' >/dev/null 2>&1; then PYTHON=$candidate; return 0; fi; done; return 1; }
+install_base() {
+  log 'Installing missing Python / HTTPS downloader from system repositories'
+  case "$ID" in
+    debian|ubuntu|raspbian|linuxmint|pop) apt-get update; DEBIAN_FRONTEND=noninteractive apt-get install -y python3 curl ca-certificates ;;
+    fedora|centos|rhel|rocky|almalinux|amzn) dnf install -y python3 curl ca-certificates; if ! have_python; then dnf install -y python3.11; PYTHON=python3.11; fi ;;
+    opensuse*|sles) zypper --non-interactive install python3 curl ca-certificates ;;
+    alpine) apk add --no-cache python3 curl ca-certificates ;;
+    *) log "Unsupported distribution: $ID; install Python >=3.9 and Docker manually"; exit 1 ;;
+  esac
+}
+install_docker() {
+  log 'Installing missing Docker Engine; existing installations are never replaced'
+  case "$ID" in
+    debian|ubuntu|raspbian|linuxmint|pop) apt-get update; DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io ;;
+    fedora|centos|rhel|rocky|almalinux)
+      case "$ID" in fedora) repo=fedora;;rhel)repo=rhel;;*)repo=centos;;esac
+      target=/etc/yum.repos.d/starhub-docker-ce.repo
+      if [ ! -e "$target" ]; then curl --proto '=https' --tlsv1.2 -fsSL "https://download.docker.com/linux/$repo/docker-ce.repo" -o "$target"; fi
+      dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin ;;
+    amzn) dnf install -y docker ;;
+    opensuse*|sles) zypper --non-interactive install docker ;;
+    alpine) apk add --no-cache docker docker-cli ;;
+    *) log "Unsupported Docker installation on $ID"; exit 1 ;;
+  esac
+}
+ensure_environment() {
+  [ "$(uname -s)" = Linux ] || { log 'Linux required'; exit 1; }
+  [ "$(id -u)" = 0 ] || { log 'Run with sudo / as root to install prerequisites and services'; exit 1; }
+  ID=unknown
+  [ ! -r /etc/os-release ] || . /etc/os-release
+  PYTHON=python3
+  if ! have_python || ! command -v curl >/dev/null 2>&1; then install_base; fi
+  "$PYTHON" -c 'import sys;sys.exit(sys.version_info < (3,9))' || { log 'Python >=3.9 unavailable on this OS'; exit 1; }
+  if ! command -v docker >/dev/null 2>&1; then install_docker; if command -v systemctl >/dev/null 2>&1; then systemctl enable --now docker; elif command -v rc-update >/dev/null 2>&1; then rc-update add docker default; rc-service docker start; fi; fi
+  if ! docker info >/dev/null 2>&1; then
+    if command -v systemctl >/dev/null 2>&1; then systemctl start docker
+    elif command -v rc-service >/dev/null 2>&1; then rc-service docker start
+    else log 'Docker is installed but no supported service manager can start it'; exit 1; fi
+  fi
+  count=0
+  until docker info >/dev/null 2>&1; do count=$((count+1)); [ "$count" -lt 30 ] || { log 'Docker startup timed out'; exit 1; }; sleep 2; done
+  [ "$(docker info --format '{{.OSType}}')" = linux ] || { log 'Linux Docker containers are required'; exit 1; }
+  log 'Environment ready: Python and a working Linux-container Docker daemon'
+}
+# ENTRYPOINT
+ensure_environment
+if [ "${1-}" = --prerequisites-only ]; then exit 0; fi
+case "$(uname -m)" in x86_64|amd64) arch=amd64; sum=__LINUX_AMD64_SHA256__;; aarch64|arm64) arch=arm64; sum=__LINUX_ARM64_SHA256__;; *) log 'Supported architectures: amd64 arm64'; exit 1;; esac
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT HUP INT TERM
+curl --proto '=https' --tlsv1.2 -fL "https://github.com/czy-code-923/czy-code/releases/download/v$VERSION-distribution/harbor-$VERSION-linux-$arch.zip" -o "$work/package.zip"
+"$PYTHON" - "$work" "$sum" <<'PYCODE'
+import hashlib,sys,zipfile
+from pathlib import Path
+root=Path(sys.argv[1]).resolve(); archive=root/'package.zip'; h=hashlib.sha256()
+with archive.open('rb') as stream:
+ for chunk in iter(lambda:stream.read(1<<20),b''):h.update(chunk)
+if h.hexdigest()!=sys.argv[2]:raise ValueError('Package SHA-256 mismatch')
+with zipfile.ZipFile(archive) as z:
+ for member in z.infolist():
+  target=(root/member.filename).resolve()
+  if target!=root and root not in target.parents:raise ValueError('Unsafe archive path')
+ z.extractall(root)
+PYCODE
+"$PYTHON" "$work/scripts/quickstart.py" "$@"

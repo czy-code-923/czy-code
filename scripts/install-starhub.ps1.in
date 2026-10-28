@@ -1,0 +1,117 @@
+param([switch]$Public,[string]$Origin='', [int]$Port=18080,[switch]$PrerequisitesOnly)
+$ErrorActionPreference='Stop'
+[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12
+function Refresh-InstallPath {
+    $env:Path=[Environment]::GetEnvironmentVariable('Path','Machine')+';'+[Environment]::GetEnvironmentVariable('Path','User')+';'+$env:Path
+    $env:Path+=';'+(Join-Path $env:ProgramFiles 'Docker\Docker\resources\bin')
+}
+function Find-InstallPython {
+    $choices=@()
+    foreach($name in @('python','python3')) {
+        $cmd=Get-Command $name -ErrorAction SilentlyContinue
+        if($cmd -and $cmd.Source -notlike '*\WindowsApps\*') {$choices+=,$cmd.Source}
+    }
+    foreach($root in @((Join-Path $env:LOCALAPPDATA 'Programs\Python'),$env:ProgramFiles)) {
+        $choices+=@(Get-ChildItem -LiteralPath $root -Directory -Filter 'Python3*' -ErrorAction SilentlyContinue | ForEach-Object {Join-Path $_.FullName 'python.exe'})
+    }
+    foreach($candidate in $choices) {
+        if(Test-Path -LiteralPath $candidate) {try {& $candidate -c 'import sys;sys.exit(sys.version_info < (3,9))' 2>$null;if($LASTEXITCODE -eq 0){return $candidate}}catch{}}
+    }
+    return $null
+}
+function Ensure-InstallWinget {
+    if(Get-Command winget -ErrorAction SilentlyContinue){return}
+    Write-Host 'Installing Microsoft WinGet from the official Microsoft PowerShell module...'
+    Install-PackageProvider -Name NuGet -Force -Scope CurrentUser | Out-Null
+    Install-Module -Name Microsoft.WinGet.Client -Force -Repository PSGallery -Scope CurrentUser
+    Import-Module Microsoft.WinGet.Client
+    Repair-WinGetPackageManager -Force -Latest | Out-Host
+    Refresh-InstallPath
+    if(-not(Get-Command winget -ErrorAction SilentlyContinue)){throw 'WinGet installation failed; no panel was installed'}
+}
+function Get-InstallDockerOS {
+    if(-not(Get-Command docker -ErrorAction SilentlyContinue)){return ''}
+    try {$result=& docker info --format '{{.OSType}}' 2>$null;if($LASTEXITCODE -eq 0){return "$result".Trim()}}catch{}
+    return ''
+}
+function Test-InstallAdministrator {
+    return ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+function Ensure-InstallEnvironment {
+    if($env:OS -ne 'Windows_NT'){throw 'Windows required'}
+    Refresh-InstallPath
+    $python=Find-InstallPython
+    if(-not $python){
+        Ensure-InstallWinget
+        & winget install --exact --id Python.Python.3.13 --source winget --silent --accept-source-agreements --accept-package-agreements | Out-Host
+        if($LASTEXITCODE -ne 0){throw 'Python installation failed'}
+        Refresh-InstallPath;$python=Find-InstallPython
+        if(-not $python){throw 'Installed Python could not be located'}
+    }
+    $dockerOS=Get-InstallDockerOS
+    if($dockerOS -eq 'windows'){throw 'Existing Docker uses Windows containers. Switch it to Linux containers and rerun; existing containers were not changed'}
+    if($dockerOS -ne 'linux'){
+        if((Get-CimInstance Win32_OperatingSystem).ProductType -ne 1){throw 'Docker Desktop requires Windows 10/11, not Windows Server; use a Linux VM'}
+        $admin=Test-InstallAdministrator
+        $restart=$false
+        if($admin){
+            foreach($feature in @('Microsoft-Windows-Subsystem-Linux','VirtualMachinePlatform')){
+                if((Get-WindowsOptionalFeature -Online -FeatureName $feature).State -ne 'Enabled'){
+                    $changed=Enable-WindowsOptionalFeature -Online -FeatureName $feature -All -NoRestart
+                    $restart=$restart -or $changed.RestartNeeded
+                }
+            }
+        }
+        $desktop=Join-Path $env:ProgramFiles 'Docker\Docker\Docker Desktop.exe'
+        $userDesktop=Join-Path $env:LOCALAPPDATA 'Programs\DockerDesktop\Docker Desktop.exe'
+        if(-not(Test-Path -LiteralPath $desktop) -and (Test-Path -LiteralPath $userDesktop)){$desktop=$userDesktop}
+        if(-not(Test-Path -LiteralPath $desktop)){
+            if(-not $admin){throw 'Run the same command in Administrator PowerShell to install Docker / WSL'}
+            if((Get-CimInstance Win32_OperatingSystem).ProductType -ne 1){throw 'Docker Desktop requires Windows 10/11, not Windows Server; use a Linux VM'}
+            Ensure-InstallWinget
+            & winget install --exact --id Docker.DockerDesktop --source winget --silent --accept-source-agreements --accept-package-agreements --override 'install --quiet --backend=wsl-2 --no-windows-containers' | Out-Host
+            if($LASTEXITCODE -notin @(0,3010)){throw 'Docker Desktop installation failed'}
+            $restart=$restart -or $LASTEXITCODE -eq 3010
+            Refresh-InstallPath
+        }
+        if($restart){Write-Host 'Prerequisites installed. Restart Windows, then rerun the same Starhub command; the panel has not been installed.';exit 3010}
+        if($admin){
+            & wsl --update --web-download | Out-Host
+            if($LASTEXITCODE -eq 3010){Write-Host 'Restart Windows and rerun the same command; no panel data was created.';exit 3010}
+            if($LASTEXITCODE -ne 0){throw 'WSL update failed. Check virtualization / Windows servicing, then rerun; no panel data was created'}
+        }
+        if(Test-Path -LiteralPath $desktop){Start-Process -FilePath $desktop -WindowStyle Hidden}
+        Write-Host 'Waiting for Docker Desktop Linux engine. Complete first-run license / WSL prompts if shown.'
+        for($attempt=0;$attempt -lt 90;$attempt++){
+            if((Get-InstallDockerOS) -eq 'linux'){break}
+            Start-Sleep -Seconds 2
+        }
+        if((Get-InstallDockerOS) -ne 'linux'){throw 'Docker Linux engine not ready. Complete WSL / virtualization / first-run prompts, then rerun the same command. No panel data was created'}
+    }
+    Write-Host 'Environment ready: Python and a working Linux-container Docker daemon'
+    return $python
+}
+# ENTRYPOINT
+$Python=Ensure-InstallEnvironment
+if($PrerequisitesOnly){exit 0}
+$Version='__VERSION__'
+$Arch=[Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
+if($Arch -eq 'x64'){$Arch='amd64'}
+$Digests=@{amd64='__WINDOWS_AMD64_SHA256__';arm64='__WINDOWS_ARM64_SHA256__'}
+if(-not $Digests.ContainsKey($Arch)){throw 'Supported architectures: amd64 arm64'}
+$TempRoot=[IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\','/')
+$Stage=Join-Path $TempRoot ('starhub-install-'+[guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $Stage | Out-Null
+$Archive=Join-Path $Stage 'package.zip'
+Invoke-WebRequest ("https://github.com/czy-code-923/czy-code/releases/download/v$Version-distribution/harbor-$Version-windows-$Arch.zip") -OutFile $Archive
+if((Get-FileHash -LiteralPath $Archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $Digests[$Arch]){throw 'Package SHA-256 mismatch'}
+Expand-Archive -LiteralPath $Archive -DestinationPath $Stage
+$Arguments=@((Join-Path $Stage 'scripts/quickstart.py'),'--port',[string]$Port)
+if($Public){$Arguments+='--public'}
+if($Origin){$Arguments+=@('--origin',$Origin)}
+& $Python @Arguments
+if($LASTEXITCODE -ne 0){throw 'Installation stopped; verified files retained at '+$Stage}
+$ResolvedStage=[IO.Path]::GetFullPath($Stage)
+if(-not $ResolvedStage.StartsWith($TempRoot+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase) -or $ResolvedStage -eq $TempRoot){throw 'Unsafe staging cleanup path'}
+if((Get-Item -LiteralPath $ResolvedStage -Force).Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'Refusing linked staging directory'}
+Remove-Item -LiteralPath $ResolvedStage -Recurse -Force

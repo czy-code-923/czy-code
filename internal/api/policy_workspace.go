@@ -196,7 +196,7 @@ func (s *Server) previewPolicy(w http.ResponseWriter, r *http.Request) error {
 		}
 		for _, address := range addresses {
 			endpoint := n
-			endpoint.Tag = n.Name + "-" + n.ID[:8] + "-" + clientpolicy.AddressFamily(address)
+			endpoint.Tag = clientpolicy.ExportName(n.Name, address)
 			endpoint.Family = clientpolicy.AddressFamily(address)
 			nodes = append(nodes, endpoint)
 			outs = append(outs, map[string]any{"tag": endpoint.Tag, "name": endpoint.Tag, "type": "socks", "protocol": "socks", "server": "127.0.0.1", "server_port": 9, "settings": map[string]any{"servers": []any{map[string]any{"address": "127.0.0.1", "port": 9}}}})

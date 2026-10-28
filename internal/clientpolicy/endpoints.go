@@ -1,8 +1,10 @@
 package clientpolicy
 
 import (
+	"fmt"
 	"net/netip"
 	"strings"
+	"unicode"
 )
 
 func AddressFamily(address string) string {
@@ -31,7 +33,8 @@ func EndpointIdentity(ref string) (id, family string, ok bool) {
 func (p *Policy) RemoveNodes(ids map[string]bool, bindings map[string]string) bool {
 	changed := false
 	removed := func(ref string) bool {
-		if ids[bindings[ref]] {
+		boundID, _, _ := EndpointIdentity(bindings[ref])
+		if ids[bindings[ref]] || ids[boundID] {
 			return true
 		}
 		if strings.HasPrefix(ref, "node:") && ids[strings.TrimPrefix(ref, "node:")] {
@@ -76,10 +79,57 @@ func (p *Policy) RemoveNodes(ids map[string]bool, bindings map[string]string) bo
 		}
 	}
 	for ref, id := range bindings {
-		if ids[id] {
+		boundID, _, _ := EndpointIdentity(id)
+		if ids[id] || ids[boundID] {
 			delete(bindings, ref)
 			changed = true
 		}
 	}
 	return changed
+}
+
+// ExportName is the user-visible name. Stable endpoint IDs stay in policy references.
+func ExportName(name, address string) string {
+	if AddressFamily(address) == "ipv6" {
+		return name + "-v6"
+	}
+	return name
+}
+func ValidateExportNames(nodes []Node) error {
+	seen := map[string]bool{}
+	for _, n := range nodes {
+		if n.Tag == "" || strings.TrimSpace(n.Tag) != n.Tag || strings.Contains(n.Tag, ",") || strings.IndexFunc(n.Tag, unicode.IsControl) >= 0 {
+			return fmt.Errorf("节点订阅名称无效，请使用无逗号或控制字符的名称: %q", n.Tag)
+		}
+		switch n.Tag {
+		case "DIRECT", "REJECT", "ALL", "PROXY", "proxy", "direct", "block":
+			return fmt.Errorf("节点订阅名称与客户端保留名称冲突，请修改: %s", n.Tag)
+		}
+		if seen[n.Tag] {
+			return fmt.Errorf("节点订阅名称重复: %s；请修改重名节点（包含原名-v6 的冲突），不会自动附加随机 ID", n.Tag)
+		}
+		seen[n.Tag] = true
+	}
+	return nil
+}
+
+// Legacy export names remain importable without changing address selection.
+func legacyExportMatch(ref string, n Node, nodes []Node) bool {
+	if len(n.ID) < 8 {
+		return false
+	}
+	old := n.Name + "-" + n.ID[:8]
+	if ref == old+"-"+n.Family {
+		return true
+	}
+	if ref != old {
+		return false
+	}
+	families := map[string]bool{}
+	for _, v := range nodes {
+		if v.ID == n.ID {
+			families[v.Family] = true
+		}
+	}
+	return len(families) == 1
 }

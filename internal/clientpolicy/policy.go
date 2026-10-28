@@ -235,6 +235,9 @@ func (p Policy) Resolve(nodes []Node, bindings map[string]string) (Result, error
 	if e := p.Validate(); e != nil {
 		return r, e
 	}
+	if e := ValidateExportNames(nodes); e != nil {
+		return r, e
+	}
 	names := map[string]bool{}
 	for _, g := range p.Groups {
 		names[g.Name] = true
@@ -266,6 +269,17 @@ func (p Policy) Resolve(nodes []Node, bindings map[string]string) (Result, error
 			if len(tags) > 0 {
 				return tags
 			}
+			for _, n := range nodes {
+				if legacyExportMatch(ref, n, nodes) {
+					tags = append(tags, n.Tag)
+				}
+			}
+			if len(tags) == 1 {
+				return tags
+			}
+			if len(tags) > 1 {
+				return nil
+			}
 			ids := map[string]bool{}
 			for _, n := range nodes {
 				if n.Name == ref {
@@ -290,7 +304,11 @@ func (p Policy) Resolve(nodes []Node, bindings map[string]string) (Result, error
 				continue
 			}
 			if bound := bindings[ref]; bound != "" {
-				if bound == n.ID {
+				if id, family, ok := EndpointIdentity(bound); ok {
+					if id == n.ID && family == n.Family {
+						tags = append(tags, n.Tag)
+					}
+				} else if bound == n.ID {
 					tags = append(tags, n.Tag)
 				}
 				continue

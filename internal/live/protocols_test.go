@@ -176,7 +176,13 @@ func TestProtocolTemplates(t *testing.T) {
 				t.Fatal(e)
 			}
 			s.Port = listener.Addr().(*net.TCPAddr).Port
-			listener.Close()
+			defer listener.Close()
+			l, e := net.Listen("tcp", "127.0.0.1:0")
+			if e != nil {
+				t.Fatal(e)
+			}
+			defer l.Close()
+			clientPort := l.Addr().(*net.TCPAddr).Port
 			_, files, e = s.Render()
 			if e != nil {
 				t.Fatal(e)
@@ -199,16 +205,11 @@ func TestProtocolTemplates(t *testing.T) {
 			defer logFile.Close()
 			server.Stdout = logFile
 			server.Stderr = logFile
+			listener.Close() // Keep distinct ports reserved until each engine starts.
 			if e = server.Start(); e != nil {
 				t.Fatal(e)
 			}
 			defer func() { server.Process.Kill(); server.Wait() }()
-			l, e := net.Listen("tcp", "127.0.0.1:0")
-			if e != nil {
-				t.Fatal(e)
-			}
-			clientPort := l.Addr().(*net.TCPAddr).Port
-			l.Close()
 			clientSpec := s
 			if managed {
 				clientSpec.UUID = s.Accounts[0].UUID
@@ -232,6 +233,7 @@ func TestProtocolTemplates(t *testing.T) {
 			defer clientLog.Close()
 			client.Stderr = clientLog
 			client.Stdout = clientLog
+			l.Close()
 			if e = client.Start(); e != nil {
 				t.Fatal(e)
 			}

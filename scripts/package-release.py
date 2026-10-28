@@ -16,12 +16,12 @@ import urllib.request
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.20.1"
-PREVIOUS = "0.20.0"
+VERSION = "0.21.0"
+PREVIOUS = "0.20.1"
 REPOSITORY = "czy-code-923/czy-code"
 BASE = f"https://github.com/{REPOSITORY}/releases/download/v{VERSION}-distribution/"
 OLD_BASE = f"https://github.com/{REPOSITORY}/releases/download/v{PREVIOUS}-distribution/"
-PINNED = {'harbor-0.20.0-linux-amd64.zip': 'd756f379efda5c5dfc2c2a0bdbeb4d2d9ccc354950bf047258d45c6267568bb3', 'harbor-0.20.0-linux-arm64.zip': 'ace65901edc78719b23ed156a8835185879e1166ec9a0b8eef49b8bc08e8ec0a', 'harbor-0.20.0-windows-amd64.zip': '7adcbe8c6873e05569fb7776e7281e0c4a71a8c80a1bc66ccff3735941e8bf06', 'harbor-0.20.0-windows-arm64.zip': '36c7bb0740795113d171467ffa2ab98fdf0b98475cc2d173289bba099fb1ae8a', 'install-starhub.ps1': '22e0f230e5a30257b18eb169a4f6cf481fdb42dc905dda49bef3d020838a1fe5', 'install-starhub.sh': 'b0e0ace8e2cce5bd94ce29c5c2e185ec5cbb699b4b9086353478b17e177f0b41', 'starhub-v020-update.zip': 'cf1690aede3329a2dbc20f0d8a31c4190c67ee32261733045f067f85bfc295b4'}
+PINNED = {'starhub-v0201-update.zip': 'f2466a3bded9f0ded5c8457a97c949fd91914a5089ce621686d9acb9ca7a16b8'}
 ENGINE_VERSIONS = {"sing-box": "v1.14.4", "xray": "v26.10.21", "frp": "v0.71.1"}
 
 
@@ -102,9 +102,9 @@ def main():
     if not os.environ.get("TEST_DATABASE_URL"):
         raise RuntimeError("Release packaging requires PostgreSQL-backed standalone API verification")
     subprocess.run([str(api_tests), "-test.count=1"], cwd=clean, check=True)
-    update = out / "starhub-v0201-update.zip"
-    with zipfile.ZipFile(previous("starhub-v020-update.zip")) as old, zipfile.ZipFile(update, "w", zipfile.ZIP_DEFLATED) as archive:
-        apply = old.read("apply.py").decode("utf-8").replace("v020", "v0201").replace("V020", "V0201").replace(PREVIOUS, VERSION)
+    update = out / "starhub-v021-update.zip"
+    with zipfile.ZipFile(previous("starhub-v0201-update.zip")) as old, zipfile.ZipFile(update, "w", zipfile.ZIP_DEFLATED) as archive:
+        apply = old.read("apply.py").decode("utf-8").replace("v0201", "v021").replace("V0201", "V021").replace(PREVIOUS, VERSION)
         # Keep the managed Nginx gateway binary in backup, update and rollback.
         gateway_tuple = "('control','agent','firewall','gateway')"
         if gateway_tuple not in apply:
@@ -150,10 +150,10 @@ def main():
     (ROOT / "scripts/distribution-checksums.json").write_text(json.dumps({"version": VERSION, "sha256": package_checksums}, indent=2) + "\n", encoding="utf-8")
 
     for name in ("install-starhub.sh", "install-starhub.ps1"):
-        text = previous(name).read_text(encoding="utf-8-sig")
+        text = (ROOT / "scripts" / (name + ".in")).read_text(encoding="utf-8-sig").replace("__VERSION__", VERSION)
         for target in targets:
-            text = text.replace(PINNED[f"harbor-{PREVIOUS}-{target}.zip"], package_checksums[target])
-        text = text.replace(PREVIOUS, VERSION)
+            text = text.replace("__" + target.replace("-", "_").upper() + "_SHA256__", package_checksums[target])
+        if re.search(r"__[A-Z0-9_]+__",text):raise ValueError("Unrendered installer placeholders")
         (out / name).write_text(text, encoding="utf-8-sig" if name.endswith(".ps1") else "utf-8", newline="\n")
 
     # Only tracked project sources. Runtime state, credentials and build output

@@ -34,7 +34,10 @@ def main():
     if not 1024<=args.port<=65535 or args.port in (8080,8091,5173,args.db_port) or not 1024<=args.db_port<=65535:raise ValueError('Invalid external ports')
     if os.name!='nt' and os.geteuid()!=0 and not args.foreground:raise ValueError('Service installation requires root; use sudo or --foreground')
     if os.name!='nt' and not args.foreground and not shutil.which('systemctl'):raise ValueError('systemd unavailable; use --foreground with your supervisor')
-    run('docker','info',stdout=subprocess.DEVNULL);run('docker','version',stdout=subprocess.DEVNULL)
+    if run('docker','info','--format','{{.OSType}}',capture_output=True,text=True).stdout.strip()!='linux':raise ValueError('A Linux-container Docker daemon is required')
+    engine_host=os.environ.get('DOCKER_HOST') or run('docker','context','inspect','--format','{{.Endpoints.docker.Host}}',capture_output=True,text=True).stdout.strip()
+    if not engine_host.startswith('unix://') and not (os.name=='nt' and engine_host.startswith('npipe://')):raise ValueError('Use a local Docker daemon, not a remote Docker context')
+    run('docker','version',stdout=subprocess.DEVNULL)
     source=Path(__file__).resolve().parents[1];extension='.exe' if os.name=='nt' else ''
     if not (source/'bin'/('harbor-control'+extension)).is_file() or not (source/'web/dist/index.html').is_file():raise ValueError('Use the complete binary distribution with web/dist')
     root=Path(args.prefix).absolute()

@@ -44,6 +44,17 @@ func MatchAlias(a Alias, nodes []Candidate) (string, string) {
 			if !found {
 				continue
 			}
+		} else if a.Name == n.Name {
+			// The unsuffixed current name denotes the IPv4 (or DNS) endpoint.
+			for _, address := range n.Addresses {
+				if AddressFamily(address) != "ipv6" {
+					family = AddressFamily(address)
+					break
+				}
+			}
+			if family == "" {
+				continue
+			}
 		} else if a.Name != n.Name {
 			base := n.Name
 			if len(n.ID) >= 8 && a.Name == base+"-"+n.ID[:8] {
@@ -74,17 +85,6 @@ func MatchAlias(a Alias, nodes []Candidate) (string, string) {
 			}
 		}
 		matches = append(matches, aliasMatch{n, family})
-	}
-	if len(matches) > 1 {
-		exact := []aliasMatch{}
-		for _, m := range matches {
-			if a.Name == m.node.Name {
-				exact = append(exact, m)
-			}
-		}
-		if len(exact) == 1 {
-			matches = exact
-		}
 	}
 	if len(matches) == 1 {
 		if matches[0].family != "" {

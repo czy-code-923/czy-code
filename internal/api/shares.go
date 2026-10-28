@@ -272,10 +272,7 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 				}
 				naiveMap = "MAP " + spec.ServerName + " " + target
 			}
-			tag := name + "-" + service[:8]
-			if len(addresses) > 1 {
-				tag += "-" + policyFamily(address)
-			}
+			tag := clientpolicy.ExportName(name, address)
 			checkFormat := format
 			if format == "shadowrocket-config" {
 				checkFormat = "shadowrocket"
@@ -311,6 +308,9 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 	}
 	if e = rows.Err(); e != nil {
 		return e
+	}
+	if err := clientpolicy.ValidateExportNames(nodes); err != nil {
+		return problem{422, err.Error()}
 	}
 	if len(out) == 0 {
 		if excluded > 0 {

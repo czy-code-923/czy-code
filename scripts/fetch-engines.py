@@ -4,14 +4,28 @@ latest resolves the latest stable version. Specific tags are accepted. Existing
 engine directories are refused; runtime switching is handled by the Agent.
 """
 from pathlib import Path
+import time,urllib.error
 import argparse,hashlib,io,json,os,platform,re,tarfile,urllib.request,zipfile
 
+class SafeRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self,req,fp,code,msg,headers,newurl):
+        redirected=super().redirect_request(req,fp,code,msg,headers,newurl)
+        if redirected:redirected.remove_header('Authorization')
+        return redirected
+
 def fetch(url):
-    request=urllib.request.Request(url,headers={'User-Agent':'Starhub-official-engine-installer'})
-    with urllib.request.urlopen(request,timeout=120) as response:
-        raw=response.read((160<<20)+1)
-        if len(raw)>160<<20:raise ValueError('Download exceeds limit')
-        return raw
+    headers={'User-Agent':'Starhub-official-engine-installer'}
+    if url.startswith('https://api.github.com/') and os.environ.get('GITHUB_TOKEN'):headers['Authorization']='Bearer '+os.environ['GITHUB_TOKEN']
+    for attempt in range(3):
+        try:
+            request=urllib.request.Request(url,headers=headers)
+            with urllib.request.build_opener(SafeRedirect()).open(request,timeout=120) as response:
+                raw=response.read((160<<20)+1)
+                if len(raw)>160<<20:raise ValueError('Download exceeds limit')
+                return raw
+        except (urllib.error.URLError,TimeoutError):
+            if attempt==2:raise
+            time.sleep(2*(attempt+1))
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)

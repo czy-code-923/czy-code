@@ -37,8 +37,7 @@ func (s *Server) policyNodes(w http.ResponseWriter, r *http.Request) error {
 		}
 		for _, a := range addresses {
 			family := clientpolicy.AddressFamily(a)
-			suffix := map[string]string{"ipv4": "v4", "ipv6": "v6", "dns": "域名"}[family]
-			result = append(result, map[string]any{"id": id, "name": name + "-" + suffix, "node_name": name, "kind": kind, "engine": engine, "host_id": host, "address": a, "family": family, "reference": clientpolicy.EndpointReference(id, family), "state": state, "enabled": enabled, "online": online})
+			result = append(result, map[string]any{"id": id, "name": clientpolicy.ExportName(name, a), "node_name": name, "kind": kind, "engine": engine, "host_id": host, "address": a, "family": family, "reference": clientpolicy.EndpointReference(id, family), "state": state, "enabled": enabled, "online": online})
 		}
 	}
 	if e = rows.Err(); e != nil {

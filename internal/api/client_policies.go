@@ -151,19 +151,37 @@ func (s *Server) policies(w http.ResponseWriter, r *http.Request) error {
 	for _, g := range policy.Groups {
 		groups[g.Name] = true
 	}
-	rows, e := tx.Query(r.Context(), `SELECT id,name FROM live_services WHERE tenant_id=$1 AND delete_requested_at IS NULL AND kind NOT IN ('frps','frpc')`, tenant)
+	rows, e := tx.Query(r.Context(), `SELECT id,name,address,sealed FROM live_services WHERE tenant_id=$1 AND delete_requested_at IS NULL AND kind NOT IN ('frps','frpc')`, tenant)
 	if e != nil {
 		return e
 	}
 	names := map[string][]string{}
 	ids := map[string]bool{}
 	for rows.Next() {
-		var node, name string
-		if e = rows.Scan(&node, &name); e != nil {
+		var node, name, address string
+		var sealed []byte
+		if e = rows.Scan(&node, &name, &address, &sealed); e != nil {
 			rows.Close()
 			return e
 		}
-		names[name] = append(names[name], node)
+		raw, err := live.Open(s.MasterKey, sealed)
+		if err != nil {
+			rows.Close()
+			return err
+		}
+		var spec live.Spec
+		if err = json.Unmarshal(raw, &spec); err != nil {
+			rows.Close()
+			return err
+		}
+		addresses := spec.EndpointAddresses
+		if len(addresses) == 0 {
+			addresses = []string{address}
+		}
+		for _, address := range addresses {
+			label := clientpolicy.ExportName(name, address)
+			names[label] = append(names[label], clientpolicy.EndpointReference(node, clientpolicy.AddressFamily(address)))
+		}
 		ids[node] = true
 	}
 	rows.Close()
@@ -175,7 +193,8 @@ func (s *Server) policies(w http.ResponseWriter, r *http.Request) error {
 		if groups[ref] || clientpolicy.Dynamic(ref) {
 			continue
 		}
-		if old := previous[ref]; old != "" && ids[old] {
+		boundID, _, boundEndpoint := clientpolicy.EndpointIdentity(previous[ref])
+		if old := previous[ref]; old != "" && (ids[old] || boundEndpoint && ids[boundID]) {
 			bindings[ref] = old
 			continue
 		}
