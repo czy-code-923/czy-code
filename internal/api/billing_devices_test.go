@@ -240,6 +240,19 @@ func TestDeviceSlotsBillingAndSubscriptionIdentity(t *testing.T) {
 	if current["used_bytes"] != float64(550) {
 		t.Fatal("cumulative maximum or changed multiplier repriced historical traffic", current["used_bytes"])
 	}
+	if _, err := s.DB.Exec(ctx, `UPDATE user_devices SET last_connected_at=now()-interval '8 days',last_source_ip='203.0.113.249' WHERE id=$1`, id2); err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(h.call("GET", base, nil, 200, nil), []byte("203.0.113.249")) {
+		t.Fatal("device view retained an expired source IP")
+	}
+	if err := s.Reap(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var sourceRemoved bool
+	if err := s.DB.QueryRow(ctx, `SELECT last_source_ip IS NULL FROM user_devices WHERE id=$1`, id2).Scan(&sourceRemoved); err != nil || !sourceRemoved {
+		t.Fatal("expired device source IP was not purged", err)
+	}
 	h.call("DELETE", base+"/"+id2, nil, 200, nil)
 	share(d2["url"].(string), 404)
 	var count int
@@ -282,3 +295,4 @@ func TestMetadataPageAllRowsAndOrdering(t *testing.T) {
 		t.Fatal("expired metadata visible")
 	}
 }
+

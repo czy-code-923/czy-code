@@ -1,5 +1,5 @@
 name: Publish verified Starhub 0.18
-# Native-state tests create private directories explicitly on Linux and Windows.
+# Device source IPs share the seven-day connection metadata retention window.
 on:
   push:
     branches: [main]
