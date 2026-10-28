@@ -38,7 +38,7 @@ it('shows ordinary Clash observations and edits them without unsupported device 
  const api=vi.fn(async(p:string,m='GET',_b?:any)=>m==='PUT'?{}:p.endsWith('/devices')?[{id:'o',name:'FlClash',client_id:'mihomo',enabled:true,version:1,registration_source:'observed_client',user_agent:'FlClash/1.0',source_ip:'192.0.2.1',last_subscription_at:'2026-10-28T00:00:00Z'}]:[])
  const w=mount(Devices,{props:{user:{id:'u',name:'Alice'},api}});wrappers.push(w);await flushPromises()
  expect(w.text()).toContain('FlClash/1.0');expect(w.text()).toContain('192.0.2.1');expect(w.text()).toContain('归入用户总量')
- await w.findAll('button').find(b=>b.text()==='编辑权限')!.trigger('click');expect(w.find('.device-editor input[type=checkbox]').exists()).toBe(false)
+ await w.findAll('button').find(b=>b.text()==='编辑权限')!.trigger('click');expect(w.find('.device-editor input[type=checkbox]').exists()).toBe(false);expect(w.find('.device-editor select').exists()).toBe(false);expect(w.get('.device-editor input[readonly]').attributes('readonly')).toBeDefined()
  await w.get('form').trigger('submit');await flushPromises()
  const body=api.mock.calls.find(c=>c[1]==='PUT')!;expect(body).toHaveLength(3);expect(body[2]).not.toHaveProperty('all_nodes')
 })

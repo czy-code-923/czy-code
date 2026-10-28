@@ -1,5 +1,5 @@
 name: Publish verified Starhub 0.20.1
-# Compatible subscription observations retain only seven days of source metadata.
+# Observed client identity is read-only; user-facing names remain editable.
 on:
   push:
     branches: [main]
