@@ -53,7 +53,7 @@ func (s *Server) subscriptionUsage(r *http.Request, id, user string) (subscripti
 	u := subscriptionUsage{Mode: "shared", UserID: user}
 	if user != "" {
 		u.Mode = "user"
-		e := s.DB.QueryRow(r.Context(), `SELECT upload_bytes,download_bytes,quota_bytes,used_bytes,next_reset_at FROM proxy_users WHERE tenant_id=$1 AND id=$2`, tenant, user).Scan(&u.Upload, &u.Download, &u.Total, &u.Used, &u.NextReset)
+		e := s.DB.QueryRow(r.Context(), `SELECT billed_upload_bytes,billed_download_bytes,quota_bytes,used_bytes,next_reset_at FROM proxy_users WHERE tenant_id=$1 AND id=$2`, tenant, user).Scan(&u.Upload, &u.Download, &u.Total, &u.Used, &u.NextReset)
 		if e != nil {
 			return u, e
 		}

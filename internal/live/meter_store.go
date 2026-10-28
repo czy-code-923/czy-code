@@ -19,8 +19,8 @@ func (r *Runner) loadUsage() error {
 		return e
 	}
 	defer f.Close()
-	raw, e := io.ReadAll(io.LimitReader(f, 1<<20+1))
-	if e != nil || len(raw) > 1<<20 {
+	raw, e := io.ReadAll(io.LimitReader(f, 4<<20+1))
+	if e != nil || len(raw) > 4<<20 {
 		return errors.New("invalid traffic state")
 	}
 	if e = json.Unmarshal(raw, r.usage); e != nil {
@@ -32,7 +32,7 @@ func (r *Runner) loadUsage() error {
 	if r.usage.Access == nil {
 		r.usage.Access = map[string]AccessObservation{}
 	}
-	if len(r.usage.Counters) > 2000 || len(r.usage.Access) > 100 {
+	if len(r.usage.Counters) > 2000 || len(r.usage.Access) > 2000 {
 		return errors.New("traffic state exceeds capacity")
 	}
 	return nil
@@ -102,13 +102,24 @@ func (r *Runner) TelemetrySnapshot(ctx context.Context) (TelemetryBatch, error) 
 	for _, v := range r.usage.Access {
 		b.Access = append(b.Access, v)
 	}
+	sort.Slice(b.Access, func(i, j int) bool {
+		if b.Access[i].QueuedAt.Equal(b.Access[j].QueuedAt) {
+			return b.Access[i].ID < b.Access[j].ID
+		}
+		return b.Access[i].QueuedAt.Before(b.Access[j].QueuedAt)
+	})
+	if len(b.Access) > 100 {
+		b.Access = b.Access[:100]
+	}
 	sort.Slice(b.Counters, func(i, j int) bool { return b.Counters[i].ID < b.Counters[j].ID })
 	return b, nil
 }
 func (r *Runner) AckTelemetry(b TelemetryBatch, retired []string) error {
 	r.usage.mu.Lock()
 	for _, v := range b.Access {
-		delete(r.usage.Access, v.ID)
+		if current, ok := r.usage.Access[v.ID]; ok && current == v {
+			delete(r.usage.Access, v.ID)
+		}
 	}
 	for _, id := range retired {
 		delete(r.usage.Counters, id)

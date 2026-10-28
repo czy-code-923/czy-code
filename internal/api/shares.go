@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -68,21 +69,34 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 			return problem{404, "subscription unavailable"}
 		}
 	}
-	var id, user, profileID, name string
+	var id, user, profileID, name, device string
+	var deviceLimit int
+	deviceAll := true
+	var deviceServices []string
 	var account live.Account
 	profile := clientProfile{Port: 1080, Selection: "select", TestURL: "https://www.gstatic.com/generate_204"}
 	var expiry time.Time
 	var quota, upload, download int64
 	quotaReached := false
-	e = s.DB.QueryRow(r.Context(), "SELECT id,expires_at,COALESCE(user_id,''),COALESCE(profile_id,''),name FROM subscriptions WHERE tenant_id=$1 AND token_hash=$2 AND revoked_at IS NULL AND expires_at>now()", tenant, Hash(token)).Scan(&id, &expiry, &user, &profileID, &name)
+	e = s.DB.QueryRow(r.Context(), "SELECT id,expires_at,COALESCE(user_id,''),COALESCE(profile_id,''),name,COALESCE(device_id,'') FROM subscriptions WHERE tenant_id=$1 AND token_hash=$2 AND revoked_at IS NULL AND expires_at>now()", tenant, Hash(token)).Scan(&id, &expiry, &user, &profileID, &name, &device)
 	if e != nil {
 		return problem{404, "subscription unavailable"}
 	}
 	if user != "" {
 		var sealed []byte
 		var expires time.Time
-		if e = s.DB.QueryRow(r.Context(), `SELECT sealed,expires_at,quota_bytes,upload_bytes,download_bytes FROM proxy_users WHERE tenant_id=$1 AND id=$2 AND enabled AND expires_at>now() `, tenant, user).Scan(&sealed, &expires, &quota, &upload, &download); e != nil {
+		if e = s.DB.QueryRow(r.Context(), `SELECT sealed,expires_at,quota_bytes,billed_upload_bytes,billed_download_bytes,`+deviceLimitSQL+` FROM proxy_users u WHERE tenant_id=$1 AND id=$2 AND enabled AND expires_at>now() `, tenant, user).Scan(&sealed, &expires, &quota, &upload, &download, &deviceLimit); e != nil {
 			return problem{404, "subscription unavailable"}
+		}
+		if device != "" {
+			if e = s.DB.QueryRow(r.Context(), `SELECT sealed,all_nodes,service_ids FROM user_devices WHERE tenant_id=$1 AND id=$2 AND user_id=$3 AND enabled`, tenant, device, user).Scan(&sealed, &deviceAll, &deviceServices); e != nil {
+				return problem{404, "device subscription unavailable"}
+			}
+		} else if deviceLimit > 0 {
+			return problem{409, "此用户已启用设备限制，请使用设备管理中的专属订阅"}
+		}
+		if device != "" && !deviceAll && len(deviceServices) == 0 {
+			return problem{403, "此设备尚未授权任何入站"}
 		}
 		raw, err := live.Open(s.MasterKey, sealed)
 		if err != nil {
@@ -93,6 +107,20 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 		}
 		if expires.Before(expiry) {
 			expiry = expires
+		}
+	}
+	if device != "" {
+		ua := strings.Map(func(c rune) rune {
+			if c < 32 || c == 127 {
+				return -1
+			}
+			return c
+		}, r.UserAgent())
+		if len(ua) > 256 {
+			ua = ua[:256]
+		}
+		if _, e = s.DB.Exec(r.Context(), `UPDATE user_devices SET last_subscription_at=now(),user_agent=$3 WHERE tenant_id=$1 AND id=$2`, tenant, device, ua); e != nil {
+			return e
 		}
 	}
 	usage, err := s.subscriptionUsage(r, id, user)
@@ -196,6 +224,10 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 		var spec live.Spec
 		if e = json.Unmarshal(raw, &spec); e != nil {
 			return e
+		}
+		if device != "" && (!spec.ManagedUsers || !deviceAll && !slices.Contains(deviceServices, service)) {
+			excluded++
+			continue
 		}
 		if !live.Proxy(spec.Kind) {
 			continue

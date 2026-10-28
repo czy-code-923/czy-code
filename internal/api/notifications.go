@@ -46,7 +46,7 @@ func (c notificationConfig) validate() error {
 	if c.QuotaPercent < 1 || c.QuotaPercent > 100 {
 		return bad("quota threshold must be 1-100 percent")
 	}
-	if len(c.AllowedUsers) > 20 || len(c.Commands) > 5 || len(c.Events) > 4 {
+	if len(c.AllowedUsers) > 20 || len(c.Commands) > 6 || len(c.Events) > 6 {
 		return bad("notification selection exceeds limits")
 	}
 	if c.CommandPolling && len(c.AllowedUsers) == 0 {
@@ -58,20 +58,20 @@ func (c notificationConfig) validate() error {
 		}
 	}
 	for _, v := range c.Commands {
-		if !slices.Contains([]string{"status", "hosts", "traffic", "users", "help"}, v) {
+		if !slices.Contains([]string{"status", "hosts", "traffic", "users", "devices", "help"}, v) {
 			return bad("unsupported read-only command")
 		}
 	}
-	if len(c.ReportSections) > 4 {
+	if len(c.ReportSections) > 5 {
 		return bad("too many report sections")
 	}
 	for _, v := range c.ReportSections {
-		if !slices.Contains([]string{"status", "hosts", "traffic", "users"}, v) {
+		if !slices.Contains([]string{"status", "hosts", "traffic", "users", "devices"}, v) {
 			return bad("unsupported report section")
 		}
 	}
 	for _, v := range c.Events {
-		if !slices.Contains([]string{"host_offline", "host_online", "quota", "certificate"}, v) {
+		if !slices.Contains([]string{"host_offline", "host_online", "quota", "certificate", "host_quota", "device_limit"}, v) {
 			return bad("unsupported notification event")
 		}
 	}
@@ -122,7 +122,7 @@ func (s *Server) notifications(w http.ResponseWriter, r *http.Request) error {
 		var lastPoll, lastSend *time.Time
 		var lastError string
 		_ = s.DB.QueryRow(r.Context(), `SELECT last_poll_at,last_send_at,last_error FROM notification_settings WHERE tenant_id=$1`, tenant).Scan(&lastPoll, &lastSend, &lastError)
-		send(w, 200, map[string]any{"config": c, "last_poll_at": lastPoll, "last_send_at": lastSend, "last_error": lastError, "commands": []string{"status", "hosts", "traffic", "users", "help"}, "health": s.notificationHealth(r.Context(), c)})
+		send(w, 200, map[string]any{"config": c, "last_poll_at": lastPoll, "last_send_at": lastSend, "last_error": lastError, "commands": []string{"status", "hosts", "traffic", "users", "devices", "help"}, "health": s.notificationHealth(r.Context(), c)})
 		return nil
 	}
 	if r.Method == "DELETE" {
@@ -251,8 +251,17 @@ func (s *Server) telegram(ctx context.Context, token, method string, body any, r
 	return nil
 }
 func (s *Server) sendTelegram(ctx context.Context, c notificationConfig, token, text string) error {
-	if len([]rune(text)) > 3900 {
-		text = string([]rune(text)[:3900]) + "…"
+	units := 0
+	for i, r := range text {
+		width := 1
+		if r > 0xffff {
+			width = 2
+		}
+		if units+width > 3900 {
+			text = text[:i] + "…"
+			break
+		}
+		units += width
 	}
 	return s.telegram(ctx, token, "sendMessage", map[string]any{"chat_id": c.ChatID, "text": text, "disable_notification": false, "link_preview_options": map[string]bool{"is_disabled": true}}, nil)
 }
@@ -266,12 +275,16 @@ func (s *Server) notificationSummary(ctx context.Context, command string) (strin
 		var used, quota, remaining, up, down int64
 		var users int
 		e := s.DB.QueryRow(ctx, `SELECT COALESCE(sum(used_bytes),0),COALESCE(sum(quota_bytes),0),COALESCE(sum(GREATEST(quota_bytes-used_bytes,0)) FILTER(WHERE quota_bytes>0),0),COALESCE(sum(upload_bytes),0),COALESCE(sum(download_bytes),0),count(*) FROM proxy_users WHERE tenant_id=$1`, tenant).Scan(&used, &quota, &remaining, &up, &down, &users)
-		return fmt.Sprintf("星枢 · 用户流量\n用户 %d\n本期已用 %.2f GiB（上传 %.2f / 下载 %.2f）\n有限额度合计 %.2f GiB\n有限额度剩余 %.2f GiB\n无限额度用户不扣减有限余额；共享密钥入口不计入个人账单", users, float64(used)/(1<<30), float64(up)/(1<<30), float64(down)/(1<<30), float64(quota)/(1<<30), float64(remaining)/(1<<30)), e
-	case "hosts", "users":
-		query := `SELECT name,CASE WHEN last_seen>now()-interval '90 seconds' THEN '在线' ELSE '离线/未接入' END FROM hosts WHERE tenant_id=$1 AND deleted_at IS NULL ORDER BY name LIMIT 30`
+		return fmt.Sprintf("星枢 · 用户流量\n用户 %d\n本期计费已用 %.2f GiB（原始上传 %.2f / 下载 %.2f）\n有限额度合计 %.2f GiB\n有限额度剩余 %.2f GiB\n无限额度用户不扣减有限余额；共享密钥入口不计入个人账单", users, float64(used)/(1<<30), float64(up)/(1<<30), float64(down)/(1<<30), float64(quota)/(1<<30), float64(remaining)/(1<<30)), e
+	case "hosts", "users", "devices":
+		query := `SELECT h.name,CASE WHEN h.last_seen>now()-interval '90 seconds' THEN '在线' ELSE '离线/未接入' END||' · 套餐已用 '||round(COALESCE(t.used_bytes,0)::numeric/1073741824,2)::text||' GiB · 剩余 '||CASE WHEN COALESCE(t.quota_bytes,0)=0 THEN '不限额' ELSE round(GREATEST(t.quota_bytes-t.used_bytes,0)::numeric/1073741824,2)::text||' GiB' END||CASE WHEN t.last_sample_at>now()-interval '35 seconds' THEN ' · 最新采样' ELSE ' · 断报/待采样' END FROM hosts h LEFT JOIN host_traffic t ON(t.tenant_id,t.host_id)=(h.tenant_id,h.id) WHERE h.tenant_id=$1 AND h.deleted_at IS NULL ORDER BY h.name LIMIT 30`
 		if command == "users" {
-			query = `SELECT name,round(used_bytes::numeric/1073741824,2)::text||' GiB / '||CASE WHEN quota_bytes=0 THEN '不限额' ELSE round(quota_bytes::numeric/1073741824,2)::text||' GiB' END FROM proxy_users WHERE tenant_id=$1 ORDER BY name LIMIT 30`
+			query = `SELECT name,round(used_bytes::numeric/1073741824,2)::text||' GiB / '||CASE WHEN quota_bytes=0 THEN '不限额' ELSE round(quota_bytes::numeric/1073741824,2)::text||' GiB' END||' · 倍率 '||(multiplier_milli::numeric/1000)::text||'x · '||billing_mode FROM proxy_users WHERE tenant_id=$1 ORDER BY name LIMIT 30`
 		}
+		if command == "devices" {
+			query = `SELECT u.name,(SELECT count(*) FROM user_devices d WHERE d.tenant_id=u.tenant_id AND d.user_id=u.id AND d.enabled)::text||' 个启用 / 上限 '||CASE WHEN ` + deviceLimitSQL + `=0 THEN '未启用' ELSE (` + deviceLimitSQL + `)::text END FROM proxy_users u WHERE u.tenant_id=$1 ORDER BY u.name LIMIT 30`
+		}
+
 		rows, e := s.DB.Query(ctx, query, tenant)
 		if e != nil {
 			return "", e
@@ -287,7 +300,7 @@ func (s *Server) notificationSummary(ctx context.Context, command string) (strin
 		}
 		return strings.Join(lines, "\n"), rows.Err()
 	default:
-		return "星枢只读查询：/status /hosts /traffic /users /help\n可用命令取决于面板授权；不提供启停、删除、Shell、凭据或订阅链接查询。", nil
+		return "星枢只读查询：/status /hosts /traffic /users /devices /help\n可用命令取决于面板授权；不提供启停、删除、Shell、凭据或订阅链接查询。", nil
 	}
 }
 func (s *Server) notificationTest(w http.ResponseWriter, r *http.Request) error {

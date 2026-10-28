@@ -49,6 +49,11 @@ func (s *Server) policyNodes(w http.ResponseWriter, r *http.Request) error {
 }
 
 func prunePolicyNodes(r *http.Request, tx pgx.Tx, ids map[string]bool) error {
+	for id := range ids {
+		if _, e := tx.Exec(r.Context(), `UPDATE user_devices SET service_ids=service_ids-$2,version=version+1 WHERE tenant_id=$1 AND service_ids ? $2`, tenant, id); e != nil {
+			return e
+		}
+	}
 	rows, e := tx.Query(r.Context(), `SELECT id,source,bindings FROM client_policies WHERE tenant_id=$1 FOR UPDATE`, tenant)
 	if e != nil {
 		return e

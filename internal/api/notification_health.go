@@ -118,7 +118,7 @@ func (s *Server) notificationCommands(w http.ResponseWriter, r *http.Request) er
 		return problem{409, "notification settings changed; refresh first"}
 	}
 	commands := []map[string]string{}
-	names := map[string]string{"status": "状态概览", "hosts": "主机列表", "traffic": "流量与剩余额度", "users": "用户额度", "help": "查看可用命令"}
+	names := map[string]string{"status": "状态概览", "hosts": "主机列表", "traffic": "流量与剩余额度", "users": "用户额度", "devices": "设备名额与权限上限", "help": "查看可用命令"}
 	for _, cmd := range c.Commands {
 		commands = append(commands, map[string]string{"command": cmd, "description": names[cmd]})
 	}

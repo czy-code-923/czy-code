@@ -20,7 +20,7 @@ func (s *Server) updateResource(w http.ResponseWriter, r *http.Request) error {
 	}
 	allowed := "name"
 	if kind == "hosts" {
-		allowed += " provider address"
+		allowed += " provider address traffic"
 	}
 	if kind == "nodes" {
 		allowed += " engine"
@@ -28,10 +28,19 @@ func (s *Server) updateResource(w http.ResponseWriter, r *http.Request) error {
 	if len(raw) == 0 {
 		return bad("empty update")
 	}
+	var traffic *hostTrafficInput
 	updates := map[string]string{}
 	for key, value := range raw {
 		if !allowedField(allowed, key) {
 			return bad("topology fields are immutable; create a new resource or config version")
+		}
+		if key == "traffic" {
+			var v hostTrafficInput
+			if e := json.Unmarshal(value, &v); e != nil {
+				return bad("invalid host traffic fields")
+			}
+			traffic = &v
+			continue
 		}
 		var v string
 		if e := json.Unmarshal(value, &v); e != nil {
@@ -55,10 +64,13 @@ func (s *Server) updateResource(w http.ResponseWriter, r *http.Request) error {
 		return e
 	}
 	defer tx.Rollback(ctx)
+	if e = graphLock(r, tx); e != nil {
+		return e
+	}
 	var locked string
 	active := ""
 	if kind == "hosts" {
-		active = " AND deleted_at IS NULL"
+		active = " AND deleted_at IS NULL AND retire_state=''"
 	}
 	if e = tx.QueryRow(ctx, "SELECT id FROM "+table+" WHERE tenant_id=$1 AND id=$2"+active+" FOR UPDATE", tenant, r.PathValue("id")).Scan(&locked); e != nil {
 		return e
@@ -80,6 +92,11 @@ func (s *Server) updateResource(w http.ResponseWriter, r *http.Request) error {
 	}
 	for key, value := range updates {
 		if _, e = tx.Exec(ctx, "UPDATE "+table+" SET "+key+"=$3 WHERE tenant_id=$1 AND id=$2", tenant, locked, value); e != nil {
+			return e
+		}
+	}
+	if traffic != nil {
+		if e = saveHostTraffic(ctx, tx, locked, *traffic, false); e != nil {
 			return e
 		}
 	}
@@ -126,7 +143,7 @@ func (s *Server) deleteResource(w http.ResponseWriter, r *http.Request) error {
 	var locked string
 	active := ""
 	if kind == "hosts" {
-		active = " AND deleted_at IS NULL"
+		active = " AND deleted_at IS NULL AND retire_state=''"
 	}
 	if e = tx.QueryRow(ctx, "SELECT id FROM "+table+" WHERE tenant_id=$1 AND id=$2"+active+" FOR UPDATE", tenant, id).Scan(&locked); e != nil {
 		return e

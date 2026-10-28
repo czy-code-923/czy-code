@@ -3,18 +3,17 @@ package api
 import (
 	"context"
 	"crypto/sha256"
+	_ "embed"
 	"fmt"
-	"os"
 	"testing"
 	"vps-control/internal/clientpolicy"
 )
 
+//go:embed testdata/legacy-default-v016.yaml
+var legacyDefaultFixture string
+
 func TestLegacyFactoryMigrationPreservesCustomPolicy(t *testing.T) {
-	b, e := os.ReadFile("testdata/legacy-default-v016.yaml")
-	if e != nil {
-		t.Fatal(e)
-	}
-	p, e := clientpolicy.Parse(string(b))
+	p, e := clientpolicy.Parse(legacyDefaultFixture)
 	if e != nil {
 		t.Fatal(e)
 	}

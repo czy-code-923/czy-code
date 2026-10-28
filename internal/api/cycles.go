@@ -31,12 +31,15 @@ func nextMonthlyResetDay(anchor, after time.Time, day int) time.Time {
 }
 
 func resetPeriods(ctx context.Context, tx pgx.Tx) error {
+	if e := resetHostPeriods(ctx, tx); e != nil {
+		return e
+	}
 	var now time.Time
 	if e := tx.QueryRow(ctx, "SELECT now()").Scan(&now); e != nil {
 		return e
 	}
 	ids := []string{}
-	rows, e := tx.Query(ctx, `UPDATE proxy_users SET used_bytes=0,upload_bytes=0,download_bytes=0,last_reset_at=now() WHERE tenant_id=$1 AND last_reset_at < CASE reset_strategy WHEN 'daily' THEN date_trunc('day',now() AT TIME ZONE 'Asia/Shanghai') AT TIME ZONE 'Asia/Shanghai' WHEN 'monthly' THEN date_trunc('month',now() AT TIME ZONE 'Asia/Shanghai') AT TIME ZONE 'Asia/Shanghai' ELSE '-infinity'::timestamptz END RETURNING id`, tenant)
+	rows, e := tx.Query(ctx, `UPDATE proxy_users SET used_bytes=0,upload_bytes=0,download_bytes=0,billed_upload_bytes=0,billed_download_bytes=0,last_reset_at=now() WHERE tenant_id=$1 AND last_reset_at < CASE reset_strategy WHEN 'daily' THEN date_trunc('day',now() AT TIME ZONE 'Asia/Shanghai') AT TIME ZONE 'Asia/Shanghai' WHEN 'monthly' THEN date_trunc('month',now() AT TIME ZONE 'Asia/Shanghai') AT TIME ZONE 'Asia/Shanghai' ELSE '-infinity'::timestamptz END RETURNING id`, tenant)
 	if e != nil {
 		return e
 	}
@@ -75,7 +78,7 @@ func resetPeriods(ctx context.Context, tx pgx.Tx) error {
 		return e
 	}
 	for _, c := range due {
-		if _, e = tx.Exec(ctx, `UPDATE proxy_users SET used_bytes=0,upload_bytes=0,download_bytes=0,last_reset_at=now(),next_reset_at=$3 WHERE tenant_id=$1 AND id=$2`, tenant, c.id, nextMonthlyResetDay(c.anchor, now, c.day)); e != nil {
+		if _, e = tx.Exec(ctx, `UPDATE proxy_users SET used_bytes=0,upload_bytes=0,download_bytes=0,billed_upload_bytes=0,billed_download_bytes=0,last_reset_at=now(),next_reset_at=$3 WHERE tenant_id=$1 AND id=$2`, tenant, c.id, nextMonthlyResetDay(c.anchor, now, c.day)); e != nil {
 			return e
 		}
 		ids = append(ids, c.id)

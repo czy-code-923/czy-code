@@ -8,6 +8,14 @@ import (
 
 // Replace endpoint membership without rotating the URL or extending its lifetime.
 func (s *Server) subscriptionServices(w http.ResponseWriter, r *http.Request) error {
+	var bound bool
+	if e := s.DB.QueryRow(r.Context(), `SELECT device_id IS NOT NULL FROM subscriptions WHERE tenant_id=$1 AND id=$2`, tenant, r.PathValue("id")).Scan(&bound); e != nil {
+		return e
+	}
+	if bound {
+		return problem{409, "设备订阅由设备管理维护，不能重新绑定用户或入口"}
+	}
+
 	var b struct {
 		ServiceIDs []string `json:"service_ids"`
 	}

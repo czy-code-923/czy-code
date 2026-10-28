@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "星枢 · VPS 多机管理 API",
-    "version": "0.17.0",
+    "version": "0.18.0",
     "description": "Self-workspace API for host agents, proxy protocols, user quotas and client subscriptions. Bearer administrator token or expiring scoped xs_ API key. No arbitrary shell; privileged gateway work and API key administration remain root-only."
   },
   "servers": [
@@ -6179,6 +6179,538 @@
           }
         }
       }
+    },
+    "/api/v1/hosts/{id}/traffic": {
+      "get": {
+        "summary": "Read OS interface quota, raw RX/TX, remaining, sample freshness and gap status; usage:read",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful bounded response"
+          },
+          "400": {
+            "description": "Invalid fields"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Missing explicit feature scope"
+          },
+          "409": {
+            "description": "Stale version, backwards counter, active device limit or identity capacity conflict"
+          }
+        }
+      },
+      "put": {
+        "summary": "Set host accounting mode, quota, reset day and interface selection; hosts:write",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful bounded response"
+          },
+          "400": {
+            "description": "Invalid fields"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Missing explicit feature scope"
+          },
+          "409": {
+            "description": "Stale version, backwards counter, active device limit or identity capacity conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HostTrafficSettings"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/hosts/{id}/traffic/calibrate": {
+      "post": {
+        "summary": "Calibrate current provider usage or reset host period without replaying OS counters; usage:reset",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful bounded response"
+          },
+          "400": {
+            "description": "Invalid fields"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Missing explicit feature scope"
+          },
+          "409": {
+            "description": "Stale version, backwards counter, active device limit or identity capacity conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "version",
+                  "used_bytes"
+                ],
+                "properties": {
+                  "version": {
+                    "type": "integer"
+                  },
+                  "used_bytes": {
+                    "type": "integer",
+                    "format": "int64",
+                    "minimum": 0
+                  },
+                  "restart_cycle": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent/host-traffic": {
+      "post": {
+        "summary": "Authenticated durable OS interface report; Agent 0.18+",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Successful bounded response"
+          },
+          "400": {
+            "description": "Invalid fields"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Missing explicit feature scope"
+          },
+          "409": {
+            "description": "Stale version, backwards counter, active device limit or identity capacity conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/proxy-users/{id}/devices": {
+      "get": {
+        "summary": "List registered device credentials and self-reported client metadata; devices:read",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful bounded response"
+          },
+          "400": {
+            "description": "Invalid fields"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Missing explicit feature scope"
+          },
+          "409": {
+            "description": "Stale version, backwards counter, active device limit or identity capacity conflict"
+          }
+        }
+      },
+      "post": {
+        "summary": "Register per-device credentials and subscription; devices:write and devices:links",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful bounded response"
+          },
+          "400": {
+            "description": "Invalid fields"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Missing explicit feature scope"
+          },
+          "409": {
+            "description": "Stale version, backwards counter, active device limit or identity capacity conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "client_id"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "maxLength": 100
+                  },
+                  "client_id": {
+                    "type": "string",
+                    "default": "mihomo"
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "version": {
+                    "type": "integer"
+                  },
+                  "all_nodes": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Inherit all currently authorized independently authenticated inbounds. False with an empty service_ids list denies all."
+                  },
+                  "service_ids": {
+                    "type": "array",
+                    "maxItems": 64,
+                    "uniqueItems": true,
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{32}$"
+                    },
+                    "description": "Only inbounds already authorized to the parent user; effective export and runtime credentials use the same intersection."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/proxy-users/{id}/devices/{device}": {
+      "put": {
+        "summary": "Rename, select client format or enable/disable device; devices:write",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            }
+          },
+          {
+            "name": "device",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful bounded response"
+          },
+          "400": {
+            "description": "Invalid fields"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Missing explicit feature scope"
+          },
+          "409": {
+            "description": "Stale version, backwards counter, active device limit or identity capacity conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "client_id",
+                  "enabled",
+                  "version"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "maxLength": 100
+                  },
+                  "client_id": {
+                    "type": "string",
+                    "default": "mihomo"
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "version": {
+                    "type": "integer"
+                  },
+                  "all_nodes": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Inherit all currently authorized independently authenticated inbounds. False with an empty service_ids list denies all."
+                  },
+                  "service_ids": {
+                    "type": "array",
+                    "maxItems": 64,
+                    "uniqueItems": true,
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{32}$"
+                    },
+                    "description": "Only inbounds already authorized to the parent user; effective export and runtime credentials use the same intersection."
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Revoke device credentials and delete its subscription; devices:write",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            }
+          },
+          {
+            "name": "device",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful bounded response"
+          },
+          "400": {
+            "description": "Invalid fields"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Missing explicit feature scope"
+          },
+          "409": {
+            "description": "Stale version, backwards counter, active device limit or identity capacity conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/proxy-users/{id}/devices/{device}/link": {
+      "get": {
+        "summary": "Recover a device subscription URL; devices:links",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            }
+          },
+          {
+            "name": "device",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful bounded response"
+          },
+          "400": {
+            "description": "Invalid fields"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Missing explicit feature scope"
+          },
+          "409": {
+            "description": "Stale version, backwards counter, active device limit or identity capacity conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/access-records/page": {
+      "get": {
+        "summary": "Paginate all retained proxy metadata with time/traffic sorting; access:read",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "time",
+                "traffic"
+              ]
+            }
+          },
+          {
+            "name": "order",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "host_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "device_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 255
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful bounded response"
+          },
+          "400": {
+            "description": "Invalid fields"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Missing explicit feature scope"
+          },
+          "409": {
+            "description": "Stale version, backwards counter, active device limit or identity capacity conflict"
+          }
+        },
+        "description": "Returns items,total,page,limit,pages and retention metadata. Nullable per-connection bytes indicate the kernel did not provide them. At most 100 observations per Agent report, 7 days / 20,000 retained rows per workspace. Does not contain HTTPS contents or URL paths."
+      }
     }
   },
   "components": {
@@ -6627,6 +7159,14 @@
             "type": "boolean",
             "readOnly": true,
             "description": "Database clock freshness, independent of client clock"
+          },
+          "traffic": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/HostTrafficSettings"
+              }
+            ],
+            "description": "Optional initial host traffic settings. Create may omit version and add initial_used_bytes; calibrate after Agent is connected to align with provider history."
           }
         }
       },
@@ -7178,6 +7718,30 @@
             "type": "integer",
             "minimum": 1,
             "description": "PUT optimistic concurrency version returned by GET; stale value returns 409."
+          },
+          "billing_mode": {
+            "type": "string",
+            "enum": [
+              "both",
+              "uplink",
+              "downlink",
+              "max"
+            ],
+            "default": "both"
+          },
+          "multiplier_milli": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100000,
+            "default": 1000,
+            "description": "1000=1x. Only new traffic uses the new rate; previously billed usage is retained."
+          },
+          "max_devices": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 20,
+            "default": 0,
+            "description": "0 adds no limit. Effective limit is strictest nonzero user/group value. Enabling a limit removes the generic user credential; use per-device subscriptions. This is credential slot enforcement, not physical hardware attestation."
           }
         },
         "required": [
@@ -7207,6 +7771,12 @@
           },
           "version": {
             "type": "integer"
+          },
+          "max_devices": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 20,
+            "default": 0
           }
         },
         "required": [
@@ -7547,26 +8117,29 @@
           },
           "commands": {
             "type": "array",
-            "maxItems": 5,
+            "maxItems": 6,
             "items": {
               "enum": [
                 "status",
                 "hosts",
                 "traffic",
                 "users",
+                "devices",
                 "help"
               ]
             }
           },
           "events": {
             "type": "array",
-            "maxItems": 4,
+            "maxItems": 6,
             "items": {
               "enum": [
                 "host_offline",
                 "host_online",
                 "quota",
-                "certificate"
+                "certificate",
+                "host_quota",
+                "device_limit"
               ]
             }
           },
@@ -7576,13 +8149,14 @@
           },
           "report_sections": {
             "type": "array",
-            "maxItems": 4,
+            "maxItems": 5,
             "items": {
               "enum": [
                 "status",
                 "hosts",
                 "traffic",
-                "users"
+                "users",
+                "devices"
               ]
             }
           },
@@ -7618,6 +8192,106 @@
             "items": {
               "type": "string"
             }
+          }
+        }
+      },
+      "HostTrafficSettings": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "quota_bytes",
+          "mode",
+          "reset_day",
+          "auto_reset",
+          "version"
+        ],
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "quota_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "maximum": 9000000000000000
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "both",
+              "rx",
+              "tx",
+              "max"
+            ],
+            "description": "RX/TX are from the host interface perspective. max uses cumulative period totals."
+          },
+          "reset_day": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 31
+          },
+          "auto_reset": {
+            "type": "boolean"
+          },
+          "interfaces": {
+            "type": "array",
+            "maxItems": 16,
+            "items": {
+              "type": "string"
+            },
+            "description": "Empty selects OS-detected uplink interfaces; selecting an interface never retroactively adds its old counters."
+          }
+        }
+      },
+      "HostTrafficCreate": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "quota_bytes",
+          "mode",
+          "reset_day",
+          "auto_reset"
+        ],
+        "properties": {
+          "quota_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "maximum": 9000000000000000
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "both",
+              "rx",
+              "tx",
+              "max"
+            ],
+            "description": "RX/TX are from the host interface perspective. max uses cumulative period totals."
+          },
+          "reset_day": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 31
+          },
+          "auto_reset": {
+            "type": "boolean"
+          },
+          "interfaces": {
+            "type": "array",
+            "maxItems": 16,
+            "items": {
+              "type": "string"
+            },
+            "description": "Empty selects OS-detected uplink interfaces; selecting an interface never retroactively adds its old counters."
+          },
+          "initial_used_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "maximum": 9000000000000000,
+            "description": "Provider usage before this Agent starts tracking; do not infer from OS lifetime counters."
           }
         }
       }

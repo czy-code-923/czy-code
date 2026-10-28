@@ -232,6 +232,35 @@ func (s *Server) notificationAlerts(ctx context.Context, c notificationConfig, t
 			return e
 		}
 	}
+	for _, event := range []string{"host_quota", "device_limit"} {
+		if !slices.Contains(c.Events, event) {
+			continue
+		}
+		query := `SELECT h.id,h.name,CASE WHEN t.quota_bytes>0 AND t.used_bytes::numeric*100>=t.quota_bytes::numeric*$2 THEN 'alert' ELSE 'ok' END FROM host_traffic t JOIN hosts h ON(h.tenant_id,h.id)=(t.tenant_id,t.host_id) WHERE t.tenant_id=$1 AND h.deleted_at IS NULL LIMIT 200`
+		args := []any{tenant, c.QuotaPercent}
+		if event == "device_limit" {
+			query = `SELECT u.id,u.name,CASE WHEN ` + deviceLimitSQL + `>0 AND (SELECT count(*) FROM user_devices d WHERE d.tenant_id=u.tenant_id AND d.user_id=u.id AND d.enabled)>=` + deviceLimitSQL + ` THEN 'alert' ELSE 'ok' END FROM proxy_users u WHERE u.tenant_id=$1 AND u.enabled LIMIT 500`
+			args = []any{tenant}
+		}
+		rows, e := s.DB.Query(ctx, query, args...)
+		if e != nil {
+			return e
+		}
+		for rows.Next() {
+			var i item
+			if e = rows.Scan(&i.Key, &i.Name, &i.State); e != nil {
+				rows.Close()
+				return e
+			}
+			i.Key = event + "/" + i.Key
+			i.Event = event
+			items = append(items, i)
+		}
+		rows.Close()
+		if e = rows.Err(); e != nil {
+			return e
+		}
+	}
 	if slices.Contains(c.Events, "certificate") {
 		rows, e := s.DB.Query(ctx, `SELECT id,domain,CASE WHEN expires_at<now()+interval '14 days' THEN 'alert' ELSE 'ok' END FROM managed_certificates WHERE tenant_id=$1 AND expires_at IS NOT NULL LIMIT 200`, tenant)
 		if e != nil {
@@ -271,6 +300,12 @@ func (s *Server) notificationAlerts(ctx context.Context, c notificationConfig, t
 			text := fmt.Sprintf("星枢 · %s\n%s · %s", i.Event, i.Name, i.State)
 			if i.Event == "quota" {
 				text += fmt.Sprintf("\n用户本期已用达到 %d%% 阈值", c.QuotaPercent)
+			}
+			if i.Event == "host_quota" {
+				text += fmt.Sprintf("\n主机最后确认用量已达 %d%% 阈值；请在主机流量中查看采样时间与剩余量", c.QuotaPercent)
+			}
+			if i.Event == "device_limit" {
+				text += "\n用户设备凭据名额已满，新增设备将被拒绝；可先停用旧设备"
 			}
 			if i.Event == "certificate" {
 				text += "\n证书不足 14 天，请检查续期"

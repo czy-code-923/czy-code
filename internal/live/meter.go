@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net"
+	"net/netip"
 	"strconv"
 	"strings"
 	"sync"
@@ -19,6 +20,7 @@ type connectionUsage struct {
 	Up, Down      int64
 	Service, User string
 	Closed        bool
+	Observation   *AccessObservation
 }
 type kernelMeter struct {
 	mu             sync.Mutex
@@ -62,42 +64,60 @@ func (s *usageStore) add(engine, kind, id string, up, down int64) {
 	v.Down += down
 	s.Counters[key] = v
 }
-func (s *usageStore) observe(key, user, service, source, dest, domain, network string) {
+func newObservation(key, user, service, source, dest, domain, network string) *AccessObservation {
 	if !manifest.ValidID(service) {
-		return
+		return nil
 	}
+
 	ip, _, e := net.SplitHostPort(source)
 	if e != nil {
-		return
+		return nil
+	}
+	if address, err := netip.ParseAddr(ip); err != nil || address.Zone() != "" || address.IsUnspecified() {
+		return nil
 	}
 	host, port, e := net.SplitHostPort(dest)
 	if e != nil {
-		return
+		return nil
 	}
 	n, e := strconv.Atoi(port)
 	if e != nil || n < 1 || n > 65535 {
-		return
+		return nil
 	}
 	if domain != "" {
 		host = domain
 	}
 	if !Address(host) {
-		return
+		return nil
 	}
 	if !manifest.ValidID(user) {
 		user = ""
 	}
 	if network != "tcp" && network != "udp" {
-		return
+		return nil
 	}
-	id := manifest.Digest([]byte(key))[:32]
+	return &AccessObservation{ID: manifest.Digest([]byte(key))[:32], User: user, Service: service, Source: ip, Destination: host, Port: n, Network: network, ObservedAt: time.Now().UTC()}
+}
+func (s *usageStore) enqueue(v AccessObservation) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if len(s.Access) >= 100 {
+	old, exists := s.Access[v.ID]
+	if !exists && len(s.Access) >= 2000 {
 		return
 	}
-	s.Access[id] = AccessObservation{ID: id, User: user, Service: service, Source: ip, Destination: host, Port: n, Network: network}
+	if exists {
+		v.QueuedAt = old.QueuedAt
+	} else {
+		v.QueuedAt = time.Now().UTC()
+	}
+	s.Access[v.ID] = v
 }
+func (s *usageStore) observe(key, user, service, source, dest, domain, network string) {
+	if v := newObservation(key, user, service, source, dest, domain, network); v != nil {
+		s.enqueue(*v)
+	}
+}
+
 func (m *kernelMeter) processSB(raw []byte) error {
 	fields, e := pbFields(raw)
 	if e != nil {
@@ -162,8 +182,8 @@ func (m *kernelMeter) processSB(raw []byte) error {
 					v.Down = int64(x.number)
 				}
 			}
-			if !exists {
-				m.store.observe(m.secret+id, v.User, v.Service, source, dest, domain, network)
+			if v.Observation == nil {
+				v.Observation = newObservation(m.secret+id, v.User, v.Service, source, dest, domain, network)
 			}
 		} else if exists && typ == 1 {
 			v.Up += du
@@ -178,6 +198,14 @@ func (m *kernelMeter) processSB(raw []byte) error {
 		}
 		if typ == 2 {
 			v.Closed = true
+		}
+		if v.Observation != nil {
+			obs := *v.Observation
+			obs.Up = v.Up
+			obs.Down = v.Down
+			obs.BytesKnown = true
+			obs.Closed = v.Closed
+			m.store.enqueue(obs)
 		}
 		if v.Closed && !previous.Closed {
 			m.closed = append(m.closed, id)

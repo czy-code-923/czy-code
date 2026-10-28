@@ -1,7 +1,7 @@
 """Destructive installation/uninstallation test ONLY on a fresh GitHub-hosted Linux VM.
 Never run on a user's VPS. The independent CI job has no user data or credentials.
 """
-import json,os,subprocess,sys,time,urllib.error,urllib.request
+import datetime,http.client,http.server,json,os,subprocess,sys,tempfile,threading,time,urllib.error,urllib.request
 from pathlib import Path
 
 def main():
@@ -29,7 +29,7 @@ def main():
             if check():return
             time.sleep(1)
         raise RuntimeError('Timeout: '+description)
-    assert api('session')['version']=='0.17.0'
+    assert api('session')['version']=='0.18.0'
     site=api('site');assert site['domain']=='' and site['ip_origin']=='http://127.0.0.1:18080'
     assert api('agent/releases/linux-amd64')['size']>1000000
     print('Fresh one-command control installation and no-domain IP access: PASS',flush=True)
@@ -41,7 +41,7 @@ def main():
     result=subprocess.run(['sh','-c',command],stdout=subprocess.DEVNULL)
     if result.returncode:raise RuntimeError('Agent bootstrap failed; enrollment ticket omitted')
     def connected():
-        return any(h['id']==host['id'] and h['agent_version']=='0.17.0' and h['online'] and h['cleanup_capable'] for h in api('hosts'))
+        return any(h['id']==host['id'] and h['agent_version']=='0.18.0' and h['online'] and h['cleanup_capable'] for h in api('hosts'))
     wait(connected,'Agent registration and verified heartbeat')
     wait(lambda:any(k['engine']=='sing-box' and k['ready'] for k in api('hosts/'+host['id']+'/kernels')),'Native kernel capabilities')
     agent_env=Path('/etc/harbor-agent/agent.env')
@@ -62,6 +62,76 @@ def main():
     assert any(k['engine']=='sing-box' and k['ready'] and 'harbor' not in k['version'].lower() for k in kernels)
     print('Official latest engine switch with existing inbound preserved: PASS',flush=True)
 
+    # Check real host counters after downloading a large official archive.
+    traffic_path='hosts/'+host['id']+'/traffic'
+    wait(lambda:api(traffic_path)['fresh'] and api(traffic_path)['period_rx']>0,'OS interface traffic report')
+    traffic=api(traffic_path)
+    api(traffic_path,{'version':traffic['version'],'quota_bytes':10**12,'mode':'both','reset_day':5,'auto_reset':True,'interfaces':[]},method='PUT')
+    traffic=api(traffic_path)
+    assert traffic['used_bytes']==traffic['period_rx']+traffic['period_tx']
+    assert traffic['remaining_bytes']==traffic['quota_bytes']-traffic['used_bytes']
+    assert datetime.datetime.fromisoformat(traffic['next_reset_at'].replace('Z','+00:00')).astimezone(datetime.timezone(datetime.timedelta(hours=8))).day==5
+    print('Native host byte counters, quota balance and monthly reset day: PASS',flush=True)
+
+    # A real per-device VMess identity transfers data through the installed Agent.
+    managed=api('live',{'name':'CI device VMess','host_id':host['id'],'engine':'sing-box','kind':'vmess','listen':'127.0.0.1','address':'127.0.0.1','port':24790,'tls_mode':'none','managed_users':True},201)
+    api('live/'+managed['id']+'/toggle',{'enabled':True})
+    user=api('proxy-users',{'name':'CI device owner','enabled':True,'expires_at':(datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(days=1)).isoformat(),'quota_bytes':10**9,'billing_mode':'both','multiplier_milli':1500,'max_devices':1})
+    api('user-groups',{'name':'CI device grant','user_ids':[user['id']],'service_ids':[managed['id']],'max_devices':2})
+    device_path='proxy-users/'+user['id']+'/devices'
+    device=api(device_path,{'name':'CI client','client_id':'sing-box','all_nodes':True},201)
+    api(device_path,{'name':'CI over limit','client_id':'sing-box'},409)
+    def deployed():
+        return any(v['id']==managed['id'] and v['state']=='running' and v['reported_version']==v['version'] for v in api('live'))
+    wait(deployed,'Device-specific identity deployment')
+    with urllib.request.urlopen(urllib.request.Request(device['url'],headers={'User-Agent':'Starhub-CI/device-client'}),timeout=15) as response:
+        exported=json.load(response)
+    outbound=next(v for v in exported['outbounds'] if v['type']=='vmess')
+    outbound['tag']='device-proxy'
+    class Payload(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            data=b'x'*(2*1024*1024)
+            self.send_response(200);self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data)
+        def log_message(self,*args):pass
+    target=http.server.ThreadingHTTPServer(('127.0.0.1',0),Payload)
+    thread=threading.Thread(target=target.serve_forever,daemon=True);thread.start()
+    def transfer():
+        connection=http.client.HTTPConnection('127.0.0.1',24791,timeout=10)
+        try:
+            connection.request('GET','http://127.0.0.1:'+str(target.server_port)+'/metadata-only')
+            response=connection.getresponse()
+            return response.status==200 and len(response.read())==2*1024*1024
+        except (OSError,http.client.HTTPException):return False
+        finally:connection.close()
+    try:
+        with tempfile.TemporaryDirectory(prefix='starhub-device-ci-') as directory:
+            config=Path(directory)/'client.json'
+            config.write_text(json.dumps({'log':{'level':'error'},'inbounds':[{'type':'http','tag':'local','listen':'127.0.0.1','listen_port':24791}],'outbounds':[outbound],'route':{'final':'device-proxy'}}))
+            with subprocess.Popen([credentials['SING_BOX_BINARY'],'run','-c',str(config)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL) as client:
+                try:
+                    wait(transfer,'Actual per-device proxy transfer',30)
+                    wait(lambda:api('proxy-users/'+user['id'])['used_bytes']>0,'Device counter mapped to parent billing')
+                    bill=api('proxy-users/'+user['id'])
+                    assert bill['used_bytes']==(bill['upload_bytes']+bill['download_bytes'])*1500//1000
+                    assert bill['billed_upload_bytes']+bill['billed_download_bytes']==bill['used_bytes']
+                    def recorded():
+                        rows=api('access-records/page?device_id='+device['id'])['items']
+                        return any(v['source_ip']=='127.0.0.1' and v['total_bytes'] is not None and v['total_bytes']>0 for v in rows)
+                    wait(recorded,'Connection metadata with device and actual bytes')
+                    with urllib.request.urlopen(device['url'],timeout=15) as response:
+                        fields=dict(part.strip().split('=',1) for part in response.headers['Subscription-Userinfo'].split(';'))
+                    assert int(fields['upload'])+int(fields['download'])>=bill['used_bytes']
+                    current=next(v for v in api(device_path) if v['id']==device['id'])
+                    api(device_path+'/'+device['id'],{'version':current['version'],'name':current['name'],'client_id':'sing-box','enabled':False},method='PUT')
+                    wait(deployed,'Disabled device identity removed from native inbound')
+                    assert not transfer(), 'Disabled device still authenticated'
+                finally:
+                    client.terminate()
+                    try:client.wait(timeout=10)
+                    except subprocess.TimeoutExpired:client.kill();client.wait()
+    finally:target.shutdown();target.server_close();thread.join(timeout=5)
+    print('Real device transfer, multiplier billing, metadata, subscription usage and revocation: PASS',flush=True)
+
     api('hosts/'+host['id']+'/retirement',{},202)
     api('hosts/'+host['id']+'/rotate-agent-token',{},404)
     wait(lambda:all(h['id']!=host['id'] for h in api('hosts')),'Root cleanup and authenticated purge acknowledgement',150)
@@ -69,7 +139,7 @@ def main():
     wait(lambda:all(not Path(path).exists() for path in paths),'Agent files and units fully removed',30)
     assert all(v['id']!=row['id'] for v in api('live'))
     api('agent/heartbeat',{},401,agent=credentials)
-    assert api('session')['version']=='0.17.0' and root.joinpath('control.env').exists()
+    assert api('session')['version']=='0.18.0' and root.joinpath('control.env').exists()
     subprocess.run(['docker','exec','starhub-control-db','pg_isready','-U','harbor','-d','harbor'],check=True,stdout=subprocess.DEVNULL)
     print('Remote Agent files and control-side deployment data removed; manager and database preserved: PASS',flush=True)
 if __name__=='__main__':main()

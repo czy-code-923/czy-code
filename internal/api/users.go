@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"vps-control/internal/billing"
 	"vps-control/internal/live"
 )
 
@@ -44,6 +45,9 @@ func (s *Server) users(w http.ResponseWriter, r *http.Request) error {
 		Quota      *int64     `json:"quota_bytes"`
 		Reset      *string    `json:"reset_strategy"`
 		Day        *int       `json:"reset_day"`
+		Billing    *string    `json:"billing_mode"`
+		Multiplier *int       `json:"multiplier_milli"`
+		MaxDevices *int       `json:"max_devices"`
 		Anchor     *time.Time `json:"reset_anchor_at"`
 	}
 	if e := decode(w, r, &b); e != nil {
@@ -132,8 +136,42 @@ func (s *Server) users(w http.ResponseWriter, r *http.Request) error {
 	if e != nil {
 		return e
 	}
+	if !fresh {
+		if _, e = tx.Exec(r.Context(), `UPDATE subscriptions SET expires_at=$3 WHERE tenant_id=$1 AND user_id=$2 AND device_id IS NOT NULL`, tenant, id, b.Expires); e != nil {
+			return e
+		}
+	}
+	if b.Rotate {
+		if e = s.rotateDeviceCredentials(r.Context(), tx, id); e != nil {
+			return e
+		}
+	}
 	if b.ExternalID != nil {
 		if _, e = tx.Exec(r.Context(), `UPDATE proxy_users SET external_id=NULLIF($3,'') WHERE tenant_id=$1 AND id=$2`, tenant, id, *b.ExternalID); e != nil {
+			return e
+		}
+	}
+	if b.Billing != nil {
+		if !billing.ValidMode(*b.Billing) {
+			return bad("invalid user billing mode")
+		}
+		if _, e = tx.Exec(r.Context(), `UPDATE proxy_users SET billing_mode=$3 WHERE tenant_id=$1 AND id=$2`, tenant, id, *b.Billing); e != nil {
+			return e
+		}
+	}
+	if b.Multiplier != nil {
+		if *b.Multiplier < 1 || *b.Multiplier > 100000 {
+			return bad("multiplier_milli must be 1-100000")
+		}
+		if _, e = tx.Exec(r.Context(), `UPDATE proxy_users SET multiplier_milli=$3 WHERE tenant_id=$1 AND id=$2`, tenant, id, *b.Multiplier); e != nil {
+			return e
+		}
+	}
+	if b.MaxDevices != nil {
+		if *b.MaxDevices < 0 || *b.MaxDevices > 20 {
+			return bad("max_devices must be 0-20")
+		}
+		if _, e = tx.Exec(r.Context(), `UPDATE proxy_users SET max_devices=$3 WHERE tenant_id=$1 AND id=$2`, tenant, id, *b.MaxDevices); e != nil {
 			return e
 		}
 	}
@@ -212,6 +250,9 @@ func (s *Server) users(w http.ResponseWriter, r *http.Request) error {
 	if e = configureCycle(r.Context(), tx, id, b.Anchor, cycleChanged); e != nil {
 		return e
 	}
+	if e = checkDevicePolicies(r.Context(), tx); e != nil {
+		return e
+	}
 	if e = s.checkMeterHosts(r, tx, id, ""); e != nil {
 		return e
 	}
@@ -235,7 +276,7 @@ func (s *Server) users(w http.ResponseWriter, r *http.Request) error {
 func (s *Server) groups(w http.ResponseWriter, r *http.Request) error {
 	if r.Method == "GET" {
 		var data json.RawMessage
-		e := s.DB.QueryRow(r.Context(), `SELECT COALESCE(jsonb_agg(x),'[]') FROM (SELECT g.id,g.name,g.version,COALESCE((SELECT jsonb_agg(user_id) FROM user_group_members WHERE tenant_id=g.tenant_id AND group_id=g.id),'[]') user_ids,COALESCE((SELECT jsonb_agg(service_id) FROM user_group_services WHERE tenant_id=g.tenant_id AND group_id=g.id),'[]') service_ids FROM user_groups g WHERE tenant_id=$1 ORDER BY name LIMIT 200) x`, tenant).Scan(&data)
+		e := s.DB.QueryRow(r.Context(), `SELECT COALESCE(jsonb_agg(x),'[]') FROM (SELECT g.id,g.name,g.version,g.max_devices,COALESCE((SELECT jsonb_agg(user_id) FROM user_group_members WHERE tenant_id=g.tenant_id AND group_id=g.id),'[]') user_ids,COALESCE((SELECT jsonb_agg(service_id) FROM user_group_services WHERE tenant_id=g.tenant_id AND group_id=g.id),'[]') service_ids FROM user_groups g WHERE tenant_id=$1 ORDER BY name LIMIT 200) x`, tenant).Scan(&data)
 		if e != nil {
 			return e
 		}
@@ -243,10 +284,11 @@ func (s *Server) groups(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 	var b struct {
-		Name     string   `json:"name"`
-		Users    []string `json:"user_ids"`
-		Services []string `json:"service_ids"`
-		Version  int      `json:"version"`
+		Name       string   `json:"name"`
+		Users      []string `json:"user_ids"`
+		Services   []string `json:"service_ids"`
+		Version    int      `json:"version"`
+		MaxDevices *int     `json:"max_devices"`
 	}
 	if e := decode(w, r, &b); e != nil {
 		return e
@@ -282,6 +324,14 @@ func (s *Server) groups(w http.ResponseWriter, r *http.Request) error {
 	}
 	if _, e = tx.Exec(r.Context(), `UPDATE live_services SET version=version+1,state='pending' WHERE managed_users AND tenant_id=$1 AND id IN (SELECT service_id FROM user_group_services WHERE tenant_id=$1 AND group_id=$2)`, tenant, id); e != nil {
 		return e
+	}
+	if b.MaxDevices != nil {
+		if *b.MaxDevices < 0 || *b.MaxDevices > 20 {
+			return bad("max_devices must be 0-20")
+		}
+		if _, e = tx.Exec(r.Context(), `UPDATE user_groups SET max_devices=$3 WHERE tenant_id=$1 AND id=$2`, tenant, id, *b.MaxDevices); e != nil {
+			return e
+		}
 	}
 	if _, e = tx.Exec(r.Context(), `DELETE FROM user_group_members WHERE tenant_id=$1 AND group_id=$2`, tenant, id); e != nil {
 		return e
@@ -319,6 +369,9 @@ func (s *Server) groups(w http.ResponseWriter, r *http.Request) error {
 	if _, e = tx.Exec(r.Context(), `UPDATE live_services SET version=version+1,state='pending' WHERE managed_users AND tenant_id=$1 AND id=ANY($2)`, tenant, b.Services); e != nil {
 		return e
 	}
+	if e = checkDevicePolicies(r.Context(), tx); e != nil {
+		return e
+	}
 	if e = s.checkMeterHosts(r, tx, "", id); e != nil {
 		return e
 	}
@@ -336,7 +389,7 @@ func (s *Server) materializeAccounts(r *http.Request, tx pgx.Tx, id string, spec
 		return nil
 	}
 	spec.Accounts = []live.Account{}
-	rows, e := tx.Query(r.Context(), `SELECT DISTINCT u.id,u.sealed FROM proxy_users u JOIN user_group_members m ON (u.tenant_id,u.id)=(m.tenant_id,m.user_id) JOIN user_group_services g ON (g.tenant_id,g.group_id)=(m.tenant_id,m.group_id) WHERE u.tenant_id=$1 AND g.service_id=$2 AND u.enabled AND u.expires_at>now() AND (u.quota_bytes=0 OR (u.used_bytes<u.quota_bytes AND EXISTS(SELECT 1 FROM telemetry_status t JOIN live_services l ON (l.tenant_id,l.host_id,l.engine)=(t.tenant_id,t.host_id,t.engine) WHERE l.tenant_id=u.tenant_id AND l.id=$2 AND t.state='collecting' AND t.reported_at>now()-interval '30 seconds'))) ORDER BY u.id LIMIT 500`, tenant, id)
+	rows, e := tx.Query(r.Context(), `WITH eligible AS (SELECT DISTINCT u.* FROM proxy_users u JOIN user_group_members m ON (u.tenant_id,u.id)=(m.tenant_id,m.user_id) JOIN user_group_services g ON (g.tenant_id,g.group_id)=(m.tenant_id,m.group_id) WHERE u.tenant_id=$1 AND g.service_id=$2 AND u.enabled AND u.expires_at>now() AND (u.quota_bytes=0 OR (u.used_bytes<u.quota_bytes AND EXISTS(SELECT 1 FROM telemetry_status t JOIN live_services l ON (l.tenant_id,l.host_id,l.engine)=(t.tenant_id,t.host_id,t.engine) WHERE l.tenant_id=u.tenant_id AND l.id=$2 AND t.state='collecting' AND t.reported_at>now()-interval '30 seconds')))) SELECT u.id,u.sealed FROM eligible u WHERE `+deviceLimitSQL+`=0 UNION ALL SELECT d.id,d.sealed FROM eligible u JOIN user_devices d ON (d.tenant_id,d.user_id)=(u.tenant_id,u.id) WHERE d.enabled AND (d.all_nodes OR d.service_ids ? $2) ORDER BY id LIMIT 501`, tenant, id)
 	if e != nil {
 		return e
 	}

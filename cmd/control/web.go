@@ -26,12 +26,18 @@ func webServer(ctx context.Context, dir string) error {
 	if _, e = root.Stat("index.html"); e != nil {
 		return errors.New("WEB_DIR must contain built index.html")
 	}
-	target, _ := url.Parse("http://127.0.0.1:8080")
+	target, e := localListenerURL("HTTP_ADDR", "127.0.0.1:8080")
+	if e != nil {
+		return e
+	}
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	files := http.FileServerFS(root.FS())
 	mux := http.NewServeMux()
 	mux.Handle("/api/", proxy)
-	shareTarget, _ := url.Parse("http://127.0.0.1:8091")
+	shareTarget, e := localListenerURL("SHARE_ADDR", "127.0.0.1:8091")
+	if e != nil {
+		return e
+	}
 	mux.Handle("/s/", httputil.NewSingleHostReverseProxy(shareTarget))
 	mux.Handle("/healthz", proxy)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -80,4 +86,22 @@ func webServer(ctx context.Context, dir string) error {
 		return nil
 	}
 	return e
+}
+
+func localListenerURL(key, fallback string) (*url.URL, error) {
+	addr := os.Getenv(key)
+	if addr == "" {
+		addr = fallback
+	}
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, errors.New("invalid " + key + " listener")
+	}
+	ip := net.ParseIP(host)
+	if host == "" || ip != nil && ip.IsUnspecified() {
+		host = "127.0.0.1"
+	} else if ip == nil {
+		return nil, errors.New(key + " requires IP:port")
+	}
+	return &url.URL{Scheme: "http", Host: net.JoinHostPort(host, port)}, nil
 }

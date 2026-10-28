@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import {computed,onMounted,onUnmounted,ref} from 'vue'
 const props=defineProps<{api:(p:string,m?:string,b?:any)=>Promise<any>}>()
-const config=ref<Record<string,any>>({enabled:false,version:0,chat_id:'',bot_token:'',command_polling:false,allowed_user_ids:[],commands:['status','hosts','traffic','users','help'],events:[],report_minutes:60,report_sections:['status','traffic'],quota_percent:80})
+const config=ref<Record<string,any>>({enabled:false,version:0,chat_id:'',bot_token:'',command_polling:false,allowed_user_ids:[],commands:['status','hosts','traffic','users','devices','help'],events:[],report_minutes:60,report_sections:['status','traffic'],quota_percent:80})
 const ids=ref(''),logs=ref<Record<string,any>[]>([]),status=ref<Record<string,any>>({}),busy=ref(false),error=ref(''),notice=ref(''),unbinding=ref(false)
 const diagnostic=ref<Record<string,any>|null>(null),health=computed(()=>status.value.health??{}),privateOwner=computed(()=>/^\d+$/.test(config.value.chat_id)&&Number.isSafeInteger(Number(config.value.chat_id))&&Number(config.value.chat_id)>0)
 const pollLabels:Record<string,string>={disabled:'未开启',starting:'等待首轮接收',receiving:'正在接收',error:'接收异常',stale:'接收已过期'}
 let alive=true,timer:ReturnType<typeof setTimeout>
-const commands=[{id:'status',name:'状态概览'},{id:'hosts',name:'主机列表'},{id:'traffic',name:'用量汇总'},{id:'users',name:'用户额度'},{id:'help',name:'帮助'}]
-const events=[{id:'host_offline',name:'主机离线'},{id:'host_online',name:'主机恢复'},{id:'quota',name:'用户额度阈值'},{id:'certificate',name:'证书不足 14 天'}]
+const commands=[{id:'status',name:'状态概览'},{id:'hosts',name:'主机列表'},{id:'traffic',name:'用量汇总'},{id:'users',name:'用户额度'},{id:'devices',name:'设备名额'},{id:'help',name:'帮助'}]
+const events=[{id:'host_offline',name:'主机离线'},{id:'host_online',name:'主机恢复'},{id:'quota',name:'用户额度阈值'},{id:'certificate',name:'证书不足 14 天'},{id:'host_quota',name:'主机套餐流量阈值'},{id:'device_limit',name:'用户设备名额已满'}]
 async function refresh(){const [a,b]=await Promise.all([props.api('notifications/telegram'),props.api('notifications/log')]);if(!alive)return;status.value=a;logs.value=b}
 async function load(){await refresh();config.value={...config.value,...status.value.config,bot_token:''};ids.value=(config.value.allowed_user_ids??[]).join('\n')}
 async function run(fn:()=>Promise<void>){if(busy.value)return;busy.value=true;error.value='';notice.value='';try{await fn()}catch(e){error.value=String(e)}finally{busy.value=false}}
@@ -26,7 +26,7 @@ onMounted(()=>{void run(load);schedule()});onUnmounted(()=>{alive=false;clearTim
 <form @submit.prevent="save"><div class="fields"><label>机器人 Token<input v-model="config.bot_token" type="password" autocomplete="off" :placeholder="config.token_configured?'已加密保存；留空保留':'从 BotFather 创建机器人后填写'" :required="!config.token_configured"></label><label>通知聊天 ID<input v-model="config.chat_id" required placeholder="个人 ID 或负数群组 ID" inputmode="numeric"></label></div>
 <p class="form-note">先在 Telegram 与机器人开始聊天，或将其加入通知群。Token 只写入加密存储，不回显、不写日志；不要将它发到公开聊天。报告可能包含主机名、用户名称与用量，启用即授权发送到上述聊天。</p>
 <label class="check-label"><input v-model="config.enabled" type="checkbox">启用此通知绑定</label>
-<h3>定时报告</h3><div class="fields"><label>发送间隔（分钟；0 关闭）<input v-model.number="config.report_minutes" type="number" min="0" max="10080"></label><label>用户流量提醒阈值 %<input v-model.number="config.quota_percent" type="number" min="1" max="100"></label></div><p class="muted">最短 15 分钟。停机期间跳过过期轮次，恢复后发送一份报告；不会补发大量历史通知。</p>
+<h3>定时报告</h3><div class="fields"><label>发送间隔（分钟；0 关闭）<input v-model.number="config.report_minutes" type="number" min="0" max="10080"></label><label>用户 / 主机流量提醒阈值 %<input v-model.number="config.quota_percent" type="number" min="1" max="100"></label></div><p class="muted">最短 15 分钟。停机期间跳过过期轮次，恢复后发送一份报告；不会补发大量历史通知。</p>
 <fieldset class="choice-list"><legend>定时报告内容</legend><label v-for="c in commands.filter(c=>c.id!=='help')" :key="c.id"><input v-model="config.report_sections" type="checkbox" :value="c.id">{{c.name}}</label></fieldset>
 <fieldset class="choice-list"><legend>事件提醒</legend><label v-for="e in events" :key="e.id"><input v-model="config.events" type="checkbox" :value="e.id">{{e.name}}</label></fieldset>
 <h3>命令接收与权限</h3><label class="check-label"><input v-model="config.command_polling" type="checkbox">长轮询接收查询命令</label><button v-if="privateOwner" type="button" class="secondary" @click="enablePrivate">填入当前私聊用户</button><label class="wide-field">允许执行查询的 Telegram 用户 ID（每行一个）<textarea v-model="ids" rows="3" placeholder="必须显式授权；群内其他成员不能查询"></textarea></label><fieldset class="choice-list"><legend>允许命令</legend><label v-for="c in commands" :key="c.id"><input v-model="config.commands" type="checkbox" :value="c.id">/{{c.id}} · {{c.name}}</label></fieldset><p class="form-note">同时匹配聊天和用户 ID；只接受最近 2 分钟的消息，每轮最多取 3 条，后续命令留在下一轮接收；/start 显示已授权帮助。命令不提供 Shell、启停、删除、凭据或订阅链接操作。</p>

@@ -31,10 +31,10 @@ func (s *Server) removeManaged(w http.ResponseWriter, r *http.Request) error {
 	}
 	switch kind {
 	case "proxy-users":
-		if _, e = tx.Exec(r.Context(), `DELETE FROM traffic_cursors WHERE tenant_id=$1 AND subject_kind='user' AND subject_id=$2`, tenant, id); e != nil {
+		if _, e = tx.Exec(r.Context(), `DELETE FROM traffic_cursors WHERE tenant_id=$1 AND subject_kind='user' AND (subject_id=$2 OR subject_id IN(SELECT id FROM user_devices WHERE tenant_id=$1 AND user_id=$2))`, tenant, id); e != nil {
 			return e
 		}
-		if _, e = tx.Exec(r.Context(), `DELETE FROM traffic_subjects WHERE tenant_id=$1 AND subject_kind='user' AND subject_id=$2`, tenant, id); e != nil {
+		if _, e = tx.Exec(r.Context(), `DELETE FROM traffic_subjects WHERE tenant_id=$1 AND subject_kind='user' AND (subject_id=$2 OR subject_id IN(SELECT id FROM user_devices WHERE tenant_id=$1 AND user_id=$2))`, tenant, id); e != nil {
 			return e
 		}
 		if _, e = tx.Exec(r.Context(), `UPDATE live_services SET version=version+1,state='pending' WHERE managed_users AND tenant_id=$1 AND id IN (SELECT gs.service_id FROM user_group_services gs JOIN user_group_members gm USING(tenant_id,group_id) WHERE gs.tenant_id=$1 AND gm.user_id=$2)`, tenant, id); e != nil {
@@ -73,6 +73,13 @@ func (s *Server) removeManaged(w http.ResponseWriter, r *http.Request) error {
 			return pgx.ErrNoRows
 		}
 	case "subscriptions":
+		var bound bool
+		if e = tx.QueryRow(r.Context(), `SELECT device_id IS NOT NULL FROM subscriptions WHERE tenant_id=$1 AND id=$2`, tenant, id).Scan(&bound); e != nil {
+			return e
+		}
+		if bound {
+			return problem{409, "请从用户设备管理删除此设备，以同时撤销连接凭据"}
+		}
 		if _, e = tx.Exec(r.Context(), `DELETE FROM subscription_services WHERE tenant_id=$1 AND subscription_id=$2`, tenant, id); e != nil {
 			return e
 		}
@@ -166,6 +173,14 @@ func (s *Server) liveDelete(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (s *Server) subscriptionUpdate(w http.ResponseWriter, r *http.Request) error {
+	var bound bool
+	if e := s.DB.QueryRow(r.Context(), `SELECT device_id IS NOT NULL FROM subscriptions WHERE tenant_id=$1 AND id=$2`, tenant, r.PathValue("id")).Scan(&bound); e != nil {
+		return e
+	}
+	if bound {
+		return problem{409, "设备订阅由设备管理维护，不能重新绑定用户或入口"}
+	}
+
 	var b struct {
 		Name     string    `json:"name"`
 		Profile  string    `json:"profile_id"`

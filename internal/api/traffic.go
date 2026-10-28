@@ -6,8 +6,10 @@ import (
 	"net/netip"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
+	"vps-control/internal/billing"
 	"vps-control/internal/live"
 	"vps-control/internal/manifest"
 )
@@ -60,7 +62,7 @@ func (s *Server) telemetry(w http.ResponseWriter, r *http.Request, host string) 
 		}
 		seen[v.ID] = true
 		var allowed bool
-		if e = tx.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM traffic_subjects WHERE tenant_id=$1 AND host_id=$2 AND subject_kind=$3 AND subject_id=$4) AND CASE WHEN $3='user' THEN EXISTS(SELECT 1 FROM proxy_users WHERE tenant_id=$1 AND id=$4) ELSE EXISTS(SELECT 1 FROM live_services WHERE tenant_id=$1 AND id=$4 AND host_id=$2) END`, tenant, host, v.Kind, v.Subject).Scan(&allowed); e != nil {
+		if e = tx.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM traffic_subjects WHERE tenant_id=$1 AND host_id=$2 AND subject_kind=$3 AND subject_id=$4) AND CASE WHEN $3='user' THEN (EXISTS(SELECT 1 FROM proxy_users WHERE tenant_id=$1 AND id=$4) OR EXISTS(SELECT 1 FROM user_devices WHERE tenant_id=$1 AND id=$4)) ELSE EXISTS(SELECT 1 FROM live_services WHERE tenant_id=$1 AND id=$4 AND host_id=$2) END`, tenant, host, v.Kind, v.Subject).Scan(&allowed); e != nil {
 			return e
 		}
 		if !allowed {
@@ -86,36 +88,76 @@ func (s *Server) telemetry(w http.ResponseWriter, r *http.Request, host string) 
 		if _, e = tx.Exec(r.Context(), `INSERT INTO traffic_cursors(tenant_id,host_id,counter_id,subject_kind,subject_id,uplink,downlink) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(tenant_id,host_id,counter_id) DO UPDATE SET uplink=excluded.uplink,downlink=excluded.downlink,updated_at=now()`, tenant, host, v.ID, v.Kind, v.Subject, v.Up, v.Down); e != nil {
 			return e
 		}
-		if _, e = tx.Exec(r.Context(), `INSERT INTO traffic_daily(tenant_id,day,host_id,subject_kind,subject_id,uplink,downlink) VALUES($1,(now() AT TIME ZONE 'Asia/Shanghai')::date,$2,$3,$4,$5,$6) ON CONFLICT(tenant_id,day,host_id,subject_kind,subject_id) DO UPDATE SET uplink=traffic_daily.uplink+excluded.uplink,downlink=traffic_daily.downlink+excluded.downlink`, tenant, host, v.Kind, v.Subject, du, dd); e != nil {
+		subject = v.Subject
+		if v.Kind == "user" {
+			var before, limit, rawUp, rawDown int64
+			var mode string
+			var milli int
+			if e = tx.QueryRow(r.Context(), `SELECT u.id,u.used_bytes,u.quota_bytes,u.upload_bytes,u.download_bytes,u.billing_mode,u.multiplier_milli FROM proxy_users u WHERE u.tenant_id=$1 AND (u.id=$2 OR u.id=(SELECT user_id FROM user_devices WHERE tenant_id=$1 AND id=$2)) FOR UPDATE`, tenant, v.Subject).Scan(&subject, &before, &limit, &rawUp, &rawDown, &mode, &milli); e != nil {
+				return e
+			}
+			amount, chargedUp, chargedDown, err := billing.Delta(rawUp, rawDown, du, dd, mode, milli)
+			if err != nil {
+				return bad(err.Error())
+			}
+			if _, e = tx.Exec(r.Context(), `UPDATE proxy_users SET used_bytes=used_bytes+$3,lifetime_bytes=lifetime_bytes+$3,upload_bytes=upload_bytes+$4,download_bytes=download_bytes+$5,billed_upload_bytes=billed_upload_bytes+$6,billed_download_bytes=billed_download_bytes+$7,last_active_at=now() WHERE tenant_id=$1 AND id=$2`, tenant, subject, amount, du, dd, chargedUp, chargedDown); e != nil {
+				return e
+			}
+			if subject != v.Subject {
+				if _, e = tx.Exec(r.Context(), `UPDATE user_devices SET last_connected_at=now() WHERE tenant_id=$1 AND id=$2`, tenant, v.Subject); e != nil {
+					return e
+				}
+			}
+			if limit > 0 && before < limit && before+amount >= limit {
+				if e = bumpDeviceUser(r.Context(), tx, subject); e != nil {
+					return e
+				}
+				if e = audit(r.Context(), tx, "control", "user.quota-exhausted", subject); e != nil {
+					return e
+				}
+			}
+		}
+		if _, e = tx.Exec(r.Context(), `INSERT INTO traffic_daily(tenant_id,day,host_id,subject_kind,subject_id,uplink,downlink) VALUES($1,(now() AT TIME ZONE 'Asia/Shanghai')::date,$2,$3,$4,$5,$6) ON CONFLICT(tenant_id,day,host_id,subject_kind,subject_id) DO UPDATE SET uplink=traffic_daily.uplink+excluded.uplink,downlink=traffic_daily.downlink+excluded.downlink`, tenant, host, v.Kind, subject, du, dd); e != nil {
 			return e
 		}
-		if v.Kind == "user" {
-			var before, limit int64
-			if e = tx.QueryRow(r.Context(), `SELECT used_bytes,quota_bytes FROM proxy_users WHERE tenant_id=$1 AND id=$2 FOR UPDATE`, tenant, v.Subject).Scan(&before, &limit); e != nil {
-				return e
-			}
-			if _, e = tx.Exec(r.Context(), `UPDATE proxy_users SET used_bytes=used_bytes+$3,lifetime_bytes=lifetime_bytes+$3,upload_bytes=upload_bytes+$4,download_bytes=download_bytes+$5,last_active_at=now() WHERE tenant_id=$1 AND id=$2`, tenant, v.Subject, du+dd, du, dd); e != nil {
-				return e
-			}
-			if limit > 0 && before < limit && before+du+dd >= limit {
-				if _, e = tx.Exec(r.Context(), `UPDATE live_services SET version=version+1,state='pending' WHERE tenant_id=$1 AND id IN (SELECT gs.service_id FROM user_group_services gs JOIN user_group_members gm USING(tenant_id,group_id) WHERE gs.tenant_id=$1 AND gm.user_id=$2)`, tenant, v.Subject); e != nil {
-					return e
-				}
-				if e = audit(r.Context(), tx, "control", "user.quota-exhausted", v.Subject); e != nil {
-					return e
-				}
-			}
-		}
+
 	}
 	for _, v := range b.Access {
 		ip, err := netip.ParseAddr(v.Source)
-		if !manifest.ValidID(v.ID) || !manifest.ValidID(v.Service) || (v.User != "" && !manifest.ValidID(v.User)) || err != nil || ip.Zone() != "" || ip.IsUnspecified() || !live.Address(v.Destination) || v.Port < 1 || v.Port > 65535 || (v.Network != "tcp" && v.Network != "udp") {
+		if !manifest.ValidID(v.ID) || !manifest.ValidID(v.Service) || (v.User != "" && !manifest.ValidID(v.User)) || err != nil || ip.Zone() != "" || ip.IsUnspecified() || !live.Address(v.Destination) || v.Port < 1 || v.Port > 65535 || (v.Network != "tcp" && v.Network != "udp") || v.Up < 0 || v.Down < 0 || v.Up > 9000000000000000 || v.Down > 9000000000000000 || v.ObservedAt.After(time.Now().Add(time.Minute)) {
 			return bad("invalid access observation")
 		}
-		// Only the host owning the inbound can report its traffic metadata.
-		if _, e = tx.Exec(r.Context(), `INSERT INTO access_observations(tenant_id,host_id,event_id,user_id,service_id,source_ip,destination,destination_port,network) SELECT $1,$2,$3,$4,$5,$6::inet,$7,$8,$9 WHERE EXISTS(SELECT 1 FROM live_services WHERE tenant_id=$1 AND id=$5 AND host_id=$2) AND ($4='' OR EXISTS(SELECT 1 FROM traffic_subjects WHERE tenant_id=$1 AND host_id=$2 AND subject_kind='user' AND subject_id=$4)) ON CONFLICT DO NOTHING`, tenant, host, v.ID, v.User, v.Service, ip.String(), strings.ToLower(v.Destination), v.Port, v.Network); e != nil {
-			return e
+		at := v.ObservedAt
+		if at.IsZero() {
+			at = time.Now().UTC()
 		}
+		if at.Before(time.Now().Add(-7 * 24 * time.Hour)) {
+			continue
+		}
+		var user, device string
+		if v.User != "" {
+			err := tx.QueryRow(r.Context(), `SELECT user_id,id FROM user_devices WHERE tenant_id=$1 AND id=$2`, tenant, v.User).Scan(&user, &device)
+			if err == pgx.ErrNoRows {
+				user = v.User
+			} else if err != nil {
+				return err
+			}
+		}
+		var up, down any
+		if v.BytesKnown {
+			up = v.Up
+			down = v.Down
+		}
+		tag, err := tx.Exec(r.Context(), `INSERT INTO access_observations(tenant_id,host_id,event_id,user_id,device_id,service_id,source_ip,destination,destination_port,network,observed_at,uplink,downlink,closed) SELECT $1,$2,$3,$4,$5,$6,$7::inet,$8,$9,$10,$11,$12,$13,$14 WHERE EXISTS(SELECT 1 FROM live_services WHERE tenant_id=$1 AND id=$6 AND host_id=$2) AND ($15='' OR EXISTS(SELECT 1 FROM traffic_subjects WHERE tenant_id=$1 AND host_id=$2 AND subject_kind='user' AND subject_id=$15)) ON CONFLICT(tenant_id,host_id,event_id) DO UPDATE SET uplink=GREATEST(access_observations.uplink,excluded.uplink),downlink=GREATEST(access_observations.downlink,excluded.downlink),last_seen_at=now(),closed=access_observations.closed OR excluded.closed WHERE access_observations.user_id=excluded.user_id AND access_observations.device_id=excluded.device_id AND access_observations.service_id=excluded.service_id AND access_observations.source_ip=excluded.source_ip AND access_observations.destination=excluded.destination AND access_observations.destination_port=excluded.destination_port AND access_observations.network=excluded.network`, tenant, host, v.ID, user, device, v.Service, ip.String(), strings.ToLower(v.Destination), v.Port, v.Network, at, up, down, v.Closed, v.User)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() > 0 && device != "" {
+			if _, e = tx.Exec(r.Context(), `UPDATE user_devices SET last_connected_at=now(),last_source_ip=$3::inet WHERE tenant_id=$1 AND id=$2`, tenant, device, ip.String()); e != nil {
+				return e
+			}
+		}
+
 	}
 	// Bound destination/IP retention and daily aggregates. Counter cursors are compact and never time-reset.
 	if len(b.Access) > 0 {
@@ -147,7 +189,7 @@ func (s *Server) resetTraffic(w http.ResponseWriter, r *http.Request) error {
 	if e = graphLock(r, tx); e != nil {
 		return e
 	}
-	tag, e := tx.Exec(r.Context(), `UPDATE proxy_users SET used_bytes=0,upload_bytes=0,download_bytes=0,last_reset_at=now() WHERE tenant_id=$1 AND id=$2`, tenant, r.PathValue("id"))
+	tag, e := tx.Exec(r.Context(), `UPDATE proxy_users SET used_bytes=0,upload_bytes=0,download_bytes=0,billed_upload_bytes=0,billed_download_bytes=0,last_reset_at=now() WHERE tenant_id=$1 AND id=$2`, tenant, r.PathValue("id"))
 	if e != nil {
 		return e
 	}
@@ -211,6 +253,9 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) error {
  'today_downlink',(SELECT COALESCE(sum(downlink),0) FROM traffic_daily WHERE tenant_id=$1 AND subject_kind='service' AND day=(now() AT TIME ZONE 'Asia/Shanghai')::date),
  'user_today_bytes',(SELECT COALESCE(sum(uplink+downlink),0) FROM traffic_daily WHERE tenant_id=$1 AND subject_kind='user' AND ($2='' OR subject_id=$2) AND day=(now() AT TIME ZONE 'Asia/Shanghai')::date),
  'user_daily',(SELECT COALESCE(jsonb_agg(x),'[]') FROM (SELECT to_char(d.day,'YYYY-MM-DD') AS day,COALESCE(sum(t.uplink),0) uplink,COALESCE(sum(t.downlink),0) downlink FROM generate_series((now() AT TIME ZONE 'Asia/Shanghai')::date-13,(now() AT TIME ZONE 'Asia/Shanghai')::date,interval '1 day') d(day) LEFT JOIN traffic_daily t ON t.tenant_id=$1 AND t.subject_kind='user' AND ($2='' OR t.subject_id=$2) AND t.day=d.day::date GROUP BY d.day ORDER BY d.day) x),
+ 'registered_devices',(SELECT count(*) FROM user_devices WHERE tenant_id=$1 AND enabled AND ($2='' OR user_id=$2)),
+ 'online_devices',(SELECT count(*) FROM user_devices WHERE tenant_id=$1 AND enabled AND last_connected_at>now()-interval '60 seconds' AND ($2='' OR user_id=$2)),
+ 'host_traffic',(SELECT COALESCE(jsonb_agg(jsonb_build_object('name',h.name)||`+hostTrafficJSON+` ORDER BY h.created_at DESC),'[]') FROM host_traffic t JOIN hosts h ON(h.tenant_id,h.id)=(t.tenant_id,t.host_id) WHERE t.tenant_id=$1 AND h.deleted_at IS NULL),
  'hosts',(SELECT count(*) FROM hosts WHERE tenant_id=$1 AND deleted_at IS NULL),
  'online_hosts',(SELECT count(*) FROM hosts WHERE tenant_id=$1 AND deleted_at IS NULL AND last_seen>now()-interval '90 seconds'),
  'users',(SELECT count(*) FROM proxy_users WHERE tenant_id=$1),

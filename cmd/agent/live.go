@@ -9,6 +9,7 @@ import (
 	"time"
 	"vps-control/internal/engine"
 	"vps-control/internal/executor"
+	"vps-control/internal/hostmeter"
 	"vps-control/internal/live"
 )
 
@@ -71,11 +72,22 @@ func runLive(ctx context.Context, call func(context.Context, string, any) ([]byt
 		defer cancel()
 		sendUsage(guard)
 	}()
+	hostUsage, err := hostmeter.New(os.Getenv("LIVE_STATE_DIR"))
+	if err != nil {
+		return err
+	}
 	capabilities := live.Capabilities(binaries)
 	last := time.Now()
 	tick := time.NewTicker(10 * time.Second)
 	defer tick.Stop()
 	for {
+		if report, err := hostUsage.Snapshot(time.Now()); err == nil {
+			if _, status, err := call(ctx, "host-traffic", report); err != nil || status != 200 {
+				log.Print("host traffic report pending retry")
+			}
+		} else {
+			log.Print("OS interface counters unavailable")
+		}
 		sendUsage(ctx)
 		if candidate, ok := updates.Pending(); ok {
 			previous := runner.Binary(candidate.Engine)

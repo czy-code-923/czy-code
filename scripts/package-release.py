@@ -16,12 +16,12 @@ import urllib.request
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.17.0"
-PREVIOUS = "0.16.0"
+VERSION = "0.18.0"
+PREVIOUS = "0.17.0"
 REPOSITORY = "czy-code-923/czy-code"
 BASE = f"https://github.com/{REPOSITORY}/releases/download/v{VERSION}-distribution/"
 OLD_BASE = f"https://github.com/{REPOSITORY}/releases/download/v{PREVIOUS}-distribution/"
-PINNED = {'starhub-v016-update.zip': '2898a911ca2a80087956b991dbbeef2efe31d758cb67c0361814e02449985f20', 'install-starhub.sh': 'eeed37c5b3b1f2339abf8f0d459e78fe1d64947fd31025ad525111d91a0ca8de', 'install-starhub.ps1': 'a5682253cb66c98933549c5ba8dcc29985fa0ae8ff02ef29d679d18fcf3e3f53', 'harbor-0.16.0-linux-amd64.zip': 'ea12c4eded69bee9cab40a46b7d67cfa8fe637566858f6bfe07c33ff44515a20', 'harbor-0.16.0-linux-arm64.zip': '7464a7512818482ba550139f104f6dc6ba63edb67189db54e04a561045c72849', 'harbor-0.16.0-windows-amd64.zip': '1f05330b4fa504d6a1e924f890e6329050f4447b38bbd55b0a515866a6c6a121', 'harbor-0.16.0-windows-arm64.zip': 'a06115a5b765abfe4af0763b8b64574a369886d63f4a60da8ae5e4b2d6a19675'}
+PINNED = {'harbor-0.17.0-linux-amd64.zip': 'd69fa6fc9e0697e24ae2fdd944209ab69201aa10284ac4d148b79fbfd8d44cd0', 'harbor-0.17.0-linux-arm64.zip': '674507cf3fdfe50b20a057551f2dbe4c3122d80ad9554f75d304c452b6c61b82', 'harbor-0.17.0-windows-amd64.zip': '61e829e3743fcf1673d194bfa225fedca39b7de8ef7ad8999e2b0f8d655d1b22', 'harbor-0.17.0-windows-arm64.zip': '6ca3ea004389eb87e49f49f76f098f39c5ba3852f93cbd8aaf05b9a277b4ff18', 'install-starhub.ps1': '853b53cb50580e6bc4c493ff66ec0ea24d7aef943d3a509bca2cffb980de02e5', 'install-starhub.sh': '64e7ea23a71926748b3d6ffed43258bf0c3e38a9c899316fe368c73def8eb2cf', 'starhub-v017-update.zip': 'cf39675b3d0d394bafaecc0e66f5f343559d607da2332e47be5dbb40b8f4afeb'}
 ENGINE_VERSIONS = {"sing-box": "v1.14.4", "xray": "v26.10.21", "frp": "v0.71.1"}
 
 
@@ -95,9 +95,16 @@ def main():
 
     api_tests = cache / "api-tests"
     run("go", "test", "-c", "-o", str(api_tests), "./internal/api", env={**os.environ, "GOOS": "linux", "GOARCH": "amd64", "CGO_ENABLED": "0"})
-    update = out / "starhub-v017-update.zip"
-    with zipfile.ZipFile(previous("starhub-v016-update.zip")) as old, zipfile.ZipFile(update, "w", zipfile.ZIP_DEFLATED) as archive:
-        apply = old.read("apply.py").decode("utf-8").replace("v016", "v017").replace("V016", "V017").replace(PREVIOUS, VERSION)
+    # Deployment executes this standalone test binary away from the source tree.
+    # Run it in an empty directory so runtime test fixtures cannot escape packaging.
+    clean = cache / "standalone-api-test"
+    clean.mkdir()
+    if not os.environ.get("TEST_DATABASE_URL"):
+        raise RuntimeError("Release packaging requires PostgreSQL-backed standalone API verification")
+    subprocess.run([str(api_tests), "-test.count=1"], cwd=clean, check=True)
+    update = out / "starhub-v018-update.zip"
+    with zipfile.ZipFile(previous("starhub-v017-update.zip")) as old, zipfile.ZipFile(update, "w", zipfile.ZIP_DEFLATED) as archive:
+        apply = old.read("apply.py").decode("utf-8").replace("v017", "v018").replace("V017", "V018").replace(PREVIOUS, VERSION)
         archive.writestr("apply.py", apply)
         archive.write(api_tests, "api-tests")
         for name in ("harbor-control", "harbor-agent", "harbor-firewall", "harbor-agent-cleanup"):
