@@ -34,6 +34,8 @@ it('generates a sing-box remote profile URI while keeping the copied URL unchang
  const encoded=vi.mocked(QRCode.toDataURL).mock.calls.at(-1)![0] as string
  const uri=new URL(encoded)
  expect(uri.protocol).toBe('sing-box:');expect(uri.hostname).toBe('import-remote-profile');expect(uri.searchParams.get('url')).toBe(raw)
+ await w.get('input[type=checkbox]').setValue(true);await flushPromises()
+ expect((w.get('input[readonly]').element as HTMLInputElement).value).toBe('https://example.test/s/private?client=sing-box')
  w.unmount()
 })
 
