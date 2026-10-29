@@ -108,3 +108,5 @@ jobs:
         with:
           name: release-0231-manifest
           path: .release-cache/manifest.json
+
+# Trigger a verified build after aligning the OpenAPI release version.
