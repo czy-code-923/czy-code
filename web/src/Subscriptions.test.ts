@@ -27,13 +27,27 @@ it('defaults a share to automatic recognition and prevents copying a stopped-nod
 it('generates a sing-box remote profile URI while keeping the copied URL unchanged',async()=>{
  const api=vi.fn(async(p:string)=>p==='proxy-users/u/subscription'?{id:'s',url:'https://example.test/s/private',reused:true}:p==='proxy-users'?[{id:'u',name:'Alice',active:true}]:p.startsWith('subscriptions/s/check')?{ready:true,reason:'ok'}:[])
  const w=mount(Subscriptions,{props:{api,initialUser:'u'}});await flushPromises()
- await w.get('select[aria-label=客户端格式]').setValue('sing-box');await flushPromises()
- const raw='https://example.test/s/private?client=sing-box'
+ await w.get('select[aria-label=客户端格式]').setValue('sing-box-latest');await flushPromises()
+ const raw='https://example.test/s/private?client=sing-box-latest'
  expect((w.get('input[readonly]').element as HTMLInputElement).value).toBe(raw)
  await w.findAll('button').find(b=>b.text()==='生成二维码')!.trigger('click');await flushPromises()
  const encoded=vi.mocked(QRCode.toDataURL).mock.calls.at(-1)![0] as string
  const uri=new URL(encoded)
  expect(uri.protocol).toBe('sing-box:');expect(uri.hostname).toBe('import-remote-profile');expect(uri.searchParams.get('url')).toBe(raw)
+ w.unmount()
+})
+
+it('provides a separate sing-box QR in automatic mode without changing the generic QR',async()=>{
+ const api=vi.fn(async(p:string)=>p==='proxy-users/u/subscription'?{id:'s',url:'https://example.test/s/private',reused:true}:p==='proxy-users'?[{id:'u',name:'Alice',active:true}]:p.startsWith('subscriptions/s/check')?{ready:true,reason:'ok'}:[])
+ const w=mount(Subscriptions,{props:{api,initialUser:'u'}});await flushPromises()
+ vi.mocked(QRCode.toDataURL).mockClear()
+ await w.findAll('button').find(b=>b.text()==='生成二维码')!.trigger('click');await flushPromises()
+ const calls=vi.mocked(QRCode.toDataURL).mock.calls
+ expect(calls[0][0]).toBe('https://example.test/s/private')
+ const uri=new URL(calls[1][0] as string)
+ expect(uri.protocol).toBe('sing-box:')
+ expect(uri.searchParams.get('url')).toBe('https://example.test/s/private?client=sing-box-latest')
+ expect(w.text()).toContain('sing-box 专用二维码')
  w.unmount()
 })
 

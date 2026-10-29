@@ -77,6 +77,34 @@ func appSingBoxConfig(c clientInfo, config map[string]any) {
 
 var coreVersionRE = regexp.MustCompile(`(?i)(?:sing[- ]?box|sfa|sfi)[/ v]*([0-9]+)\.([0-9]+)`)
 
+func modernSingBox(r *http.Request, c clientInfo) bool {
+	if c.ID == "sing-box-latest" {
+		return true
+	}
+	if c.ID != "sing-box" && c.ID != "sfa" {
+		return false
+	}
+	v := coreVersionRE.FindStringSubmatch(r.UserAgent())
+	if len(v) != 3 {
+		return false
+	}
+	major, _ := strconv.Atoi(v[1])
+	minor, _ := strconv.Atoi(v[2])
+	return major > 1 || major == 1 && minor >= 14
+}
+
+// The old field remains necessary for unknown/older clients and Hiddify.
+// In 1.14+, an explicit HTTP client preserves the selected download outbound.
+func modernRuleSetHTTPClients(config map[string]any) {
+	for _, item := range array(object(config["route"])["rule_set"]) {
+		set := object(item)
+		if detour, ok := set["download_detour"].(string); ok && detour != "" && set["http_client"] == nil {
+			set["http_client"] = map[string]any{"detour": detour}
+			delete(set, "download_detour")
+		}
+	}
+}
+
 func runtimeClientCompatibility(r *http.Request, c clientInfo, spec live.Spec) error {
 	if err := compatibleClient(c, spec); err != nil {
 		return err

@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "星枢 · VPS 多机管理 API",
-    "version": "0.23.1",
+    "version": "0.23.2",
     "description": "Self-workspace API for host agents, proxy protocols, user quotas and client subscriptions. Bearer administrator token or expiring scoped xs_ API key. No arbitrary shell; privileged gateway work and API key administration remain root-only."
   },
   "servers": [
@@ -1237,6 +1237,16 @@
         "operationId": "enqueueSimulationDeployment",
         "summary": "Enqueue simulation or explicitly requested native config staging",
         "responses": {
+          "200": {
+            "description": "Idempotent replay",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Created"
+                }
+              }
+            }
+          },
           "202": {
             "description": "Success",
             "content": {
@@ -1293,16 +1303,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "200": {
-            "description": "Idempotent replay",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Created"
                 }
               }
             }
@@ -1526,6 +1526,9 @@
               }
             }
           },
+          "204": {
+            "description": "No task available"
+          },
           "400": {
             "description": "Invalid JSON, fields or validation",
             "content": {
@@ -1575,9 +1578,6 @@
                 }
               }
             }
-          },
-          "204": {
-            "description": "No task available"
           }
         },
         "security": [
@@ -1725,6 +1725,16 @@
         "operationId": "enqueueKnownGoodRollback",
         "summary": "Stage/simulate a previously successful different version; does not roll back a running service.",
         "responses": {
+          "200": {
+            "description": "Idempotent replay",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Created"
+                }
+              }
+            }
+          },
           "202": {
             "description": "Success",
             "content": {
@@ -1781,16 +1791,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "200": {
-            "description": "Idempotent replay",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Created"
                 }
               }
             }
@@ -5648,6 +5648,9 @@
           "200": {
             "description": "Success"
           },
+          "201": {
+            "description": "New immutable policy version created"
+          },
           "400": {
             "description": "Invalid configuration"
           },
@@ -5659,9 +5662,6 @@
           },
           "409": {
             "description": "Stale version or conflict"
-          },
-          "201": {
-            "description": "New immutable policy version created"
           }
         },
         "requestBody": {
@@ -6325,6 +6325,9 @@
           }
         ],
         "responses": {
+          "202": {
+            "description": "Pinned official version queued. Poll GET on the same path for downloading/validating/succeeded/failed."
+          },
           "400": {
             "description": "Invalid fields"
           },
@@ -6333,9 +6336,6 @@
           },
           "403": {
             "description": "Missing scope"
-          },
-          "202": {
-            "description": "Pinned official version queued. Poll GET on the same path for downloading/validating/succeeded/failed."
           },
           "409": {
             "description": "Host offline, retiring, old Agent or another update is active"
@@ -7280,6 +7280,54 @@
             "description": "Rate limited"
           }
         }
+      }
+    },
+    "/api/v1/gateway/nginx": {
+      "get": {
+        "summary": "查看网关上报的 Nginx 版本",
+        "responses": {
+          "200": {
+            "description": "Nginx 版本及来源"
+          }
+        },
+        "x-required-scopes": [
+          "reverse:read"
+        ]
+      },
+      "post": {
+        "summary": "网关上报 Nginx 版本（管理员）",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "version",
+                  "source"
+                ],
+                "properties": {
+                  "version": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "baota",
+                      "system"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "已记录"
+          }
+        },
+        "x-root-only": true
       }
     }
   },

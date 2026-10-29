@@ -106,6 +106,10 @@ func requiredScopes(r *http.Request) []string {
 		return []string{"nodes" + mode}
 	case "engine-releases":
 		return []string{"kernels:read"}
+	case "gateway":
+		if len(a) == 2 && a[1] == "nginx" && !write {
+			return []string{"reverse:read"}
+		}
 	case "proxy-users":
 		if len(a) > 2 && a[2] == "subscription" {
 			return []string{"users:read", "subscriptions:write", "subscriptions:links"}

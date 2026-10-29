@@ -238,6 +238,8 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("POST /api/v1/certificates", s.admin(s.certificates))
 	m.HandleFunc("POST /api/v1/certificates/{id}/retry", s.admin(s.certificateRetry))
 	m.HandleFunc("POST /api/v1/gateway/work", s.admin(s.gatewayWork))
+	m.HandleFunc("GET /api/v1/gateway/nginx", s.admin(s.nginxStatus))
+	m.HandleFunc("POST /api/v1/gateway/nginx", s.admin(s.nginxStatus))
 	m.HandleFunc("POST /api/v1/gateway/report", s.admin(s.gatewayReport))
 	m.HandleFunc("DELETE /api/v1/reverse-proxies/{id}", s.admin(s.reverseProxies))
 	m.HandleFunc("GET /api/v1/reverse-proxies/{id}", s.admin(s.reverseProxies))

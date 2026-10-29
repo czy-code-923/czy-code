@@ -329,6 +329,9 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 			return err
 		}
 		appSingBoxConfig(client, config)
+		if modernSingBox(r, client) {
+			modernRuleSetHTTPClients(config)
+		}
 		if err := validateClientGraph(format, config); err != nil {
 			return problem{422, err.Error()}
 		}

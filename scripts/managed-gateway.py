@@ -80,6 +80,12 @@ def main():
  def call(path,body=None):
   req=urllib.request.Request('http://127.0.0.1:8080/api/v1/'+path,data=None if body is None else json.dumps(body).encode(),headers={'Authorization':'Bearer '+values['ADMIN_TOKEN'],'Content-Type':'application/json'})
   with opener.open(req,timeout=15) as response:return json.loads(response.read(1024*1024))
+ try:
+  output=subprocess.run([nginx,'-v'],stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=5,check=True)
+  version=re.search(rb'nginx/([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})',output.stdout+output.stderr)
+  if not version:raise ValueError('Unrecognized nginx version')
+  call('gateway/nginx',{'version':version.group(1).decode('ascii'),'source':'baota' if nginx.startswith('/www/server/nginx/') else 'system'})
+ except Exception:print('Nginx version reporting unavailable')
  site=call('site');work=call('gateway/work',{});main_domain=sync.domain_name(site['domain']) if site.get('domain') else ''
  reserved={v for v in (main_domain,site.get('share_domain','')) if v}
  certbot=sync.trusted_binary(args.certbot) if work['certificates'] else None

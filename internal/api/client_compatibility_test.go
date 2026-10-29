@@ -111,7 +111,7 @@ func TestAppDefaultPolicyValidatesWithOfficialCore(t *testing.T) {
 		t.Fatal(err)
 	}
 	raw := strings.Split(f.url, "?")[0]
-	for _, c := range []string{"sing-box", "sfa", "hiddify"} {
+	for _, c := range []string{"sing-box", "sing-box-latest", "sfa", "hiddify"} {
 		w := f.share(raw+"?client="+c, nil, 200)
 		var config map[string]any
 		json.Unmarshal(w.Body.Bytes(), &config)
@@ -119,7 +119,15 @@ func TestAppDefaultPolicyValidatesWithOfficialCore(t *testing.T) {
 			t.Fatal(e)
 		}
 		for _, v := range array(object(config["route"])["rule_set"]) {
-			if object(v)["download_detour"] != object(config["route"])["final"] {
+			set := object(v)
+			detour := set["download_detour"]
+			if c == "sing-box-latest" {
+				detour = object(set["http_client"])["detour"]
+				if set["download_detour"] != nil {
+					t.Fatal("modern config contains deprecated download_detour")
+				}
+			}
+			if detour != object(config["route"])["final"] {
 				t.Fatal("rule set downloader references removed default selector")
 			}
 		}

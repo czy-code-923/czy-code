@@ -41,7 +41,11 @@ func validateClientGraph(format string, config map[string]any) error {
 		}
 	}
 	for _, v := range array(route["rule_set"]) {
-		if err := check(object(v)["download_detour"]); err != nil {
+		set := object(v)
+		if err := check(set["download_detour"]); err != nil {
+			return err
+		}
+		if err := check(object(set["http_client"])["detour"]); err != nil {
 			return err
 		}
 	}
