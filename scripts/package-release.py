@@ -16,7 +16,7 @@ import urllib.request
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.23.4"
+VERSION = "0.23.5"
 PREVIOUS = "0.23.3"
 REPOSITORY = "czy-code-923/czy-code"
 BASE = f"https://github.com/{REPOSITORY}/releases/download/v{VERSION}-distribution/"
@@ -102,9 +102,9 @@ def main():
     if not os.environ.get("TEST_DATABASE_URL"):
         raise RuntimeError("Release packaging requires PostgreSQL-backed standalone API verification")
     subprocess.run([str(api_tests), "-test.count=1"], cwd=clean, check=True)
-    update = out / "starhub-v0234-update.zip"
+    update = out / "starhub-v0235-update.zip"
     with zipfile.ZipFile(previous("starhub-v0233-update.zip")) as old, zipfile.ZipFile(update, "w", zipfile.ZIP_DEFLATED) as archive:
-        apply = old.read("apply.py").decode("utf-8").replace("v0233", "v0234").replace("V0233", "V0234").replace(PREVIOUS, VERSION)
+        apply = old.read("apply.py").decode("utf-8").replace("v0233", "v0235").replace("V0233", "V0235").replace(PREVIOUS, VERSION)
         # Previous updater already contains transactional gateway backup and rollback.
         compile(apply, "apply.py", "exec")
         archive.writestr("apply.py", apply)
