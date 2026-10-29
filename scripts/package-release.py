@@ -16,12 +16,12 @@ import urllib.request
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.23.0"
-PREVIOUS = "0.22.0"
+VERSION = "0.23.1"
+PREVIOUS = "0.23.0"
 REPOSITORY = "czy-code-923/czy-code"
 BASE = f"https://github.com/{REPOSITORY}/releases/download/v{VERSION}-distribution/"
 OLD_BASE = f"https://github.com/{REPOSITORY}/releases/download/v{PREVIOUS}-distribution/"
-PINNED = {'starhub-v022-update.zip': 'ca0bf14064ba11166320999fdab7c163cceb96ed2659df3e71834d830c19c948'}
+PINNED = {'starhub-v023-update.zip': '2b9b72023195b24b34b715ac40fd2223cc1163bab9e37cafbb52aeb437e810af'}
 ENGINE_VERSIONS = {"sing-box": "v1.14.4", "xray": "v26.10.21", "frp": "v0.71.1"}
 
 
@@ -102,55 +102,10 @@ def main():
     if not os.environ.get("TEST_DATABASE_URL"):
         raise RuntimeError("Release packaging requires PostgreSQL-backed standalone API verification")
     subprocess.run([str(api_tests), "-test.count=1"], cwd=clean, check=True)
-    update = out / "starhub-v023-update.zip"
-    with zipfile.ZipFile(previous("starhub-v022-update.zip")) as old, zipfile.ZipFile(update, "w", zipfile.ZIP_DEFLATED) as archive:
-        apply = old.read("apply.py").decode("utf-8").replace("v022", "v023").replace("V022", "V023").replace(PREVIOUS, VERSION)
-        # Keep the managed Nginx gateway binary in backup, update and rollback.
-        gateway_tuple = "('control','agent','firewall','gateway')"
-        if gateway_tuple not in apply:
-            old_tuple = "('control','agent','firewall')"
-            if old_tuple not in apply:
-                raise RuntimeError("Expected updater binary loops missing")
-            apply = apply.replace(old_tuple, gateway_tuple)
-        marker = "run('systemctl','start','harbor-control')"
-        install_tools = "\n".join("    shutil.copyfile(stage/'"+name+"',root/'"+name+"');(root/'"+name+"').chmod(0o700)" for name in ("uninstall.py", "admin-token.py")) + "\n    "
-        if marker not in apply:
-            raise RuntimeError("Expected safe updater tool installation point is missing")
-        if "shutil.copyfile(stage/'uninstall.py'" not in apply:
-            apply = apply.replace("    " + marker, install_tools + marker, 1)
-        if "shutil.copyfile(stage/'panel-access.py'" not in apply:
-            apply=apply.replace("    "+marker,"    shutil.copyfile(stage/'panel-access.py',root/'panel-access.py');(root/'panel-access.py').chmod(0o700)\n    "+marker,1)
-        # The gateway helpers run as root. Back up, quiesce their timer, install
-        # both files together, and restore on every failed upgrade.
-        backup_marker="before={v['id'] for v in api('live')}"
-        if backup_marker not in apply or "except BaseException:\n    run('systemctl','stop','harbor-agent','harbor-control')" not in apply:
-            raise RuntimeError("Expected rollback structure missing")
-        apply=apply.replace(backup_marker,"""gateway_scripts=root/'scripts';gateway_names=('managed-gateway.py','gateway-config.py')
-for name in gateway_names:
-    path=gateway_scripts/name
-    if path.exists():shutil.copy2(path,backup/name)
-timer_active=subprocess.run(['systemctl','is-active','--quiet','harbor-managed-gateway.timer']).returncode==0
-"""+backup_marker,1)
-        entry="try:\n    # Dedicated per-version download directory"
-        if entry not in apply:raise RuntimeError("Expected upgrade transaction missing")
-        apply=apply.replace(entry,"try:\n    if timer_active:run('systemctl','stop','harbor-managed-gateway.timer')\n    # Dedicated per-version download directory",1)
-        install="""    gateway_scripts.mkdir(mode=0o755,exist_ok=True)
-    for name in gateway_names:
-        target=gateway_scripts/name;temp=target.with_suffix('.new');shutil.copyfile(stage/name,temp);temp.chmod(0o700);os.replace(temp,target)
-"""
-        apply=apply.replace("    "+marker,install+"    "+marker,1)
-        success="    print('STARHUB_V023_READY '"
-        if success not in apply:raise RuntimeError("Expected success marker missing")
-        apply=apply.replace(success,"    if timer_active:run('systemctl','start','harbor-managed-gateway.timer')\n"+success,1)
-        rollback="except BaseException:\n    run('systemctl','stop','harbor-agent','harbor-control')"
-        restore="""except BaseException:
-    for name in gateway_names:
-        target=gateway_scripts/name;original=backup/name
-        if original.exists():shutil.copy2(original,target)
-        else:target.unlink(missing_ok=True)
-    if timer_active:run('systemctl','start','harbor-managed-gateway.timer')
-    run('systemctl','stop','harbor-agent','harbor-control')"""
-        apply=apply.replace(rollback,restore,1)
+    update = out / "starhub-v0231-update.zip"
+    with zipfile.ZipFile(previous("starhub-v023-update.zip")) as old, zipfile.ZipFile(update, "w", zipfile.ZIP_DEFLATED) as archive:
+        apply = old.read("apply.py").decode("utf-8").replace("v023", "v0231").replace("V023", "V0231").replace(PREVIOUS, VERSION)
+        # Previous updater already contains transactional gateway backup and rollback.
         compile(apply, "apply.py", "exec")
         archive.writestr("apply.py", apply)
         for name in ("uninstall.py", "admin-token.py", "panel-access.py", "managed-gateway.py", "gateway-config.py"):

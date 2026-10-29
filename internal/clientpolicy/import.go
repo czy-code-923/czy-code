@@ -133,6 +133,9 @@ func Import(source string) (ImportResult, error) {
 						url := str(set["url"])
 						for _, kind := range []string{"geosite", "geoip"} {
 							prefix := "https://raw.githubusercontent.com/SagerNet/sing-" + kind + "/rule-set/" + kind + "-"
+							if kind == "geoip" && strings.HasPrefix(url, "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geoip/") {
+								prefix = "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geoip/"
+							}
 							if strings.HasPrefix(url, prefix) && strings.HasSuffix(url, ".srs") && len(rule) <= 4 {
 								code := strings.TrimSuffix(strings.TrimPrefix(url, prefix), ".srs")
 								if geoCode.MatchString(code) {

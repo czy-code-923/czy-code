@@ -171,7 +171,14 @@ func attachRuleSets(base map[string]any, rules []string) {
 			continue
 		}
 		seen[tag] = true
-		definition := map[string]any{"type": "remote", "tag": tag, "format": "binary", "url": "https://raw.githubusercontent.com/SagerNet/sing-" + kind + "/rule-set/" + tag + ".srs", "update_interval": "1d"}
+		ruleURL := "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/" + tag + ".srs"
+		// SagerNet's GeoIP dataset is country-oriented and lacks named entries
+		// such as telegram. MetaCubeX publishes the Mihomo-compatible GeoIP
+		// sets under their unprefixed names, including both countries and services.
+		if kind == "geoip" {
+			ruleURL = "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geoip/" + url.PathEscape(code) + ".srs"
+		}
+		definition := map[string]any{"type": "remote", "tag": tag, "format": "binary", "url": ruleURL, "update_interval": "1d"}
 		if detour != "" {
 			definition["download_detour"] = detour
 		}
@@ -365,7 +372,7 @@ func (r Result) ApplySections(format string, base map[string]any, warnings []str
 	if format == "sing-box" {
 		for _, line := range r.Rules {
 			if strings.HasPrefix(line, "GEOSITE,") || strings.HasPrefix(line, "GEOIP,") {
-				warnings = append(warnings, "GEOSITE/GEOIP 已转成 SagerNet 官方远程 rule_set；客户端首次运行需下载规则数据")
+				warnings = append(warnings, "GEOSITE/GEOIP 已转成远程 rule_set；客户端首次运行需下载规则数据")
 				break
 			}
 		}

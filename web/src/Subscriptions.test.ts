@@ -2,6 +2,7 @@
 import {it,expect,vi} from 'vitest'
 import {mount,flushPromises} from '@vue/test-utils'
 import Subscriptions from './Subscriptions.vue'
+import QRCode from 'qrcode'
 vi.mock('qrcode',()=>({default:{toDataURL:vi.fn(async()=> 'data:image/png;base64,bG9jYWw=')}}))
 it('defaults a share to automatic recognition and prevents copying a stopped-node subscription',async()=>{
  let ready=false
@@ -20,6 +21,19 @@ it('defaults a share to automatic recognition and prevents copying a stopped-nod
  ready=true;await button('重新检查').trigger('click');await flushPromises()
  expect(button('复制订阅链接').attributes('disabled')).toBeUndefined()
  expect(api).toHaveBeenCalledWith('subscriptions/s/check')
+ w.unmount()
+})
+
+it('generates a sing-box remote profile URI while keeping the copied URL unchanged',async()=>{
+ const api=vi.fn(async(p:string)=>p==='proxy-users/u/subscription'?{id:'s',url:'https://example.test/s/private',reused:true}:p==='proxy-users'?[{id:'u',name:'Alice',active:true}]:p.startsWith('subscriptions/s/check')?{ready:true,reason:'ok'}:[])
+ const w=mount(Subscriptions,{props:{api,initialUser:'u'}});await flushPromises()
+ await w.get('select[aria-label=客户端格式]').setValue('sing-box');await flushPromises()
+ const raw='https://example.test/s/private?client=sing-box'
+ expect((w.get('input[readonly]').element as HTMLInputElement).value).toBe(raw)
+ await w.findAll('button').find(b=>b.text()==='生成二维码')!.trigger('click');await flushPromises()
+ const encoded=vi.mocked(QRCode.toDataURL).mock.calls.at(-1)![0] as string
+ const uri=new URL(encoded)
+ expect(uri.protocol).toBe('sing-box:');expect(uri.hostname).toBe('import-remote-profile');expect(uri.searchParams.get('url')).toBe(raw)
  w.unmount()
 })
 

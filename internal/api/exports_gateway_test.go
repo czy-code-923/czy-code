@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"image/png"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -43,6 +44,19 @@ func TestShareExportAndQRCodePermissions(t *testing.T) {
 		if len(scopes) != 1 || scopes[0] != "subscriptions:links" {
 			t.Fatal(view, scopes)
 		}
+	}
+}
+
+func TestSingBoxRemoteProfileQRCodePayload(t *testing.T) {
+	raw := "https://example.test/s/private?client=sing-box&policy=rules"
+	for _, client := range []string{"sing-box", "sing-box-latest"} {
+		u, err := url.Parse(subscriptionQRPayload(raw, client))
+		if err != nil || u.Scheme != "sing-box" || u.Host != "import-remote-profile" || u.Query().Get("url") != raw || u.Fragment != "Starhub" {
+			t.Fatalf("unexpected import URI for %s", client)
+		}
+	}
+	if subscriptionQRPayload(raw, "mihomo") != raw {
+		t.Fatal("other clients must keep their original URL")
 	}
 }
 

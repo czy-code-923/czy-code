@@ -81,6 +81,14 @@ type sharedNode struct {
 	URI  string `json:"uri"`
 }
 
+// sing-box graphical clients scan a remote-profile URI, not a bare URL.
+func subscriptionQRPayload(raw, client string) string {
+	if client == "sing-box" || client == "sing-box-latest" {
+		return "sing-box://import-remote-profile?url=" + url.QueryEscape(raw) + "#Starhub"
+	}
+	return raw
+}
+
 func (s *Server) exportNodes(r *http.Request) ([]sharedNode, error) {
 	recorder, err := s.exportRecorder(r, "nekobox-uri")
 	if err != nil {
@@ -120,7 +128,7 @@ func (s *Server) shareExport(w http.ResponseWriter, r *http.Request) error {
 	view := r.PathValue("export")
 	switch view {
 	case "share":
-		send(w, 200, map[string]any{"url": raw, "qr_url": "/api/v1/subscriptions/" + r.PathValue("id") + "/qr?" + r.URL.RawQuery, "qr_payload": raw, "client": r.URL.Query().Get("client"), "private": true})
+		send(w, 200, map[string]any{"url": raw, "qr_url": "/api/v1/subscriptions/" + r.PathValue("id") + "/qr?" + r.URL.RawQuery, "qr_payload": subscriptionQRPayload(raw, r.URL.Query().Get("client")), "client": r.URL.Query().Get("client"), "private": true})
 		return nil
 	case "content":
 		recorder, err := s.exportRecorder(r, "")
@@ -141,6 +149,7 @@ func (s *Server) shareExport(w http.ResponseWriter, r *http.Request) error {
 		send(w, 200, nodes)
 		return nil
 	case "qr":
+		raw = subscriptionQRPayload(raw, r.URL.Query().Get("client"))
 		if r.URL.Query().Get("kind") == "node" {
 			nodes, err := s.exportNodes(r)
 			if err != nil {
