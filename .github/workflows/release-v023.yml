@@ -1,5 +1,5 @@
 name: Publish verified Starhub 0.23.0
-# Client recognition mode belongs to users; groups provide only inherited limits.
+# Publish only after native gateway syntax and permission-safe temporary logs pass.
 on:
   push:
     branches: [main]
@@ -108,3 +108,4 @@ jobs:
         with:
           name: release-023-manifest
           path: .release-cache/manifest.json
+
