@@ -16,12 +16,12 @@ import urllib.request
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.23.3"
-PREVIOUS = "0.23.2"
+VERSION = "0.23.4"
+PREVIOUS = "0.23.3"
 REPOSITORY = "czy-code-923/czy-code"
 BASE = f"https://github.com/{REPOSITORY}/releases/download/v{VERSION}-distribution/"
 OLD_BASE = f"https://github.com/{REPOSITORY}/releases/download/v{PREVIOUS}-distribution/"
-PINNED = {'starhub-v0232-update.zip': '408a6d8af9fa32ffa5f353545f64caa1c9d473d561eff44d2cbbfdd60ecc1038'}
+PINNED = {'starhub-v0233-update.zip': '43d8bdede957268a8e899f4cfad55a4ac4a475f284a4ee3d177416ea8dc55784'}
 ENGINE_VERSIONS = {"sing-box": "v1.14.4", "xray": "v26.10.21", "frp": "v0.71.1"}
 
 
@@ -102,9 +102,9 @@ def main():
     if not os.environ.get("TEST_DATABASE_URL"):
         raise RuntimeError("Release packaging requires PostgreSQL-backed standalone API verification")
     subprocess.run([str(api_tests), "-test.count=1"], cwd=clean, check=True)
-    update = out / "starhub-v0233-update.zip"
-    with zipfile.ZipFile(previous("starhub-v0232-update.zip")) as old, zipfile.ZipFile(update, "w", zipfile.ZIP_DEFLATED) as archive:
-        apply = old.read("apply.py").decode("utf-8").replace("v0232", "v0233").replace("V0232", "V0233").replace(PREVIOUS, VERSION)
+    update = out / "starhub-v0234-update.zip"
+    with zipfile.ZipFile(previous("starhub-v0233-update.zip")) as old, zipfile.ZipFile(update, "w", zipfile.ZIP_DEFLATED) as archive:
+        apply = old.read("apply.py").decode("utf-8").replace("v0233", "v0234").replace("V0233", "V0234").replace(PREVIOUS, VERSION)
         # Previous updater already contains transactional gateway backup and rollback.
         compile(apply, "apply.py", "exec")
         archive.writestr("apply.py", apply)
@@ -166,3 +166,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

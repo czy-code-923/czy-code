@@ -1,0 +1,113 @@
+name: Publish verified Starhub 0.23.4
+# Publish only after native gateway syntax and permission-safe temporary logs pass.
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/release-v0234.yml]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: starhub-release-0234
+  cancel-in-progress: false
+jobs:
+  existing:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      published: ${{ steps.release.outputs.published }}
+    steps:
+      - name: Preserve an existing release and its installation checksums
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh api repos/${{ github.repository }}/releases/tags/v0.23.4-distribution >/tmp/existing-release.json 2>/tmp/release-lookup-error; then
+            echo 'published=true' >> "$GITHUB_OUTPUT"
+            echo 'This version already exists. Keeping its tag, assets and installation checksums unchanged.'
+          elif grep -q 'HTTP 404' /tmp/release-lookup-error; then
+            echo 'published=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'Release lookup failed; refusing to rebuild without a reliable result.' >&2
+            exit 1
+          fi
+  publish:
+    needs: existing
+    if: needs.existing.outputs.published != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: harbor
+          POSTGRES_PASSWORD: ci-test-password
+          POSTGRES_DB: harbor_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U harbor -d harbor_test"
+          --health-interval 3s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.3'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Verify backend and frontend before publishing
+        env:
+          TEST_DATABASE_URL: postgres://harbor:ci-test-password@127.0.0.1:5432/harbor_test?sslmode=disable
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y nginx
+          python3 scripts/test_nginx_gateway.py
+          python3 scripts/test_prepare.py
+          python3 scripts/test_gateway_config.py
+          python3 scripts/test_managed_gateway.py
+          python3 scripts/test_uninstall.py
+          python3 scripts/test_panel_access.py
+          python3 scripts/test_bootstrap_installers.py
+          go vet ./...
+          go test -race -count=1 ./...
+          cd web
+          npm ci
+          npm test
+          npm run build
+      - name: Build four platforms and pin all artifacts
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TEST_DATABASE_URL: postgres://harbor:ci-test-password@127.0.0.1:5432/harbor_test?sslmode=disable
+        run: python3 scripts/package-release.py
+      - name: Commit generated installation checksums
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add scripts/quickstart-distribution.json scripts/distribution-checksums.json
+          git diff --cached --quiet || git commit -m 'Pin verified Starhub 0.23.4 release package checksums'
+          git push origin HEAD:main
+      - name: Publish release candidate and exact source tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create v0.23.4-distribution .release-output/* --target "$(git rev-parse HEAD)" --prerelease --latest=false --title '星枢 0.23.4 · 主机连接恢复与证书验证说明' --notes-file docs/RELEASE-v0234.md
+      - name: Verify fresh install, Agent onboarding and retirement
+        run: |
+          mkdir /tmp/starhub-distribution
+          unzip -q .release-output/harbor-0.23.4-linux-amd64.zip -d /tmp/starhub-distribution
+          sudo --preserve-env=GITHUB_ACTIONS,RUNNER_ENVIRONMENT python3 scripts/test_quickstart_e2e.py /tmp/starhub-distribution "$GITHUB_WORKSPACE/.release-output/install-starhub.sh"
+      - name: Promote the verified release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit v0.23.4-distribution --prerelease=false --latest
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-0234-manifest
+          path: .release-cache/manifest.json
+
+# Trigger a verified build after aligning the OpenAPI release version.
+
