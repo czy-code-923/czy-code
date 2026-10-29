@@ -2,22 +2,10 @@
 import argparse,fcntl,importlib.util,ipaddress,json,os,re,subprocess,tempfile,urllib.parse,urllib.request
 from pathlib import Path
 spec=importlib.util.spec_from_file_location('domain_sync',Path(__file__).with_name('domain-sync.py'));sync=importlib.util.module_from_spec(spec);spec.loader.exec_module(sync)
-HEADER='# harbor-managed-routing-v1\n'
-def upstream(value):
- u=urllib.parse.urlsplit(value)
- if u.scheme!='http' or u.hostname not in ('127.0.0.1','::1') or u.username or u.password or u.path or u.query or u.fragment:raise ValueError('Invalid upstream')
- if not u.port or not 1024<=u.port<=65535 or u.port in (8080,8091,5173,15432,5432,2375):raise ValueError('Reserved port')
- return value
-
-def render(domain,target=None,certificate=False):
- domain=sync.domain_name(domain)
- if '.' not in domain:raise ValueError('Fully qualified domain required')
- challenge='location ^~ /.well-known/acme-challenge/ { root /var/www/harbor-acme; }'
- text=HEADER+'server { listen 80; listen [::]:80; server_name '+domain+'; '+challenge+' location / { '+('return 301 https://$host$request_uri;' if certificate and target else 'return 503;')+' } }\n'
- if certificate and target:
-  target=upstream(target);base='/etc/harbor/gateway-certificates/'+domain
-  text+='server { listen 443 ssl; listen [::]:443 ssl; server_name '+domain+'; ssl_certificate '+base+'/fullchain.pem; ssl_certificate_key '+base+'/privkey.pem; ssl_protocols TLSv1.2 TLSv1.3; client_max_body_size 16m; location / { proxy_pass '+target+'; proxy_http_version 1.1; proxy_set_header Host $host; proxy_set_header X-Real-IP $remote_addr; proxy_set_header X-Forwarded-For $remote_addr; proxy_set_header X-Forwarded-Proto https; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection "upgrade"; proxy_connect_timeout 10s; proxy_read_timeout 300s; } }\n'
- return text.encode()
+spec=importlib.util.spec_from_file_location('gateway_config',Path(__file__).with_name('gateway-config.py'));config=importlib.util.module_from_spec(spec);spec.loader.exec_module(config)
+HEADER=config.HEADER
+upstream=config.upstream
+render=config.render
 
 def ensure_domain_available(directory,domain,own):
  for path in directory.glob('*.conf'):
@@ -44,13 +32,47 @@ def atomic_vhost(path,content,nginx):
   except Exception:pass
   raise
 
+def remove_vhost(path,nginx):
+ sync.verify_output(path)
+ if not path.exists():return
+ previous=path.read_bytes()
+ if not previous.startswith(HEADER.encode()):raise ValueError('Refusing unmanaged vhost removal')
+ path.unlink()
+ try:sync.run([nginx,'-t']);sync.run([nginx,'-s','reload'])
+ except BaseException:
+  path.write_bytes(previous);path.chmod(0o644)
+  try:sync.run([nginx,'-t']);sync.run([nginx,'-s','reload'])
+  except Exception:pass
+  raise
+
+def proxy_usage(directory,identity,state,baseline,nginx):
+ if not config.ID.fullmatch(identity):raise ValueError('Invalid proxy id')
+ fresh=state is None;state=dict(state or {'up':baseline[0],'down':baseline[1],'files':{}})
+ active=directory/('reverse-'+identity+'.jsonl');old=active.with_suffix('.old')
+ for path in (old,active):
+  sync.verify_output(path)
+  if not path.exists():continue
+  inode=str(path.stat().st_ino);previous=state['files'].get(inode)
+  if fresh and any(baseline) and previous is None:previous={'up':0,'down':0,'offset':path.stat().st_size,'inode':path.stat().st_ino}
+  value=config.collect(path,previous)
+  state['up']+=value['up']-(previous or {}).get('up',0);state['down']+=value['down']-(previous or {}).get('down',0)
+  value['stable']=(previous or {}).get('stable',0)+1 if previous and value['offset']==previous['offset'] else 0
+  state['files'][inode]=value
+  if path==old and value['stable']>=2 and value['offset']==path.stat().st_size:
+   path.unlink();state['files'].pop(inode,None)
+ if active.exists() and active.stat().st_size>=4*1024*1024 and not old.exists():
+  active.rename(old);active.touch(mode=0o600);sync.run([nginx,'-s','reopen'])
+ known={str(p.stat().st_ino) for p in (old,active) if p.exists()}
+ state['files']={k:v for k,v in state['files'].items() if k in known}
+ return state
+
 def main():
  parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--env',required=True);parser.add_argument('--nginx',required=True);parser.add_argument('--vhost-dir',required=True);parser.add_argument('--certbot',default='/usr/bin/certbot');args=parser.parse_args()
  if os.geteuid()!=0:raise ValueError('Root required')
  envfile=Path(args.env);st=envfile.stat()
  if st.st_uid!=0 or st.st_mode&0o077:raise ValueError('Private root-owned environment required')
  values=dict(line.split('=',1) for line in envfile.read_text().splitlines() if '=' in line and not line.startswith('#'))
- nginx=sync.trusted_binary(args.nginx);certbot=sync.trusted_binary(args.certbot);out=Path(args.vhost_dir);sync.verify_output(out/'harbor-check.conf')
+ nginx=sync.trusted_binary(args.nginx);out=Path(args.vhost_dir);sync.verify_output(out/'harbor-check.conf')
  lock=os.open('/run/harbor-managed-gateway.lock',os.O_CREAT|os.O_RDWR|getattr(os,'O_NOFOLLOW',0),0o600);fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
  class NoRedirect(urllib.request.HTTPRedirectHandler):
   def redirect_request(self,*a):raise ValueError('Redirect forbidden')
@@ -58,7 +80,13 @@ def main():
  def call(path,body=None):
   req=urllib.request.Request('http://127.0.0.1:8080/api/v1/'+path,data=None if body is None else json.dumps(body).encode(),headers={'Authorization':'Bearer '+values['ADMIN_TOKEN'],'Content-Type':'application/json'})
   with opener.open(req,timeout=15) as response:return json.loads(response.read(1024*1024))
- site=call('site');work=call('gateway/work',{});main_domain=sync.domain_name(site['domain'])
+ site=call('site');work=call('gateway/work',{});main_domain=sync.domain_name(site['domain']) if site.get('domain') else ''
+ reserved={v for v in (main_domain,site.get('share_domain','')) if v}
+ certbot=sync.trusted_binary(args.certbot) if work['certificates'] else None
+ logs=Path('/var/log/harbor');sync.verify_output(logs);logs.mkdir(exist_ok=True,mode=0o700);sync.verify_output(logs/'ownership-check')
+ state_path=Path('/etc/harbor/gateway-usage.json');sync.verify_output(state_path)
+ usage=json.loads(state_path.read_text()) if state_path.exists() else {}
+ if not isinstance(usage,dict) or len(usage)>100:raise ValueError('Invalid usage state')
  for job in work['certificates']:
   try:
    domain=sync.domain_name(job['domain']);path=out/('harbor-route-'+domain+'.conf')
@@ -75,14 +103,25 @@ def main():
      sync.run(argv+['--dns-cloudflare','--dns-cloudflare-credentials',str(credential),'--dns-cloudflare-propagation-seconds','30'])
    else:raise ValueError('Provider unsupported')
    base=Path('/etc/letsencrypt/live')/domain
-   call('gateway/report',dict(id=job['id'],kind='certificate',state='ready',certificate=(base/'fullchain.pem').read_text(),private_key=(base/'privkey.pem').read_text()))
+   call('gateway/report',dict(id=job['id'],version=job['version'],kind='certificate',state='ready',certificate=(base/'fullchain.pem').read_text(),private_key=(base/'privkey.pem').read_text()))
    sync.run([nginx,'-t']);sync.run([nginx,'-s','reload']);print('Certificate reconciled:',domain)
   except Exception:
-   call('gateway/report',dict(id=job['id'],kind='certificate',state='failed'));print('Certificate request failed; inspect certbot private logs:',job['domain'])
+   call('gateway/report',dict(id=job['id'],version=job['version'],kind='certificate',state='failed'));print('Certificate request failed; inspect certbot private logs:',job['domain'])
  for proxy in work['reverse_proxies']:
   try:
    domain=sync.domain_name(proxy['domain'])
-   if domain==main_domain:raise ValueError('Management vhost reserved')
+   if domain in reserved:raise ValueError('Management/subscription vhost reserved')
+   if not config.ID.fullmatch(proxy['id']):raise ValueError('Invalid proxy id')
+   old_domain=sync.domain_name(proxy['applied_domain']) if proxy.get('applied_domain') else ''
+   if old_domain in reserved:raise ValueError('Reserved applied domain')
+   if proxy.get('deleted_at'):
+    for value in ({domain,old_domain}|set(proxy.get('cleanup_domains') or []))-{''}:
+     if value in reserved:raise ValueError('Reserved domain cleanup')
+     remove_vhost(out/('harbor-route-'+sync.domain_name(value)+'.conf'),nginx)
+    for suffix in ('.jsonl','.old'):
+     path=logs/('reverse-'+proxy['id']+suffix);sync.verify_output(path);path.unlink(missing_ok=True)
+    usage.pop(proxy['id'],None);config.save_state(state_path,usage)
+    call('gateway/report',dict(id=proxy['id'],kind='reverse-proxy',state='disabled',version=proxy['version']));continue
    enabled=proxy['enabled']
    if enabled and (proxy['certificate_domain']!=domain or proxy['certificate_state']!='ready'):continue
    changed=False
@@ -97,9 +136,34 @@ def main():
       fd,temporary=tempfile.mkstemp(dir=directory)
       with os.fdopen(fd,'w') as file:file.write(content);file.flush();os.fsync(file.fileno())
       os.chmod(temporary,0o600);os.replace(temporary,path);changed=True
-   path=out/('harbor-route-'+domain+'.conf');ensure_domain_available(out,domain,path);reloaded=atomic_vhost(path,render(domain,proxy['upstream'] if enabled else None,enabled),nginx)
+   pinned=config.pinned_upstream(proxy['upstream']) if enabled else None
+   content=render(domain,proxy['upstream'] if enabled else None,enabled,proxy.get('options'),proxy['id'],pinned)
+   path=out/('harbor-route-'+domain+'.conf');ensure_domain_available(out,domain,path);reloaded=atomic_vhost(path,content,nginx)
    if changed and not reloaded:sync.run([nginx,'-t']);sync.run([nginx,'-s','reload'])
-   if proxy['reported_version']!=proxy['version'] or proxy['state'] not in ('active','disabled'):call('gateway/report',dict(id=proxy['id'],kind='reverse-proxy',state='active' if enabled else 'disabled',version=proxy['version']))
+   for value in ({old_domain}|set(proxy.get('cleanup_domains') or []))-{domain,''}:
+    if value in reserved:raise ValueError('Reserved domain cleanup')
+    remove_vhost(out/('harbor-route-'+sync.domain_name(value)+'.conf'),nginx)
+   if proxy['reported_version']!=proxy['version'] or proxy['state'] not in ('active','disabled') or content.decode()!=proxy.get('rendered_config'):call('gateway/report',dict(id=proxy['id'],kind='reverse-proxy',state='active' if enabled else 'disabled',version=proxy['version'],rendered_config=content.decode()))
+   usage[proxy['id']]=proxy_usage(logs,proxy['id'],usage.get(proxy['id']),(proxy.get('upload_bytes',0),proxy.get('download_bytes',0)),nginx)
+   config.save_state(state_path,usage)
+   call('gateway/report',dict(id=proxy['id'],kind='reverse-proxy-usage',upload_bytes=usage[proxy['id']]['up'],download_bytes=usage[proxy['id']]['down']))
   except Exception:call('gateway/report',dict(id=proxy['id'],kind='reverse-proxy',state='failed',version=proxy['version']));print('Reverse proxy validation failed:',proxy['domain'])
+ used_domains=reserved|{p['domain'] for p in work['reverse_proxies']}|{p.get('applied_domain','') for p in work['reverse_proxies']}
+ for cert in work.get('certificate_deletions',[]):
+  try:
+   domains=set(cert.get('cleanup_domains') or [])
+   if cert.get('deleted_at'):domains.add(cert['domain'])
+   for value in domains:
+    domain=sync.domain_name(value)
+    if domain in reserved:continue
+    if domain in used_domains:raise ValueError('Certificate domain still referenced')
+    remove_vhost(out/('harbor-route-'+domain+'.conf'),nginx)
+    directory=Path('/etc/harbor/gateway-certificates')/domain
+    if directory.exists():
+     for name in ('fullchain.pem','privkey.pem'):
+      path=directory/name;sync.verify_output(path);path.unlink(missing_ok=True)
+     directory.rmdir()
+   call('gateway/report',dict(id=cert['id'],kind='certificate-delete' if cert.get('deleted_at') else 'certificate-cleanup',version=cert['version']))
+  except Exception:print('Certificate cleanup pending:',cert['domain'])
  os.close(lock)
 if __name__=='__main__':main()

@@ -425,6 +425,9 @@ func (s *Server) createLiveTx(r *http.Request, tx pgx.Tx, b liveInput, created *
 		if spec.RequiresOptions() && !live.OptionsCapable(version) {
 			return problem{409, "upgrade host to Agent 0.9.0 for protocol options"}
 		}
+		if spec.ManagedUsers && spec.SharedUserProtocol() && !live.ManagedSharedCapable(version) {
+			return problem{409, "独立 SS/Snell 用户计量需要先升级主机 Agent 到 0.23.0"}
+		}
 		if (spec.ManagedUsers || spec.IsReality() || spec.Transport == "grpc") && !live.BundleCapable(version) {
 			return problem{409, "upgrade host to Agent 0.8.0 for REALITY, gRPC and users"}
 		}
@@ -750,6 +753,12 @@ func (s *Server) liveSync(w http.ResponseWriter, r *http.Request, host string) e
 				work[i].Enabled = false
 			}
 			next.EndpointAddresses = nil
+			if next.ManagedUsers && next.SharedUserProtocol() {
+				next.ApplyAccount(live.Account{Name: "harbor-chain", UUID: next.UUID, Password: next.Password})
+				if !live.ManagedSharedCapable(agentVersion) {
+					work[i].Enabled = false
+				}
+			}
 			next.EgressFamilies = nil
 			next.Outbound = nil
 			next.Peer = nil

@@ -2,7 +2,11 @@ package api
 
 import (
 	"fmt"
+	"net/http"
+	"regexp"
 	"slices"
+	"strconv"
+	"strings"
 	"vps-control/internal/live"
 )
 
@@ -11,7 +15,14 @@ import (
 // dropping authentication, transport or security fields.
 func compatibleClient(c clientInfo, endpoint live.Spec) error {
 	format := c.Format
+	if format == "mihomo-nodes" {
+		format = "mihomo"
+	}
 	switch c.ID {
+	case "base64":
+		if endpoint.Kind == "snell" || endpoint.Kind == "naive" {
+			return fmt.Errorf("portable subscription excludes non-standard node URIs")
+		}
 	case "hiddify", "nekobox", "nekobox-uri":
 		if endpoint.Kind == "snell" || endpoint.Kind == "naive" || (c.ID != "hiddify" && endpoint.Kind == "anytls") {
 			return fmt.Errorf("%s 尚无已验证的 %s 适配", c.Name, endpoint.Kind)
@@ -39,7 +50,7 @@ func compatibleClient(c clientInfo, endpoint live.Spec) error {
 // Native mobile clients need a TUN and the selector API; mixed-only JSON can be
 // parsed successfully while carrying no VPN traffic or visible proxy choices.
 func appSingBoxConfig(c clientInfo, config map[string]any) {
-	if !slices.Contains([]string{"sing-box", "sfa", "hiddify"}, c.ID) {
+	if !slices.Contains([]string{"sing-box", "sing-box-latest", "sfa", "hiddify"}, c.ID) {
 		return
 	}
 	ins, _ := config["inbounds"].([]any)
@@ -62,4 +73,30 @@ func appSingBoxConfig(c clientInfo, config map[string]any) {
 		experimental["clash_api"] = map[string]any{"external_controller": "127.0.0.1:9090"}
 	}
 	config["experimental"] = experimental
+}
+
+var coreVersionRE = regexp.MustCompile(`(?i)(?:sing[- ]?box|sfa|sfi)[/ v]*([0-9]+)\.([0-9]+)`)
+
+func runtimeClientCompatibility(r *http.Request, c clientInfo, spec live.Spec) error {
+	if err := compatibleClient(c, spec); err != nil {
+		return err
+	}
+	if spec.Kind == "snell" && c.Format == "sing-box" {
+		if strings.Contains(strings.ToLower(r.UserAgent()), "hiddify") {
+			return fmt.Errorf("Hiddify does not support this Snell adapter")
+		}
+		if c.ID != "sing-box-latest" {
+			version := coreVersionRE.FindStringSubmatch(r.UserAgent())
+			ok := false
+			if len(version) == 3 {
+				major, _ := strconv.Atoi(version[1])
+				minor, _ := strconv.Atoi(version[2])
+				ok = major > 1 || major == 1 && minor >= 14
+			}
+			if !ok {
+				return fmt.Errorf("Snell requires confirmed sing-box 1.14+; choose the explicit latest-core profile")
+			}
+		}
+	}
+	return nil
 }

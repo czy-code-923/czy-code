@@ -9,7 +9,7 @@ class ManagedGatewayTests(unittest.TestCase):
   data=m.render('app.example.com','http://127.0.0.1:3000',True).decode();self.assertIn('proxy_pass http://127.0.0.1:3000;',data);self.assertIn('listen [::]:443',data);self.assertNotIn('proxy_pass',m.render('app.example.com').decode())
   for domain in ['evil; include /secret;','../bad','bad\nserver {}']:
    with self.assertRaises(ValueError):m.render(domain)
-  for value in ['http://127.0.0.1:8080','http://evil.example.com:3000','http://127.0.0.1:3000/path','http://u:p@127.0.0.1:3000','https://127.0.0.1:3000']:
+  for value in ['http://127.0.0.1:8080','http://10.0.0.1:3000','http://127.0.0.1:3000/path;deny','http://u:p@127.0.0.1:3000','https://127.0.0.1:3000']:
    with self.assertRaises(ValueError):m.upstream(value)
  def test_domain_ownership_protected(self):
   with tempfile.TemporaryDirectory() as directory:

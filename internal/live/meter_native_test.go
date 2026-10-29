@@ -23,6 +23,11 @@ func TestNativeTrafficAndAccess(t *testing.T) {
 		}
 	}
 }
+func TestNativeSharedIdentityTraffic(t *testing.T) {
+	for _, kind := range []string{"shadowsocks", "snell"} {
+		t.Run(kind, func(t *testing.T) { nativeMeterProtocol(t, "sing-box", kind) })
+	}
+}
 func nativeMeterProtocol(t *testing.T, engine, kind string) {
 	binary := os.Getenv("TEST_SING_BOX_BINARY")
 	serverBinary := binary
@@ -48,6 +53,9 @@ func nativeMeterProtocol(t *testing.T, engine, kind string) {
 	defer target.Close()
 	userID, serviceID := strings.Repeat("c", 32), strings.Repeat("d", 32)
 	spec := Spec{Engine: engine, Kind: kind, TLSMode: "none", Address: "127.0.0.1", Listen: "127.0.0.1", Port: free(), UUID: UUID(), Password: Secret(), ManagedUsers: true, Accounts: []Account{{Name: userID, UUID: UUID(), Password: Secret()}}}
+	if kind == "snell" {
+		spec.UUID = ""
+	}
 	work := BundleWork([]Work{{ID: serviceID, Version: 1, Enabled: true, Spec: spec}})[0]
 	_, files, e := work.Render()
 	if e != nil {
@@ -94,9 +102,7 @@ func nativeMeterProtocol(t *testing.T, engine, kind string) {
 		t.Fatal("statistics unavailable")
 	}
 	clientSpec := spec
-	clientSpec.UUID = spec.Accounts[0].UUID
-	clientSpec.Username = spec.Accounts[0].Name
-	clientSpec.Password = spec.Accounts[0].Password
+	clientSpec.ApplyAccount(spec.Accounts[0])
 	sb, _, _, _ := clientSpec.Client("proxy")
 	port := free()
 	raw, _ := json.Marshal(map[string]any{"inbounds": []any{map[string]any{"type": "mixed", "listen": "127.0.0.1", "listen_port": port}}, "outbounds": []any{sb}, "route": map[string]any{"final": "proxy"}})

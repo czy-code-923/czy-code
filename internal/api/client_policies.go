@@ -24,9 +24,10 @@ var clients = []clientInfo{
 	{"mihomo", "Mihomo / Clash Meta", "mihomo", true, "原生策略组与规则"},
 	{"clash-verge", "Clash Verge Rev", "mihomo", true, "Mihomo YAML"},
 	{"stash", "Stash", "mihomo", true, "使用 Clash 风格配置；协议能力取决于客户端版本"},
-	{"sing-box", "sing-box", "sing-box", true, "selector/urltest 与原生路由规则"},
+	{"sing-box", "sing-box Android 兼容配置", "sing-box", true, "1.12+ Android 配置；未确认内核 1.14 时过滤 Snell"},
+	{"sing-box-latest", "sing-box 1.14+ · 含 Snell", "sing-box", true, "明确使用 1.14+ 内核时选择；支持 Snell 独立用户身份"},
 	{"hiddify", "Hiddify", "sing-box", true, "App 配置含 TUN 与可选节点；过滤尚未适配的 Snell，不以服务端内核版本判断 App 能力"},
-	{"nekobox", "NekoBox for Android", "base64", false, "导入标准节点列表；由 App 管理 TUN、路由和 DNS，过滤 Snell / AnyTLS 等未验证协议"},
+	{"nekobox", "NekoBox for Android", "mihomo-nodes", false, "Android 推荐的 Clash Meta 节点 YAML；App 自行管理路由，订阅扫码要求 NekoBox 1.4+，旧版可使用单节点二维码"},
 	{"sfa", "SFA / SFI", "sing-box", true, "sing-box 原生配置"},
 	{"xray", "Xray", "xray", true, "select 使用默认成员，url-test 转换为 leastPing；不等同于 GUI 交互组"},
 	{"v2rayng", "v2rayNG", "base64", false, "标准 URI 节点订阅；可逐个选择节点，App 自行管理路由，不下发整套内核运行配置"},
@@ -313,6 +314,9 @@ func policyFamily(address string) string {
 }
 func selectedClient(r *http.Request, profile string) (clientInfo, error) {
 	id := r.URL.Query().Get("client")
+	if id == "auto" {
+		id = ""
+	}
 	if id == "" {
 		id = r.URL.Query().Get("format")
 	}
@@ -331,6 +335,8 @@ func selectedClient(r *http.Request, profile string) (clientInfo, error) {
 			id = "shadowrocket"
 		case strings.Contains(ua, "hiddify"):
 			id = "hiddify"
+		case strings.HasPrefix(ua, "dart/") || strings.HasPrefix(ua, "okhttp/"):
+			id = "base64"
 		case strings.Contains(ua, "nekobox"):
 			id = "nekobox"
 		case strings.Contains(ua, "stash"):
@@ -345,7 +351,7 @@ func selectedClient(r *http.Request, profile string) (clientInfo, error) {
 		id = profile
 	}
 	if id == "" {
-		id = "sing-box"
+		id = "base64"
 	}
 	if c, ok := clientByID(id); ok {
 		return c, nil

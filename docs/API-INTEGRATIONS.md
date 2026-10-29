@@ -1,4 +1,6 @@
-# 星枢 API 与外部集成（0.19）
+# 星枢 API 与外部集成（0.23）
+
+订阅正文、节点和二维码导出见 [0.23 说明](WORKFLOW-v023.md)，均需要 `subscriptions:links` 权限，输出包含私密凭据。证书与反代 CRUD 使用各自 read/write 权限，网关执行器内部任务仍只允许完整管理员令牌。
 
 0.19 修复订阅动态成员，新增客户端 X-Hwid 自动识别与标准错误响应；SS 增加 listen_network 字段，需要 Agent 0.19。详见 [本版说明](WORKFLOW-v019.md)。
 

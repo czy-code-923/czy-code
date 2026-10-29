@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 	"vps-control/internal/api"
+	"vps-control/internal/authconfig"
 	"vps-control/internal/live"
 	"vps-control/internal/store"
 )
@@ -22,8 +23,8 @@ func main() {
 		return
 	}
 	token := os.Getenv("ADMIN_TOKEN")
-	if len(token) < 32 {
-		log.Fatal("ADMIN_TOKEN must contain at least 32 bytes")
+	if !authconfig.ValidAdminToken(token) {
+		log.Fatal("ADMIN_TOKEN must be a private random value of at least 32 bytes; example placeholders are refused")
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

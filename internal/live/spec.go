@@ -125,6 +125,7 @@ type Spec struct {
 	ServiceName  string    `json:"service_name,omitempty"`
 	Accounts     []Account `json:"accounts,omitempty"`
 	ManagedUsers bool      `json:"managed_users,omitempty"`
+	UserKey      string    `json:"user_key,omitempty"`
 	Transport    string    `json:"transport,omitempty"`
 	Path         string    `json:"path,omitempty"`
 	TLSMode      string    `json:"tls_mode,omitempty"`
@@ -270,6 +271,9 @@ func (s Spec) Render() (engineResult string, fileResult map[string][]byte, errRe
 			out = map[string]any{"type": "shadowsocks", "tag": "egress", "server": s.Peer.Address, "server_port": s.Peer.Port, "method": Method, "password": s.Peer.Password}
 		}
 		in := map[string]any{"type": "shadowsocks", "tag": "entry", "listen": s.Listen, "listen_port": s.Port, "method": s.SSMethod(), "password": s.Password}
+		if s.ManagedUsers {
+			in["users"] = s.sharedUsers()
+		}
 		if s.ListenNetwork == "tcp" || s.ListenNetwork == "udp" {
 			in["network"] = s.ListenNetwork
 		}

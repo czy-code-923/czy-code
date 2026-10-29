@@ -72,7 +72,7 @@ func redactLive(value any) any {
 	case map[string]any:
 		for k, x := range v {
 			switch strings.ToLower(k) {
-			case "password", "uuid", "id", "psk", "key", "token", "privatekey", "private_key", "hy2_obfs_password", "hysteria_obfs_password", "auth_str", "auth", "proxy":
+			case "password", "uuid", "id", "psk", "key", "token", "privatekey", "private_key", "user_key", "userkey", "hy2_obfs_password", "hysteria_obfs_password", "auth_str", "auth", "proxy":
 				v[k] = "[已隐藏]"
 			default:
 				v[k] = redactLive(x)
@@ -271,6 +271,9 @@ func (s *Server) liveUpdate(w http.ResponseWriter, r *http.Request) error {
 	}
 	if spec.RequiresOptions() && !live.OptionsCapable(av) {
 		return problem{409, "upgrade host to Agent 0.9.0 for protocol options"}
+	}
+	if spec.ManagedUsers && spec.SharedUserProtocol() && !live.ManagedSharedCapable(av) {
+		return problem{409, "独立 SS/Snell 用户计量需要先升级主机 Agent 到 0.23.0"}
 	}
 	if (spec.ManagedUsers || spec.IsReality() || spec.Transport == "grpc") && !live.BundleCapable(av) {
 		return problem{409, "upgrade host to Agent 0.8.0 first"}

@@ -95,7 +95,7 @@ func TestUserShareReusesOriginalLinkAndFormatMatrix(t *testing.T) {
 			if e := json.Unmarshal(w.Body.Bytes(), &config); e != nil || len(config["outbounds"].([]any)) == 0 {
 				t.Fatal(c.ID, "invalid JSON")
 			}
-		case "mihomo":
+		case "mihomo", "mihomo-nodes":
 			if len(proxies019(t, w)) != 1 {
 				t.Fatal(c.ID, "missing proxy")
 			}

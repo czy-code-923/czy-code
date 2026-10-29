@@ -9,8 +9,6 @@ import (
 	"net"
 	"net/http"
 	"net/mail"
-	"net/url"
-	"strconv"
 	"strings"
 	"time"
 	"vps-control/internal/live"
@@ -39,9 +37,12 @@ func (s *Server) certificates(w http.ResponseWriter, r *http.Request) error {
 	if e := s.liveReady(); e != nil {
 		return e
 	}
+	if r.Method == "PUT" || r.Method == "DELETE" {
+		return s.certificateManage(w, r)
+	}
 	if r.Method == "GET" {
 		var b json.RawMessage
-		e := s.DB.QueryRow(r.Context(), `SELECT COALESCE(jsonb_agg(x),'[]') FROM (SELECT id,domain,provider,email,state,expires_at,last_attempt,result FROM managed_certificates WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT 200)x`, tenant).Scan(&b)
+		e := s.DB.QueryRow(r.Context(), `SELECT COALESCE(jsonb_agg(x),'[]') FROM (SELECT id,domain,provider,email,state,expires_at,last_attempt,result,version,deleted_at FROM managed_certificates WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT 200)x`, tenant).Scan(&b)
 		if e != nil {
 			return e
 		}
@@ -139,7 +140,7 @@ func (s *Server) certificateRetry(w http.ResponseWriter, r *http.Request) error 
 		return e
 	}
 	defer tx.Rollback(r.Context())
-	tag, e := tx.Exec(r.Context(), "UPDATE managed_certificates SET state='pending',result='' WHERE tenant_id=$1 AND id=$2 AND provider<>'manual' AND state IN ('ready','failed') AND (last_attempt IS NULL OR last_attempt<now()-interval '5 minutes')", tenant, r.PathValue("id"))
+	tag, e := tx.Exec(r.Context(), "UPDATE managed_certificates SET state='pending',result='' WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL AND provider<>'manual' AND state IN ('ready','failed') AND (last_attempt IS NULL OR last_attempt<now()-interval '5 minutes')", tenant, r.PathValue("id"))
 	if e != nil {
 		return e
 	}
@@ -165,7 +166,7 @@ func (s *Server) gatewayWork(w http.ResponseWriter, r *http.Request) error {
 	}
 	defer tx.Rollback(r.Context())
 	// One bounded worker owns a claim for fifteen minutes. Secrets only go to this authenticated local root helper.
-	rows, e := tx.Query(r.Context(), `UPDATE managed_certificates SET state='running',last_attempt=now() WHERE (tenant_id,id) IN (SELECT tenant_id,id FROM managed_certificates WHERE tenant_id=$1 AND provider<>'manual' AND (state='pending' OR state='running' AND last_attempt<now()-interval '15 minutes' OR state='ready' AND expires_at<now()+interval '30 days' AND last_attempt<now()-interval '24 hours') ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 4) RETURNING id,domain,provider,email,sealed_credentials`, tenant)
+	rows, e := tx.Query(r.Context(), `UPDATE managed_certificates SET state='running',last_attempt=now() WHERE (tenant_id,id) IN (SELECT tenant_id,id FROM managed_certificates WHERE tenant_id=$1 AND deleted_at IS NULL AND provider<>'manual' AND (state='pending' OR state='running' AND last_attempt<now()-interval '15 minutes' OR state='ready' AND expires_at<now()+interval '30 days' AND last_attempt<now()-interval '24 hours') ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 4) RETURNING id,domain,provider,email,sealed_credentials,version`, tenant)
 	if e != nil {
 		return e
 	}
@@ -173,7 +174,8 @@ func (s *Server) gatewayWork(w http.ResponseWriter, r *http.Request) error {
 	for rows.Next() {
 		var id, domain, provider, email string
 		var sealed []byte
-		if e = rows.Scan(&id, &domain, &provider, &email, &sealed); e != nil {
+		var version int
+		if e = rows.Scan(&id, &domain, &provider, &email, &sealed, &version); e != nil {
 			rows.Close()
 			return e
 		}
@@ -182,7 +184,7 @@ func (s *Server) gatewayWork(w http.ResponseWriter, r *http.Request) error {
 			rows.Close()
 			return e
 		}
-		jobs = append(jobs, map[string]any{"id": id, "domain": domain, "provider": provider, "email": email, "dns_token": string(raw)})
+		jobs = append(jobs, map[string]any{"id": id, "domain": domain, "provider": provider, "email": email, "dns_token": string(raw), "version": version})
 	}
 	rows.Close()
 	if e = rows.Err(); e != nil {
@@ -218,7 +220,11 @@ func (s *Server) gatewayWork(w http.ResponseWriter, r *http.Request) error {
 		}
 		delete(proxy, "sealed")
 	}
-	send(w, 200, map[string]any{"certificates": jobs, "reverse_proxies": decoded})
+	var deletions json.RawMessage
+	if e = s.DB.QueryRow(r.Context(), `SELECT COALESCE(jsonb_agg(x),'[]') FROM(SELECT id,domain,version,deleted_at,cleanup_domains FROM managed_certificates WHERE tenant_id=$1 AND (deleted_at IS NOT NULL OR cardinality(cleanup_domains)>0) LIMIT 100)x`, tenant).Scan(&deletions); e != nil {
+		return e
+	}
+	send(w, 200, map[string]any{"certificates": jobs, "reverse_proxies": decoded, "certificate_deletions": deletions})
 	return nil
 }
 func (s *Server) gatewayReport(w http.ResponseWriter, r *http.Request) error {
@@ -232,15 +238,60 @@ func (s *Server) gatewayReport(w http.ResponseWriter, r *http.Request) error {
 		Version     int    `json:"version"`
 		Certificate string `json:"certificate"`
 		PrivateKey  string `json:"private_key"`
+		Upload      int64  `json:"upload_bytes"`
+		Download    int64  `json:"download_bytes"`
+		Rendered    string `json:"rendered_config"`
 	}
 	if e := decode(w, r, &b); e != nil {
 		return e
+	}
+	if b.Kind == "reverse-proxy-usage" {
+		if b.Upload < 0 || b.Download < 0 || b.Upload > 9000000000000000 || b.Download > 9000000000000000 {
+			return bad("invalid proxy counters")
+		}
+		_, e := s.DB.Exec(r.Context(), `UPDATE reverse_proxies SET upload_bytes=GREATEST(upload_bytes,$3),download_bytes=GREATEST(download_bytes,$4),usage_reported_at=now() WHERE tenant_id=$1 AND id=$2`, tenant, b.ID, b.Upload, b.Download)
+		if e != nil {
+			return e
+		}
+		send(w, 200, map[string]bool{"recorded": true})
+		return nil
+	}
+	if b.Kind == "certificate-delete" {
+		tag, e := s.DB.Exec(r.Context(), `DELETE FROM managed_certificates WHERE tenant_id=$1 AND id=$2 AND version=$3 AND deleted_at IS NOT NULL`, tenant, b.ID, b.Version)
+		if e != nil {
+			return e
+		}
+		if tag.RowsAffected() == 0 {
+			return problem{409, "certificate deletion changed"}
+		}
+		send(w, 200, map[string]bool{"deleted": true})
+		return nil
+	}
+	if b.Kind == "certificate-cleanup" {
+		tag, e := s.DB.Exec(r.Context(), `UPDATE managed_certificates SET cleanup_domains='{}' WHERE tenant_id=$1 AND id=$2 AND version=$3 AND deleted_at IS NULL`, tenant, b.ID, b.Version)
+		if e != nil {
+			return e
+		}
+		if tag.RowsAffected() == 0 {
+			return problem{409, "certificate cleanup changed"}
+		}
+		send(w, 200, map[string]bool{"cleaned": true})
+		return nil
 	}
 	if b.Kind == "reverse-proxy" {
 		if b.State != "active" && b.State != "disabled" && b.State != "failed" {
 			return bad("invalid state")
 		}
-		_, e := s.DB.Exec(r.Context(), "UPDATE reverse_proxies SET state=$3,reported_version=$4 WHERE tenant_id=$1 AND id=$2 AND version=$4", tenant, b.ID, b.State, b.Version)
+		if len(b.Rendered) > 16384 {
+			return bad("rendered config too large")
+		}
+		if b.State == "disabled" {
+			_, e := s.DB.Exec(r.Context(), `DELETE FROM reverse_proxies WHERE tenant_id=$1 AND id=$2 AND version=$3 AND deleted_at IS NOT NULL`, tenant, b.ID, b.Version)
+			if e != nil {
+				return e
+			}
+		}
+		_, e := s.DB.Exec(r.Context(), "UPDATE reverse_proxies SET state=$3,reported_version=$4,cleanup_domains=CASE WHEN $3='failed' THEN cleanup_domains ELSE '{}' END,applied_domain=CASE WHEN $3='failed' THEN applied_domain ELSE domain END,rendered_config=CASE WHEN $3='failed' THEN rendered_config ELSE $5 END WHERE tenant_id=$1 AND id=$2 AND version=$4", tenant, b.ID, b.State, b.Version, b.Rendered)
 		if e != nil {
 			return e
 		}
@@ -259,7 +310,7 @@ func (s *Server) gatewayReport(w http.ResponseWriter, r *http.Request) error {
 		return e
 	}
 	var domain string
-	if e = tx.QueryRow(r.Context(), "SELECT domain FROM managed_certificates WHERE tenant_id=$1 AND id=$2 AND state='running' FOR UPDATE", tenant, b.ID).Scan(&domain); e != nil {
+	if e = tx.QueryRow(r.Context(), "SELECT domain FROM managed_certificates WHERE tenant_id=$1 AND id=$2 AND state='running' AND deleted_at IS NULL AND ($3=version OR $3=0 AND version=1) FOR UPDATE", tenant, b.ID, b.Version).Scan(&domain); e != nil {
 		return e
 	}
 	if b.State == "failed" {
@@ -282,89 +333,8 @@ func (s *Server) gatewayReport(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 func (s *Server) reverseProxies(w http.ResponseWriter, r *http.Request) error {
-	if r.Method == "GET" {
-		var raw json.RawMessage
-		e := s.DB.QueryRow(r.Context(), "SELECT COALESCE(jsonb_agg(x),'[]') FROM (SELECT * FROM reverse_proxies WHERE tenant_id=$1 ORDER BY domain LIMIT 100)x", tenant).Scan(&raw)
-		if e != nil {
-			return e
-		}
-		send(w, 200, raw)
-		return nil
-	}
-	var b struct {
-		Domain        string `json:"domain"`
-		Upstream      string `json:"upstream"`
-		CertificateID string `json:"certificate_id"`
-		Enabled       bool   `json:"enabled"`
-		Version       int    `json:"version"`
-	}
-	if e := decode(w, r, &b); e != nil {
-		return e
-	}
-	b.Domain = strings.ToLower(b.Domain)
-	u, e := url.Parse(b.Upstream)
-	if e != nil || u.Scheme != "http" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" || (u.Hostname() != "127.0.0.1" && u.Hostname() != "::1") {
-		return bad("upstream must be http://127.0.0.1:port or http://[::1]:port, including FRP local endpoints")
-	}
-	port, e := strconv.Atoi(u.Port())
-	if e != nil || port < 1024 || port > 65535 || port == 8080 || port == 8091 || port == 5173 || port == 15432 || port == 5432 || port == 2375 {
-		return bad("invalid or reserved upstream port")
-	}
-	if !validDomain(b.Domain) {
-		return bad("valid DNS domain required")
-	}
-	var management string
-	if e = s.DB.QueryRow(r.Context(), "SELECT domain FROM site_settings WHERE tenant_id=$1", tenant).Scan(&management); e != nil {
-		return e
-	}
-	if b.Domain == management {
-		return bad("reverse proxy cannot replace management domain")
-	}
-	var certDomain, state string
-	if e = s.DB.QueryRow(r.Context(), "SELECT domain,state FROM managed_certificates WHERE tenant_id=$1 AND id=$2", tenant, b.CertificateID).Scan(&certDomain, &state); e != nil {
-		return e
-	}
-	if certDomain != b.Domain || b.Enabled && state != "ready" {
-		return bad("matching ready certificate required before activation")
-	}
-	tx, e := s.DB.Begin(r.Context())
-	if e != nil {
-		return e
-	}
-	defer tx.Rollback(r.Context())
-	id := r.PathValue("id")
-	status := 200
-	if r.Method == "POST" {
-		id = ID()
-		status = 201
-		_, e = tx.Exec(r.Context(), "INSERT INTO reverse_proxies(tenant_id,id,domain,upstream,certificate_id,enabled) VALUES($1,$2,$3,$4,$5,$6)", tenant, id, b.Domain, b.Upstream, b.CertificateID, b.Enabled)
-	} else {
-		var current string
-		if e = tx.QueryRow(r.Context(), "SELECT domain FROM reverse_proxies WHERE tenant_id=$1 AND id=$2 FOR UPDATE", tenant, id).Scan(&current); e != nil {
-			return e
-		}
-		if current != b.Domain {
-			return bad("domain immutable; create another proxy")
-		}
-		result, err := tx.Exec(r.Context(), "UPDATE reverse_proxies SET upstream=$3,certificate_id=$4,enabled=$5,version=version+1,state='pending' WHERE tenant_id=$1 AND id=$2 AND version=$6", tenant, id, b.Upstream, b.CertificateID, b.Enabled, b.Version)
-		e = err
-		if e == nil && result.RowsAffected() == 0 {
-			return problem{409, "configuration changed; refresh"}
-		}
-	}
-	if e != nil {
-		return e
-	}
-	if e = audit(r.Context(), tx, "admin", "reverse-proxy.save", id); e != nil {
-		return e
-	}
-	if e = tx.Commit(r.Context()); e != nil {
-		return e
-	}
-	send(w, status, map[string]string{"id": id})
-	return nil
+	return s.reverseManage(w, r)
 }
-
 func (s *Server) saveManagedCertificate(r *http.Request, tx pgx.Tx, id, domain string, pair certificatePair) error {
 	var e error
 	spec := live.Spec{Kind: "trojan", Address: domain, Listen: "127.0.0.1", Port: 25000, Password: live.Secret(), ServerName: domain, Certificate: pair.Certificate, PrivateKey: pair.PrivateKey}

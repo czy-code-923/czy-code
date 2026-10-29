@@ -1,0 +1,12 @@
+ALTER TABLE managed_certificates ADD COLUMN version int NOT NULL DEFAULT 1;
+ALTER TABLE managed_certificates ADD COLUMN deleted_at timestamptz;
+ALTER TABLE managed_certificates ADD COLUMN cleanup_domains text[] NOT NULL DEFAULT '{}';
+ALTER TABLE reverse_proxies ADD COLUMN options jsonb NOT NULL DEFAULT '{}';
+ALTER TABLE reverse_proxies ADD COLUMN applied_domain text NOT NULL DEFAULT '';
+ALTER TABLE reverse_proxies ADD COLUMN deleted_at timestamptz;
+ALTER TABLE reverse_proxies ADD COLUMN cleanup_domains text[] NOT NULL DEFAULT '{}';
+ALTER TABLE reverse_proxies ADD COLUMN upload_bytes bigint NOT NULL DEFAULT 0 CHECK(upload_bytes>=0);
+ALTER TABLE reverse_proxies ADD COLUMN download_bytes bigint NOT NULL DEFAULT 0 CHECK(download_bytes>=0);
+ALTER TABLE reverse_proxies ADD COLUMN usage_reported_at timestamptz;
+ALTER TABLE reverse_proxies ADD COLUMN rendered_config text NOT NULL DEFAULT '';
+UPDATE reverse_proxies SET applied_domain=domain WHERE reported_version>0 AND state IN ('active','disabled');

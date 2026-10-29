@@ -28,6 +28,9 @@ type Account struct {
 }
 
 func (s Spec) ClientFormat(format string) error {
+	if s.Kind == "snell" && s.UserKey != "" && format != "sing-box" {
+		return errors.New("multi-user Snell requires sing-box 1.14+ with userkey")
+	}
 	if s.Transport == "xhttp" || s.Transport == "kcp" {
 		if format != "xray" {
 			return errors.New("XHTTP/mKCP export requires verified Xray JSON")
@@ -154,8 +157,11 @@ func (s Spec) validateSecurity(client bool) error {
 	if len(s.Accounts) > 512 {
 		return errors.New("at most 512 users per inbound")
 	}
-	if s.ManagedUsers && (s.Kind == "shadowsocks" || s.Kind == "snell" || !Proxy(s.Kind)) {
-		return errors.New("this protocol uses a dedicated shared-key inbound; user groups unsupported")
+	if s.ManagedUsers && !Proxy(s.Kind) {
+		return errors.New("managed users require a proxy protocol")
+	}
+	if s.ManagedUsers && s.SharedUserProtocol() && (s.Engine == "xray" || s.Kind == "shadowsocks" && s.SSMethod() != "2022-blake3-aes-128-gcm" && s.SSMethod() != Method) {
+		return errors.New("independent shared-protocol identities require sing-box with SS 2022 AES or Snell")
 	}
 	seen := map[string]bool{}
 	for _, a := range s.Accounts {

@@ -43,7 +43,7 @@ func (s *Server) protocolTemplates(w http.ResponseWriter, r *http.Request) error
 		t["optional"] = []string{"node_id", "next_id"}
 		t["transports"] = []string{"tcp"}
 		t["security_modes"] = []string{}
-		t["managed_users"] = kind != "snell" && kind != "shadowsocks"
+		t["managed_users"] = true
 		if kind == "vless" || kind == "vmess" || kind == "trojan" {
 			t["transports"] = []string{"tcp", "ws", "grpc"}
 			t["optional"] = []string{"node_id", "next_id", "ws_host", "alpn", "managed_users"}

@@ -130,7 +130,7 @@ func requiredScopes(r *http.Request) []string {
 	case "access-records":
 		return []string{"access:read"}
 	case "subscriptions":
-		if len(a) > 2 && (a[2] == "link" || a[2] == "config") {
+		if len(a) > 2 && (a[2] == "link" || a[2] == "config" || a[2] == "share" || a[2] == "content" || a[2] == "nodes" || a[2] == "qr") {
 			return []string{"subscriptions:links"}
 		}
 		if len(a) > 2 && a[2] == "usage" {

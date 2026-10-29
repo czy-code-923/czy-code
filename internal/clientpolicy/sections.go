@@ -153,6 +153,7 @@ func nativeTag(s string) string {
 var geoCode = regexp.MustCompile(`^[a-zA-Z0-9_@!.-]{1,80}$`)
 
 func attachRuleSets(base map[string]any, rules []string) {
+	detour, _ := obj(base["route"])["final"].(string)
 	sets := []any{}
 	seen := map[string]bool{}
 	for _, line := range rules {
@@ -170,7 +171,11 @@ func attachRuleSets(base map[string]any, rules []string) {
 			continue
 		}
 		seen[tag] = true
-		sets = append(sets, map[string]any{"type": "remote", "tag": tag, "format": "binary", "url": "https://raw.githubusercontent.com/SagerNet/sing-" + kind + "/rule-set/" + tag + ".srs", "download_detour": "proxy", "update_interval": "1d"})
+		definition := map[string]any{"type": "remote", "tag": tag, "format": "binary", "url": "https://raw.githubusercontent.com/SagerNet/sing-" + kind + "/rule-set/" + tag + ".srs", "update_interval": "1d"}
+		if detour != "" {
+			definition["download_detour"] = detour
+		}
+		sets = append(sets, definition)
 	}
 	if len(sets) > 0 {
 		obj(base["route"])["rule_set"] = sets

@@ -40,7 +40,7 @@ it('separates app formats and generates a QR locally only after a successful che
  const w=mount(Subscriptions,{props:{api,initialUser:'u'}});await flushPromises()
  await w.get('select[aria-label=客户端格式]').setValue('v2rayng');await flushPromises()
  expect((w.get('input[readonly]').element as HTMLInputElement).value).toContain('client=v2rayng&policy=nodes-only')
- await w.findAll('button').find(b=>b.text()==='二维码导入')!.trigger('click');await flushPromises()
+ await w.findAll('button').find(b=>b.text()==='生成二维码')!.trigger('click');await flushPromises()
  expect(w.get('.share-qr img').attributes('src')).toBe('data:image/png;base64,bG9jYWw=')
  await w.get('select[aria-label=客户端格式]').setValue('hiddify');await flushPromises()
  expect(w.find('.share-qr').exists()).toBe(false)

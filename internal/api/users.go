@@ -1,6 +1,9 @@
 package api
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"github.com/jackc/pgx/v5"
 	"net/http"
@@ -433,6 +436,11 @@ func (s *Server) materializeAccounts(r *http.Request, tx pgx.Tx, id string, spec
 	}
 	if chain {
 		spec.Accounts = append(spec.Accounts, live.Account{Name: "harbor-chain", UUID: spec.UUID, Password: spec.Password})
+	}
+	if spec.SharedUserProtocol() && len(spec.Accounts) == 0 {
+		mac := hmac.New(sha256.New, s.MasterKey)
+		mac.Write([]byte("starhub-unassigned-v1/" + id))
+		spec.Accounts = append(spec.Accounts, live.Account{Name: "_starhub_unassigned", Password: hex.EncodeToString(mac.Sum(nil))})
 	}
 	return nil
 }

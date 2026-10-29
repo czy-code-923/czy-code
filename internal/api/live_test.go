@@ -88,7 +88,7 @@ func TestLiveIntegration(t *testing.T) {
 	snellSub := call("POST", "subscriptions", map[string]any{"name": "Snell", "days": 2, "service_ids": []any{snell["id"]}}, 201, nil)
 	call("POST", "live/"+snell["id"].(string)+"/toggle", map[string]any{"enabled": true}, 200, nil)
 	call("POST", "agent/live/sync", map[string]any{"reports": []map[string]any{{"id": snell["id"], "version": 2, "state": "running"}}}, 200, h)
-	share(snellSub["url"].(string)+"?format=sing-box", 200)
+	share(snellSub["url"].(string)+"?client=sing-box-latest", 200)
 	share(snellSub["url"].(string)+"?format=mihomo", 200)
 	share(snellSub["url"].(string)+"?format=shadowrocket", 422)
 	a := create("shadowsocks", 22000, nil)
@@ -167,7 +167,7 @@ func TestLiveIntegration(t *testing.T) {
 	call("POST", "certificates/"+cert["id"].(string)+"/retry", map[string]any{}, 409, nil)
 	call("POST", "reverse-proxies", map[string]any{"domain": "proxy.example.com", "upstream": "http://127.0.0.1:3000", "certificate_id": cert["id"], "enabled": false}, 201, nil)
 	call("POST", "reverse-proxies", map[string]any{"domain": "bad.example.com", "upstream": "http://127.0.0.1:8080", "certificate_id": cert["id"], "enabled": false}, 400, nil)
-	call("POST", "reverse-proxies", map[string]any{"domain": "proxy.example.com", "upstream": "http://127.0.0.1:3000", "certificate_id": cert["id"], "enabled": true}, 400, nil)
+	call("POST", "reverse-proxies", map[string]any{"domain": "proxy.example.com", "upstream": "http://127.0.0.1:3000", "certificate_id": cert["id"], "enabled": true}, 409, nil)
 
 	if certFile, keyFile := os.Getenv("TEST_CERTIFICATE_FILE"), os.Getenv("TEST_PRIVATE_KEY_FILE"); certFile != "" && keyFile != "" {
 		certPEM, e := os.ReadFile(certFile)

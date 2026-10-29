@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "星枢 · VPS 多机管理 API",
-    "version": "0.22.0",
+    "version": "0.23.0",
     "description": "Self-workspace API for host agents, proxy protocols, user quotas and client subscriptions. Bearer administrator token or expiring scoped xs_ API key. No arbitrary shell; privileged gateway work and API key administration remain root-only."
   },
   "servers": [
@@ -3726,7 +3726,41 @@
         "summary": "POST certificates",
         "responses": {
           "201": {
-            "description": "Authenticated typed operation; see CONFIGURATION-v07.md"
+            "description": "Saved; gateway checks before applying"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Resource unavailable"
+          },
+          "409": {
+            "description": "Version conflict or device identity required"
+          },
+          "422": {
+            "description": "No compatible client output"
+          },
+          "429": {
+            "description": "Rate limited"
+          }
+        },
+        "x-required-scopes": [
+          "certificates:write"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManagedCertificateInput"
+              }
+            }
           }
         }
       }
@@ -3754,17 +3788,182 @@
         "summary": "POST reverse-proxies",
         "responses": {
           "201": {
-            "description": "Authenticated typed operation; see CONFIGURATION-v07.md"
+            "description": "Saved; gateway checks before applying"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Resource unavailable"
+          },
+          "409": {
+            "description": "Version conflict or device identity required"
+          },
+          "422": {
+            "description": "No compatible client output"
+          },
+          "429": {
+            "description": "Rate limited"
+          }
+        },
+        "x-required-scopes": [
+          "reverse:write"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReverseProxyInput"
+              }
+            }
           }
         }
       }
     },
     "/api/v1/reverse-proxies/{id}": {
       "put": {
-        "summary": "PUT reverse-proxies/{id}",
+        "summary": "PUT reverse-proxies",
         "responses": {
           "200": {
-            "description": "Authenticated typed operation; see CONFIGURATION-v07.md"
+            "description": "Saved; gateway checks before applying"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Resource unavailable"
+          },
+          "409": {
+            "description": "Version conflict or device identity required"
+          },
+          "422": {
+            "description": "No compatible client output"
+          },
+          "429": {
+            "description": "Rate limited"
+          }
+        },
+        "x-required-scopes": [
+          "reverse:write"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReverseProxyInput"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "DELETE reverse-proxies",
+        "x-required-scopes": [
+          "reverse:write"
+        ],
+        "responses": {
+          "202": {
+            "description": "Deletion waits for privileged gateway cleanup"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Resource unavailable"
+          },
+          "409": {
+            "description": "Version conflict or device identity required"
+          },
+          "422": {
+            "description": "No compatible client output"
+          },
+          "429": {
+            "description": "Rate limited"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            }
+          }
+        ]
+      },
+      "get": {
+        "summary": "Reverse proxy desired configuration, Nginx applied configuration and HTTP request/response byte counters",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            }
+          }
+        ],
+        "x-required-scopes": [
+          "reverse:read"
+        ],
+        "responses": {
+          "200": {
+            "description": "Resource includes engine, options, rendered_config, upload_bytes, download_bytes, usage_reported_at, version, reported_version, deleted_at"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Resource unavailable"
+          },
+          "409": {
+            "description": "Version conflict or device identity required"
+          },
+          "422": {
+            "description": "No compatible client output"
+          },
+          "429": {
+            "description": "Rate limited"
           }
         }
       }
@@ -3811,48 +4010,100 @@
         }
       ],
       "put": {
-        "summary": "Update manually managed certificate and propagate to bound deployments",
+        "summary": "PUT certificates",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "required": [
-                  "provider",
-                  "domain",
-                  "certificate",
-                  "private_key"
-                ],
-                "properties": {
-                  "provider": {
-                    "enum": [
-                      "manual"
-                    ]
-                  },
-                  "domain": {
-                    "type": "string"
-                  },
-                  "certificate": {
-                    "type": "string"
-                  },
-                  "private_key": {
-                    "type": "string",
-                    "writeOnly": true
-                  }
-                }
+                "$ref": "#/components/schemas/ManagedCertificateInput"
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Validated certificate encrypted and configuration versions advanced"
+            "description": "Saved; gateway checks before applying"
           },
           "400": {
-            "description": "Untrusted, mismatched, expired or malformed certificate"
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Resource unavailable"
+          },
+          "409": {
+            "description": "Version conflict or device identity required"
+          },
+          "422": {
+            "description": "No compatible client output"
+          },
+          "429": {
+            "description": "Rate limited"
           }
-        }
+        },
+        "x-required-scopes": [
+          "certificates:write"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            }
+          }
+        ]
+      },
+      "delete": {
+        "summary": "DELETE certificates",
+        "x-required-scopes": [
+          "certificates:write"
+        ],
+        "responses": {
+          "202": {
+            "description": "Deletion waits for privileged gateway cleanup"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Resource unavailable"
+          },
+          "409": {
+            "description": "Version conflict or device identity required"
+          },
+          "422": {
+            "description": "No compatible client output"
+          },
+          "429": {
+            "description": "Rate limited"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            }
+          }
+        ]
       }
     },
     "/api/v1/proxy-users": {
@@ -6743,6 +6994,293 @@
           }
         }
       }
+    },
+    "/api/v1/subscriptions/{id}/share": {
+      "get": {
+        "summary": "Private subscription link, QR payload and endpoint",
+        "description": "Contains credentials. No-store; requires subscriptions:links. Preview never creates devices or consumes slots. Strict unbound HWID subscriptions require real client registration before exporting content or node URIs.",
+        "x-required-scopes": [
+          "subscriptions:links"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            }
+          },
+          {
+            "name": "client",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Client ID from GET /client-catalog; auto detects the requesting app. Explicit choice overrides User-Agent."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Resource unavailable"
+          },
+          "409": {
+            "description": "Version conflict or device identity required"
+          },
+          "422": {
+            "description": "No compatible client output"
+          },
+          "429": {
+            "description": "Rate limited"
+          }
+        }
+      }
+    },
+    "/api/v1/subscriptions/{id}/content": {
+      "get": {
+        "summary": "Unredacted client subscription content",
+        "description": "Contains credentials. No-store; requires subscriptions:links. Preview never creates devices or consumes slots. Strict unbound HWID subscriptions require real client registration before exporting content or node URIs.",
+        "x-required-scopes": [
+          "subscriptions:links"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            }
+          },
+          {
+            "name": "client",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Client ID from GET /client-catalog; auto detects the requesting app. Explicit choice overrides User-Agent."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/yaml": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Resource unavailable"
+          },
+          "409": {
+            "description": "Version conflict or device identity required"
+          },
+          "422": {
+            "description": "No compatible client output"
+          },
+          "429": {
+            "description": "Rate limited"
+          }
+        }
+      }
+    },
+    "/api/v1/subscriptions/{id}/nodes": {
+      "get": {
+        "summary": "Portable individual node URIs and stable IDs",
+        "description": "Contains credentials. No-store; requires subscriptions:links. Preview never creates devices or consumes slots. Strict unbound HWID subscriptions require real client registration before exporting content or node URIs.",
+        "x-required-scopes": [
+          "subscriptions:links"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            }
+          },
+          {
+            "name": "client",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Client ID from GET /client-catalog; auto detects the requesting app. Explicit choice overrides User-Agent."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "uri": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Resource unavailable"
+          },
+          "409": {
+            "description": "Version conflict or device identity required"
+          },
+          "422": {
+            "description": "No compatible client output"
+          },
+          "429": {
+            "description": "Rate limited"
+          }
+        }
+      }
+    },
+    "/api/v1/subscriptions/{id}/qr": {
+      "get": {
+        "summary": "Private subscription or individual node PNG QR",
+        "description": "Contains credentials. No-store; requires subscriptions:links. Preview never creates devices or consumes slots. Strict unbound HWID subscriptions require real client registration before exporting content or node URIs.",
+        "x-required-scopes": [
+          "subscriptions:links"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            }
+          },
+          {
+            "name": "client",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Client ID from GET /client-catalog; auto detects the requesting app. Explicit choice overrides User-Agent."
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "schema": {
+              "enum": [
+                "subscription",
+                "node"
+              ]
+            }
+          },
+          {
+            "name": "node_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "ID from /nodes when kind=node"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Resource unavailable"
+          },
+          "409": {
+            "description": "Version conflict or device identity required"
+          },
+          "422": {
+            "description": "No compatible client output"
+          },
+          "429": {
+            "description": "Rate limited"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -8092,7 +8630,8 @@
             "type": "string"
           },
           "managed_users": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "Independent protocol identities and personal traffic accounting. SS requires sing-box 2022 AES; Snell requires sing-box 1.14+ clients with userkey. Both need Agent 0.23+. Existing shared-key mode stays shared and cannot infer personal usage."
           },
           "snell_version": {
             "type": "integer",
@@ -8372,6 +8911,106 @@
             "minimum": 0,
             "maximum": 9000000000000000,
             "description": "Provider usage before this Agent starts tracking; do not infer from OS lifetime counters."
+          }
+        }
+      },
+      "ReverseProxyInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "domain",
+          "upstream",
+          "certificate_id"
+        ],
+        "properties": {
+          "domain": {
+            "type": "string"
+          },
+          "upstream": {
+            "type": "string",
+            "format": "uri",
+            "description": "Public HTTP/HTTPS origin or explicit HTTP loopback app port. DNS is checked and pinned by the local root gateway. Private/link-local/reserved management targets denied."
+          },
+          "certificate_id": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": false
+          },
+          "version": {
+            "type": "integer"
+          },
+          "options": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "connect_timeout": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 60,
+                "default": 10
+              },
+              "read_timeout": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 600,
+                "default": 300
+              },
+              "body_limit_mib": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 64,
+                "default": 16
+              },
+              "websocket": {
+                "type": "boolean",
+                "default": true
+              },
+              "host_header": {
+                "type": "string",
+                "description": "Optional DNS Host header; no raw Nginx directives"
+              }
+            }
+          }
+        }
+      },
+      "ManagedCertificateInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "domain",
+          "provider"
+        ],
+        "properties": {
+          "domain": {
+            "type": "string"
+          },
+          "provider": {
+            "enum": [
+              "http-01",
+              "cloudflare",
+              "manual"
+            ]
+          },
+          "email": {
+            "type": "string"
+          },
+          "dns_token": {
+            "type": "string",
+            "writeOnly": true
+          },
+          "certificate": {
+            "type": "string",
+            "writeOnly": true
+          },
+          "private_key": {
+            "type": "string",
+            "writeOnly": true
+          },
+          "version": {
+            "type": "integer",
+            "description": "Use current version on edit; legacy manual import accepts zero"
           }
         }
       }

@@ -187,7 +187,7 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 	w.Header().Set("Profile-Update-Interval", "1")
 	w.Header().Set("Profile-Title", "base64:"+base64.StdEncoding.EncodeToString([]byte(name)))
 	ext := "json"
-	if format == "mihomo" {
+	if format == "mihomo" || format == "mihomo-nodes" {
 		ext = "yaml"
 	}
 	if format == "shadowrocket-config" {
@@ -198,7 +198,7 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 	}
 	w.Header().Set("Content-Disposition", "attachment; filename=\"starhub."+ext+"\"; filename*=UTF-8''"+strings.ReplaceAll(url.QueryEscape(name+"."+ext), "+", "%20"))
 
-	if format != "sing-box" && format != "mihomo" && format != "clash" && format != "shadowrocket" && format != "base64" && format != "xray" && format != "naive" && format != "shadowrocket-config" {
+	if format != "sing-box" && format != "mihomo" && format != "clash" && format != "shadowrocket" && format != "base64" && format != "xray" && format != "naive" && format != "shadowrocket-config" && format != "mihomo-nodes" {
 		return bad("unsupported client format")
 	}
 	if quotaReached {
@@ -251,9 +251,7 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 			if user == "" {
 				return problem{403, "this inbound requires a user subscription"}
 			}
-			spec.UUID = account.UUID
-			spec.Username = account.Name
-			spec.Password = account.Password
+			spec.ApplyAccount(account)
 		} else if user != "" && !sharedGroupProtocol(spec) {
 			return problem{403, "user group references an unmanaged inbound"}
 		}
@@ -273,7 +271,7 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 				naiveMap = "MAP " + spec.ServerName + " " + target
 			}
 			tag := clientpolicy.ExportName(name, address)
-			if err := compatibleClient(client, endpoint); err != nil {
+			if err := runtimeClientCompatibility(r, client, endpoint); err != nil {
 				excluded++
 				continue
 			}
@@ -281,7 +279,7 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 			if err != nil {
 				return err
 			}
-			if uri == "" && !client.Full {
+			if uri == "" && !client.Full && format != "mihomo-nodes" {
 				excluded++
 				continue
 			}
@@ -311,6 +309,14 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 		return problem{503, "没有可发布的运行中节点，请检查用户组授权、节点启用状态、部署结果与 Agent 在线状态"}
 	}
 	switch format {
+	case "mihomo-nodes":
+		data, err := yaml.Marshal(map[string]any{"proxies": clash})
+		if err != nil {
+			return err
+		}
+		w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
+		_, err = w.Write(data)
+		return err
 	case "sing-box", "":
 		group := map[string]any{"type": "selector", "tag": "proxy", "outbounds": tags, "default": tags[0]}
 		if profile.Selection == "urltest" {
@@ -323,6 +329,9 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 			return err
 		}
 		appSingBoxConfig(client, config)
+		if err := validateClientGraph(format, config); err != nil {
+			return problem{422, err.Error()}
+		}
 		send(w, 200, config)
 	case "xray":
 		if profile.Selection == "urltest" {

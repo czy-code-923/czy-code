@@ -94,6 +94,9 @@ func (s Spec) renderProxy() (string, map[string][]byte, error) {
 			inbound["obfs_mode"] = s.SnellObfs
 		}
 		inbound["psk"] = s.Password
+		if s.ManagedUsers {
+			inbound["users"] = s.sharedUsers()
+		}
 	} else {
 		files["tls.crt"] = []byte(s.Certificate)
 		files["tls.key"] = []byte(s.PrivateKey)
@@ -189,17 +192,21 @@ func (s Spec) Client(tag string) (map[string]any, map[string]any, string, error)
 	u := url.URL{Scheme: s.Kind, Host: net.JoinHostPort(s.Address, fmt.Sprint(s.Port)), Fragment: tag}
 	q := url.Values{}
 	if s.Kind == "shadowsocks" {
+		password := s.Password
+		if s.UserKey != "" {
+			password += ":" + s.UserKey
+		}
 		mh["udp"] = s.ListenNetwork != "tcp"
 		if s.ListenNetwork == "tcp" || s.ListenNetwork == "udp" {
 			sb["network"] = s.ListenNetwork
 		}
 		sb["method"] = s.SSMethod()
-		sb["password"] = s.Password
+		sb["password"] = password
 		mh["type"] = "ss"
 		mh["cipher"] = s.SSMethod()
-		mh["password"] = s.Password
+		mh["password"] = password
 		u.Scheme = "ss"
-		u.User = url.UserPassword(s.SSMethod(), s.Password)
+		u.User = url.UserPassword(s.SSMethod(), password)
 	} else if s.Kind == "snell" {
 		sb["version"] = 4
 		if s.snellVersion() == 6 {
@@ -214,6 +221,9 @@ func (s Spec) Client(tag string) (map[string]any, map[string]any, string, error)
 			}
 		}
 		sb["psk"] = s.Password
+		if s.UserKey != "" {
+			sb["userkey"] = s.UserKey
+		}
 		mh["version"] = 4
 		mh["psk"] = s.Password
 		if s.SnellObfs == "http" {

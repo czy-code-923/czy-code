@@ -78,4 +78,3 @@ func TestAccessBatchIsBoundedAndAcknowledgementPreservesNewerBytes(t *testing.T)
 		t.Fatal("queued records cannot be drained", len(second.Access), e)
 	}
 }
-
