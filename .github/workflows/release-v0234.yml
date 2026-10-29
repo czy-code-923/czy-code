@@ -110,4 +110,5 @@ jobs:
           path: .release-cache/manifest.json
 
 # Trigger a verified build after aligning the OpenAPI release version.
+# Trigger after correcting complete JSON source files.
 
