@@ -37,20 +37,20 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--domain', required=True)
-    p.add_argument('--target', required=True, help='HTTPS origin of the Starhub management gateway')
+    p.add_argument('--target', required=True, help='HTTP or HTTPS origin of the Starhub management gateway')
     p.add_argument('--listen', default='0.0.0.0')
     p.add_argument('--port', type=int, default=80)
     args = p.parse_args()
     origin = urlsplit(args.target)
-    if origin.scheme != 'https' or not origin.hostname or origin.username or origin.password or origin.path or origin.query or origin.fragment or origin.port not in (None, 443):
-        p.error('target must be an HTTPS DNS origin without a path or custom port')
+    if origin.scheme not in ('http', 'https') or not origin.hostname or origin.username or origin.password or origin.path or origin.query or origin.fragment or origin.port not in (None, 80 if origin.scheme == 'http' else 443):
+        p.error('target must be an HTTP(S) DNS origin without a path or custom port')
     host = domain(origin.hostname)
     ipaddress.IPv4Address(args.listen)
     if not 1 <= args.port <= 65535:
         p.error('invalid port')
     server = Server((args.listen, args.port), Handler)
     server.domain = domain(args.domain)
-    server.target = 'https://' + host
+    server.target = origin.scheme + '://' + host
     server.serve_forever()
 
 if __name__ == '__main__':
