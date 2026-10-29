@@ -4,6 +4,17 @@ import {mount,flushPromises} from '@vue/test-utils'
 import Subscriptions from './Subscriptions.vue'
 import QRCode from 'qrcode'
 vi.mock('qrcode',()=>({default:{toDataURL:vi.fn(async()=> 'data:image/png;base64,bG9jYWw=')}}))
+it('offers the existing management origin as an explicit fallback for links and QR codes',async()=>{
+ const api=vi.fn(async(p:string)=>p==='site'?{domain:'panel.example.com',https:true,share_domain:'sub.example.com'}:p==='proxy-users/u/subscription'?{id:'s',url:'https://sub.example.com/s/private',reused:true}:p==='proxy-users'?[{id:'u',name:'Alice',active:true}]:p.startsWith('subscriptions/s/check')?{ready:true,reason:'ok'}:[])
+ const w=mount(Subscriptions,{props:{api,initialUser:'u'}});await flushPromises()
+ expect((w.get('input[readonly]').element as HTMLInputElement).value).toBe('https://sub.example.com/s/private')
+ await w.get('select[aria-label=订阅入口]').setValue('management');await flushPromises()
+ expect((w.get('input[readonly]').element as HTMLInputElement).value).toBe('https://panel.example.com/s/private')
+ vi.mocked(QRCode.toDataURL).mockClear();await w.findAll('button').find(b=>b.text()==='生成二维码')!.trigger('click');await flushPromises()
+ expect(vi.mocked(QRCode.toDataURL).mock.calls[0][0]).toBe('https://panel.example.com/s/private')
+ expect(new URL(vi.mocked(QRCode.toDataURL).mock.calls[1][0] as string).searchParams.get('url')).toBe('https://panel.example.com/s/private?client=sing-box-latest')
+ w.unmount()
+})
 it('defaults a share to automatic recognition and prevents copying a stopped-node subscription',async()=>{
  let ready=false
  const api=vi.fn(async(path:string)=>{

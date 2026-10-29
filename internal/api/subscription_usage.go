@@ -153,7 +153,7 @@ func (s *Server) inspectSubscription(w http.ResponseWriter, r *http.Request) err
 	}
 	if r.PathValue("view") == "check" {
 		ready := usage.Remaining == nil || *usage.Remaining > 0
-		reason, stage := "订阅已生成，可导入所选客户端；客户端本机合并配置需另行核对", "ready"
+		reason, stage := "订阅内容生成成功；域名公网可达性、Cloudflare 拦截及客户端本机配置仍需实际验证", "ready"
 		if !ready {
 			reason, stage = "用户流量额度已用尽，当前输出为拒绝连接配置", "quota"
 		} else if hwidRequired {

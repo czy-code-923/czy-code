@@ -177,6 +177,19 @@ def main(subscription=False):
     finally:
         os.close(lock)
 
+def reconcile_both():
+    # A failed management vhost must not prevent an independent subscription
+    # vhost from being reconciled. Still fail the service if either role failed.
+    import traceback
+    failures=[]
+    for subscription in (False,True):
+        try:
+            main(subscription=subscription)
+        except Exception as exc:
+            traceback.print_exc()
+            failures.append(exc)
+    if failures:
+        raise RuntimeError('One or more gateway roles failed') from failures[0]
+
 if __name__=='__main__':
-    main()
-    main(subscription=True)
+    reconcile_both()

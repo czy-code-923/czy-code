@@ -61,29 +61,7 @@ func run(ctx context.Context) error {
 		defer stager.Close()
 	}
 	client := &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	call := func(ctx context.Context, path string, body any) ([]byte, int, error) {
-		b, _ := json.Marshal(body)
-		req, e := http.NewRequestWithContext(ctx, "POST", base+"/api/v1/agent/"+path, bytes.NewReader(b))
-		if e != nil {
-			return nil, 0, e
-		}
-		req.Header.Set("Authorization", "Bearer "+token)
-		req.Header.Set("X-Host-ID", host)
-		req.Header.Set("Content-Type", "application/json")
-		res, e := client.Do(req)
-		if e != nil {
-			return nil, 0, errors.New("control connection failed")
-		}
-		defer res.Body.Close()
-		data, e := io.ReadAll(io.LimitReader(res.Body, (8<<20)+1))
-		if len(data) > 8<<20 {
-			return nil, res.StatusCode, errors.New("control response too large")
-		}
-		if res.StatusCode >= 300 {
-			return nil, res.StatusCode, fmt.Errorf("control HTTP %d", res.StatusCode)
-		}
-		return data, res.StatusCode, e
-	}
+	call := controlCaller(client, base, host, token)
 	if os.Getenv("ENABLE_LIVE") == "1" {
 		liveCtx, cancel := context.WithCancel(ctx)
 		defer cancel()
@@ -213,6 +191,41 @@ func run(ctx context.Context) error {
 			return nil
 		case <-timer.C:
 		}
+	}
+}
+
+// On network and HTTP failures discard idle keep-alive connections. A proxy or
+// DNS change can otherwise leave the agent retrying a stale upstream forever.
+// Redirects remain forbidden: agent credentials must never follow another URL.
+func controlCaller(client *http.Client, base, host, token string) func(context.Context, string, any) ([]byte, int, error) {
+	return func(ctx context.Context, path string, body any) ([]byte, int, error) {
+		b, _ := json.Marshal(body)
+		req, err := http.NewRequestWithContext(ctx, "POST", base+"/api/v1/agent/"+path, bytes.NewReader(b))
+		if err != nil {
+			return nil, 0, err
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("X-Host-ID", host)
+		req.Header.Set("Content-Type", "application/json")
+		res, err := client.Do(req)
+		if err != nil {
+			client.CloseIdleConnections()
+			return nil, 0, errors.New("control connection failed")
+		}
+		data, readErr := io.ReadAll(io.LimitReader(res.Body, (8<<20)+1))
+		res.Body.Close()
+		if len(data) > 8<<20 {
+			client.CloseIdleConnections()
+			return nil, res.StatusCode, errors.New("control response too large")
+		}
+		if res.StatusCode >= 300 {
+			client.CloseIdleConnections()
+			return nil, res.StatusCode, fmt.Errorf("control HTTP %d", res.StatusCode)
+		}
+		if readErr != nil {
+			client.CloseIdleConnections()
+		}
+		return data, res.StatusCode, readErr
 	}
 }
 func idleDelay(n int, cap time.Duration) time.Duration {

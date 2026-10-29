@@ -52,5 +52,13 @@ class DomainSyncTests(unittest.TestCase):
                     events.clear();module.main();self.assertFalse(any(e[0]=='/nginx' for e in events),'unchanged gateway reloaded')
     def test_success_and_idle_no_reload(self):self.scenario()
     def test_validation_failure_restores_original(self):self.scenario(fail=True)
+    def test_subscription_role_runs_even_when_management_fails(self):
+        calls=[]
+        def reconcile(subscription=False):
+            calls.append(subscription)
+            if not subscription: raise ValueError('management unavailable')
+        with patch.object(module,'main',side_effect=reconcile),patch('traceback.print_exc'):
+            with self.assertRaises(RuntimeError):module.reconcile_both()
+        self.assertEqual(calls,[False,True])
 
 if __name__=='__main__':unittest.main()

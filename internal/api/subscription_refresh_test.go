@@ -176,6 +176,46 @@ func TestExistingSubscriptionRefreshesGroupsWithoutRotatingIdentity(t *testing.T
 	}
 }
 
+func TestSubscriptionDomainChangeKeepsAppliedHostUntilGatewayReportsNewOne(t *testing.T) {
+	f := newSubscriptionFixture(t, 0)
+	set := func(domain string) {
+		f.h.call("PUT", "site", map[string]any{"domain": "vps.example.com", "https": true, "share_domain": domain, "share_https": true}, 200, nil)
+	}
+	report := func(domain, state string) {
+		f.h.call("POST", "site/gateway-status", map[string]any{"role": "subscription", "domain": domain, "https": true, "state": state}, 200, nil)
+	}
+	set("old.example.com")
+	report("old.example.com", "active")
+	old := strings.Replace(f.url, "vps.example.com", "old.example.com", 1)
+	f.share(old, nil, 200)
+	set("new.example.com")
+	site := obj018(f.h.call("GET", "site", nil, 200, nil))
+	if site["share_gateway_state"] != "pending" || site["share_gateway_domain"] != "old.example.com" {
+		t.Fatal("missing pending state", site)
+	}
+	// A delayed report for the old settings must not overwrite the new state.
+	report("old.example.com", "active")
+	site = obj018(f.h.call("GET", "site", nil, 200, nil))
+	if site["share_gateway_state"] != "pending" {
+		t.Fatal("stale gateway report accepted", site)
+	}
+	f.share(old, nil, 200)
+	report("new.example.com", "error")
+	site = obj018(f.h.call("GET", "site", nil, 200, nil))
+	if site["share_gateway_state"] != "error" || site["share_gateway_domain"] != "old.example.com" {
+		t.Fatal("failed update lost live gateway", site)
+	}
+	f.share(old, nil, 200)
+	report("new.example.com", "active")
+	newURL := strings.Replace(f.url, "vps.example.com", "new.example.com", 1)
+	f.share(newURL, nil, 200)
+	f.share(old, nil, 404)
+	link := obj018(f.h.call("GET", "subscriptions/"+f.subscription+"/link", nil, 200, nil))["url"].(string)
+	if !strings.HasPrefix(link, "https://new.example.com/") {
+		t.Fatal("link not updated", link)
+	}
+}
+
 func TestStableSubscriptionRejectsPartialSnapshotFromNewGroup(t *testing.T) {
 	f := newSubscriptionFixture(t, 0)
 	device := obj018(f.h.call("POST", "proxy-users/"+f.user+"/devices", map[string]any{"name": "restricted-device", "client_id": "mihomo", "all_nodes": false, "service_ids": []string{f.node}}, 201, nil))

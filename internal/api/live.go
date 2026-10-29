@@ -148,7 +148,7 @@ func (s *Server) site(w http.ResponseWriter, r *http.Request) error {
 		return e
 	}
 	defer tx.Rollback(r.Context())
-	if _, e = tx.Exec(r.Context(), "INSERT INTO site_settings(tenant_id,domain,https) VALUES($1,$2,$3) ON CONFLICT(tenant_id) DO UPDATE SET domain=excluded.domain,https=excluded.https,updated_at=now()", tenant, b.Domain, *b.HTTPS); e != nil {
+	if _, e = tx.Exec(r.Context(), "INSERT INTO site_settings(tenant_id,domain,https,gateway_state) VALUES($1,$2,$3,'pending') ON CONFLICT(tenant_id) DO UPDATE SET gateway_state=CASE WHEN site_settings.domain IS DISTINCT FROM excluded.domain OR site_settings.https IS DISTINCT FROM excluded.https THEN 'pending' ELSE site_settings.gateway_state END,domain=excluded.domain,https=excluded.https,updated_at=now()", tenant, b.Domain, *b.HTTPS); e != nil {
 		return e
 	}
 	if b.Title != nil {
@@ -162,7 +162,7 @@ func (s *Server) site(w http.ResponseWriter, r *http.Request) error {
 			return e
 		}
 	}
-	if _, e = tx.Exec(r.Context(), `UPDATE site_settings SET ip_origin=COALESCE($2,ip_origin),share_domain=COALESCE($3,share_domain),share_https=COALESCE($4,share_https) WHERE tenant_id=$1`, tenant, b.IPOrigin, b.ShareDomain, b.ShareHTTPS); e != nil {
+	if _, e = tx.Exec(r.Context(), `UPDATE site_settings SET share_gateway_state=CASE WHEN share_domain IS DISTINCT FROM COALESCE($3,share_domain) OR share_https IS DISTINCT FROM COALESCE($4,share_https) THEN 'pending' ELSE share_gateway_state END,ip_origin=COALESCE($2,ip_origin),share_domain=COALESCE($3,share_domain),share_https=COALESCE($4,share_https) WHERE tenant_id=$1`, tenant, b.IPOrigin, b.ShareDomain, b.ShareHTTPS); e != nil {
 		return e
 	}
 	if e = audit(r.Context(), tx, "admin", "site.update", tenant); e != nil {
@@ -1019,7 +1019,7 @@ func (s *Server) gatewayStatus(w http.ResponseWriter, r *http.Request) error {
 		return bad("invalid gateway status")
 	}
 	if b.Role == "subscription" {
-		_, e := s.DB.Exec(r.Context(), `UPDATE site_settings SET share_gateway_domain=$2,share_gateway_state=$3,share_gateway_checked_at=now() WHERE tenant_id=$1`, tenant, b.Domain, b.State)
+		_, e := s.DB.Exec(r.Context(), `UPDATE site_settings SET share_gateway_domain=CASE WHEN $3='error' THEN share_gateway_domain ELSE $2 END,share_gateway_state=$3,share_gateway_checked_at=now() WHERE tenant_id=$1 AND (($3='inherited' AND (share_domain='' OR share_domain=domain)) OR ($3<>'inherited' AND share_domain=$2 AND share_domain<>domain AND share_https=$4))`, tenant, b.Domain, b.State, b.HTTPS)
 		if e != nil {
 			return e
 		}
@@ -1029,7 +1029,7 @@ func (s *Server) gatewayStatus(w http.ResponseWriter, r *http.Request) error {
 	if b.Role != "" && b.Role != "management" {
 		return bad("unknown gateway role")
 	}
-	_, e := s.DB.Exec(r.Context(), "UPDATE site_settings SET gateway_domain=$2,gateway_https=$3,gateway_state=$4,gateway_checked_at=now() WHERE tenant_id=$1", tenant, b.Domain, b.HTTPS, b.State)
+	_, e := s.DB.Exec(r.Context(), "UPDATE site_settings SET gateway_domain=CASE WHEN $4='error' THEN gateway_domain ELSE $2 END,gateway_https=CASE WHEN $4='error' THEN gateway_https ELSE $3 END,gateway_state=$4,gateway_checked_at=now() WHERE tenant_id=$1 AND domain=$2 AND https=$3", tenant, b.Domain, b.HTTPS, b.State)
 	if e != nil {
 		return e
 	}

@@ -69,7 +69,12 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 		}
 		m, _ := url.Parse(management)
 		if !strings.EqualFold(host, m.Hostname()) {
-			return problem{404, "subscription unavailable"}
+			// The prior gateway remains the live endpoint while a newly saved
+			// domain waits for its vhost and certificate to be applied.
+			var applied string
+			if err := s.DB.QueryRow(r.Context(), `SELECT share_gateway_domain FROM site_settings WHERE tenant_id=$1`, tenant).Scan(&applied); err != nil || applied == "" || !strings.EqualFold(host, applied) {
+				return problem{404, "subscription unavailable"}
+			}
 		}
 	}
 	var id, user, profileID, name, device string
