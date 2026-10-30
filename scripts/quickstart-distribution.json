@@ -1,5 +1,5 @@
 {
-  "agent_url": "https://github.com/czy-code-923/czy-code/releases/download/v0.23.7-distribution/starhub-0.23.7-agent-releases.zip",
-  "agent_size": 125195119,
-  "agent_sha256": "b03330e56b7f04183b64ad2b98951cb7cea3b914ee7648f02ad00171b0c601e0"
+  "agent_url": "https://github.com/czy-code-923/czy-code/releases/download/v0.23.8-distribution/starhub-0.23.8-agent-releases.zip",
+  "agent_size": 125195111,
+  "agent_sha256": "f30f245bd7772caaa02b6c0fe6ff000b10e5d48c70bfeb3ce4c60ae08b732710"
 }
