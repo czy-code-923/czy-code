@@ -82,7 +82,7 @@ def main():
         run('schtasks','/Run','/TN','StarhubControl')
     else:
         if subprocess.run(['id','starhub-control'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode:run('useradd','--system','--home-dir',str(root),'--shell','/usr/sbin/nologin','starhub-control')
-        root.chmod(0o755);private.chmod(0o640);run('chgrp','starhub-control',str(private))
+        root.chmod(0o755);private.chmod(0o600)
         for directory,dirs,files in os.walk(root/'web'):
             Path(directory).chmod(0o755)
             for file in files:(Path(directory)/file).chmod(0o644)
@@ -92,11 +92,17 @@ def main():
         if unit.exists():raise ValueError('Existing starhub-control unit refused')
         unit.write_text('[Unit]\nDescription=Starhub VPS control plane\nAfter=network-online.target docker.service\n[Service]\nUser=starhub-control\nGroup=starhub-control\nEnvironmentFile='+str(private)+'\nExecStart='+str(root/'bin/harbor-control')+'\nRestart=on-failure\nRestartSec=5\nNoNewPrivileges=true\nPrivateTmp=true\nProtectSystem=strict\nProtectHome=true\nUMask=0077\nMemoryMax=192M\n[Install]\nWantedBy=multi-user.target\n',encoding='utf-8');unit.chmod(0o644)
         run('systemctl','daemon-reload');run('systemctl','enable','--now','starhub-control')
+        updater_scripts=root/'scripts';updater_scripts.mkdir(mode=0o755)
+        for name in ('panel-updater.py','install-panel-updater.py'):
+            shutil.copyfile(source/'scripts'/name,updater_scripts/name);(updater_scripts/name).chmod(0o755)
     opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
     for _ in range(30):
         try:
             with opener.open('http://127.0.0.1:'+str(args.port)+'/healthz',timeout=2) as r:
-                if r.status==200:print('Ready: '+origin+' (API and PostgreSQL remain loopback-only)');return
+                if r.status==200:
+                    if os.name!='nt' and not args.foreground:
+                        run(sys.executable,str(root/'scripts/install-panel-updater.py'),'--env',str(private))
+                    print('Ready: '+origin+' (API and PostgreSQL remain loopback-only)');return
         except OSError:time.sleep(1)
     raise RuntimeError('Web health check timed out; inspect service/task. Data and credentials retained.')
 if __name__=='__main__':

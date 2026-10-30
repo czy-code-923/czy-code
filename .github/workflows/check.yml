@@ -27,6 +27,7 @@ jobs:
       - run: python3 scripts/test_domain_sync.py
       - run: sudo apt-get update -qq && sudo apt-get install -y nginx
       - run: python3 scripts/test_nginx_gateway.py
+      - run: python3 scripts/test_panel_updater.py
       - run: python3 scripts/test_prepare.py
       - run: python3 scripts/test_gateway_config.py
       - run: python3 scripts/test_managed_gateway.py

@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "星枢 · VPS 多机管理 API",
-    "version": "0.23.7",
+    "version": "0.23.8",
     "description": "Self-workspace API for host agents, proxy protocols, user quotas and client subscriptions. Bearer administrator token or expiring scoped xs_ API key. No arbitrary shell; privileged gateway work and API key administration remain root-only."
   },
   "servers": [
@@ -7414,13 +7414,96 @@
       "get": {
         "operationId": "panelRelease",
         "summary": "Check the latest published Starhub version on GitHub",
-        "description": "Root administrator only. This endpoint checks version metadata and does not install an update.",
+        "description": "Root administrator only. Returns current/latest versions and whether the local update helper is ready.",
         "responses": {
           "200": {
             "description": "Current and latest versions"
           },
           "502": {
             "description": "Release metadata unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/panel-updates": {
+      "get": {
+        "operationId": "panelUpdateStatus",
+        "summary": "Read panel update helper and job status",
+        "description": "Root administrator only. Updates use the latest verified stable GitHub release and an independent local helper.",
+        "responses": {
+          "200": {
+            "description": "Update status"
+          },
+          "409": {
+            "description": "Helper unavailable, version conflict or active update"
+          }
+        }
+      },
+      "post": {
+        "operationId": "requestPanelUpdate",
+        "summary": "Queue a verified panel update",
+        "description": "Root administrator only. Updates use the latest verified stable GitHub release and an independent local helper.",
+        "responses": {
+          "202": {
+            "description": "Update queued"
+          },
+          "409": {
+            "description": "Helper unavailable, version conflict or active update"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "version",
+                  "current"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "version": {
+                    "type": "string"
+                  },
+                  "current": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/panel-updates/worker/{action}": {
+      "post": {
+        "operationId": "localPanelUpdateWorker",
+        "summary": "Loopback-only privileged updater heartbeat, claim and reports",
+        "parameters": [
+          {
+            "name": "action",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "heartbeat",
+                "claim",
+                "report"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Worker response"
+          },
+          "403": {
+            "description": "Local root updater required"
+          },
+          "409": {
+            "description": "Job terminal or unavailable"
           }
         }
       }

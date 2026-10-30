@@ -34,36 +34,45 @@ func panelNewer(latest, current string) bool {
 	return false
 }
 
-func (s *Server) panelRelease(w http.ResponseWriter, r *http.Request) error {
+type panelReleaseMetadata struct {
+	Tag        string `json:"tag_name"`
+	Draft      bool   `json:"draft"`
+	Prerelease bool   `json:"prerelease"`
+}
+
+func (s *Server) latestPanelRelease(r *http.Request) (panelReleaseMetadata, error) {
+	var release panelReleaseMetadata
 	client := &http.Client{Timeout: 12 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	if s.panelReleaseClient != nil {
 		client = s.panelReleaseClient
 	}
 	req, err := http.NewRequestWithContext(r.Context(), "GET", "https://api.github.com/repos/czy-code-923/czy-code/releases/latest", nil)
 	if err != nil {
-		return err
+		return release, err
 	}
 	req.Header.Set("User-Agent", "Starhub-release-check")
 	response, err := client.Do(req)
 	if err != nil {
-		return problem{502, "无法连接 GitHub 检查版本"}
+		return release, problem{502, "无法连接 GitHub 检查版本"}
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return problem{502, "GitHub 版本查询失败"}
+		return release, problem{502, "GitHub 版本查询失败"}
 	}
 	raw, err := io.ReadAll(io.LimitReader(response.Body, 1<<20+1))
 	if err != nil || len(raw) > 1<<20 {
-		return problem{502, "GitHub 版本响应无效"}
-	}
-	var release struct {
-		Tag        string `json:"tag_name"`
-		Draft      bool   `json:"draft"`
-		Prerelease bool   `json:"prerelease"`
+		return release, problem{502, "GitHub 版本响应无效"}
 	}
 	if json.Unmarshal(raw, &release) != nil || release.Draft || release.Prerelease || !panelTag.MatchString(release.Tag) {
-		return problem{502, "GitHub 正式版本格式无效"}
+		return release, problem{502, "GitHub 正式版本格式无效"}
 	}
-	send(w, 200, map[string]any{"current": buildinfo.Version, "latest": strings.TrimSuffix(strings.TrimPrefix(release.Tag, "v"), "-distribution"), "update_available": panelNewer(release.Tag, buildinfo.Version), "release_url": "https://github.com/czy-code-923/czy-code/releases/tag/" + release.Tag, "automatic_update": false})
+	return release, nil
+}
+func (s *Server) panelRelease(w http.ResponseWriter, r *http.Request) error {
+	release, err := s.latestPanelRelease(r)
+	if err != nil {
+		return err
+	}
+	send(w, 200, map[string]any{"current": buildinfo.Version, "latest": strings.TrimSuffix(strings.TrimPrefix(release.Tag, "v"), "-distribution"), "update_available": panelNewer(release.Tag, buildinfo.Version), "release_url": "https://github.com/czy-code-923/czy-code/releases/tag/" + release.Tag, "automatic_update": s.panelUpdaterReady(r)})
 	return nil
 }
