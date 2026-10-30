@@ -74,11 +74,21 @@ func (s *Server) removeManaged(w http.ResponseWriter, r *http.Request) error {
 		}
 	case "subscriptions":
 		var bound bool
-		if e = tx.QueryRow(r.Context(), `SELECT device_id IS NOT NULL FROM subscriptions WHERE tenant_id=$1 AND id=$2`, tenant, id).Scan(&bound); e != nil {
+		var independent bool
+		var subscriptionUser string
+		if e = tx.QueryRow(r.Context(), `SELECT device_id IS NOT NULL,independent_identity,COALESCE(user_id,'') FROM subscriptions WHERE tenant_id=$1 AND id=$2`, tenant, id).Scan(&bound, &independent, &subscriptionUser); e != nil {
 			return e
 		}
 		if bound {
 			return problem{409, "请从用户设备管理删除此设备，以同时撤销连接凭据"}
+		}
+		if independent {
+			if _, e = tx.Exec(r.Context(), `UPDATE proxy_users SET legacy_credentials=false WHERE tenant_id=$1 AND id=$2 AND NOT EXISTS(SELECT 1 FROM subscriptions WHERE tenant_id=$1 AND user_id=$2 AND device_id IS NULL AND NOT independent_identity AND revoked_at IS NULL AND expires_at>now())`, tenant, subscriptionUser); e != nil {
+				return e
+			}
+			if e = bumpDeviceUser(r.Context(), tx, subscriptionUser); e != nil {
+				return e
+			}
 		}
 		if _, e = tx.Exec(r.Context(), `DELETE FROM subscription_services WHERE tenant_id=$1 AND subscription_id=$2`, tenant, id); e != nil {
 			return e
@@ -174,10 +184,11 @@ func (s *Server) liveDelete(w http.ResponseWriter, r *http.Request) error {
 
 func (s *Server) subscriptionUpdate(w http.ResponseWriter, r *http.Request) error {
 	var bound bool
-	if e := s.DB.QueryRow(r.Context(), `SELECT device_id IS NOT NULL FROM subscriptions WHERE tenant_id=$1 AND id=$2`, tenant, r.PathValue("id")).Scan(&bound); e != nil {
+	var boundIndependent bool
+	if e := s.DB.QueryRow(r.Context(), `SELECT device_id IS NOT NULL,independent_identity FROM subscriptions WHERE tenant_id=$1 AND id=$2`, tenant, r.PathValue("id")).Scan(&bound, &boundIndependent); e != nil {
 		return e
 	}
-	if bound {
+	if bound && !boundIndependent {
 		return problem{409, "设备订阅由设备管理维护，不能重新绑定用户或入口"}
 	}
 
@@ -192,7 +203,10 @@ func (s *Server) subscriptionUpdate(w http.ResponseWriter, r *http.Request) erro
 	if e := decode(w, r, &b); e != nil {
 		return e
 	}
-	if strings.TrimSpace(b.Name) == "" || len([]rune(b.Name)) > 100 || b.Expires.IsZero() || b.Expires.After(time.Now().AddDate(1, 0, 0)) {
+	if bound && (b.User != nil || b.Services != nil) {
+		return problem{409, "设备订阅的用户与权限由设备管理维护"}
+	}
+	if strings.TrimSpace(b.Name) == "" || len([]rune(b.Name)) > 100 || b.Expires.IsZero() {
 		return bad("name and expiry within one year required")
 	}
 	tx, e := s.DB.Begin(r.Context())
@@ -205,11 +219,19 @@ func (s *Server) subscriptionUpdate(w http.ResponseWriter, r *http.Request) erro
 	}
 	var oldUser string
 	var version int
-	if e = tx.QueryRow(r.Context(), `SELECT COALESCE(user_id,''),version FROM subscriptions WHERE tenant_id=$1 AND id=$2 AND revoked_at IS NULL FOR UPDATE`, tenant, r.PathValue("id")).Scan(&oldUser, &version); e != nil {
+	var independent bool
+	var oldExpiry time.Time
+	if e = tx.QueryRow(r.Context(), `SELECT COALESCE(user_id,''),version,independent_identity,expires_at FROM subscriptions WHERE tenant_id=$1 AND id=$2 AND revoked_at IS NULL FOR UPDATE`, tenant, r.PathValue("id")).Scan(&oldUser, &version, &independent, &oldExpiry); e != nil {
 		return e
+	}
+	if b.Expires.After(time.Now().AddDate(1, 0, 0)) && !b.Expires.Equal(oldExpiry) {
+		return bad("new expiry must be within one year")
 	}
 	if (b.Version != 0 && b.Version != version) || ((b.User != nil || b.Services != nil) && b.Version == 0) {
 		return problem{409, "subscription changed; refresh before saving"}
+	}
+	if independent && b.User != nil && *b.User != oldUser {
+		return problem{409, "独立身份订阅不能更换所属用户，请创建新订阅"}
 	}
 	if b.User != nil || b.Services != nil {
 		user := oldUser
@@ -269,6 +291,11 @@ func (s *Server) subscriptionUpdate(w http.ResponseWriter, r *http.Request) erro
 	}
 	if tag.RowsAffected() == 0 {
 		return pgx.ErrNoRows
+	}
+	if independent && !oldExpiry.Equal(b.Expires) {
+		if e = bumpDeviceUser(r.Context(), tx, oldUser); e != nil {
+			return e
+		}
 	}
 	if e = audit(r.Context(), tx, "admin", "subscription.update", r.PathValue("id")); e != nil {
 		return e

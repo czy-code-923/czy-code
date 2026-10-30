@@ -30,7 +30,7 @@ def main():
             if check():return
             time.sleep(1)
         raise RuntimeError('Timeout: '+description)
-    assert api('session')['version']=='0.23.6'
+    assert api('session')['version']=='0.23.7'
     site=api('site');assert site['domain']=='' and site['ip_origin']=='http://127.0.0.1:18080'
     assert api('agent/releases/linux-amd64')['size']>1000000
     print('Fresh one-command control installation and no-domain IP access: PASS',flush=True)
@@ -66,7 +66,7 @@ def main():
     result=subprocess.run(['sh','-c',command],stdout=subprocess.DEVNULL)
     if result.returncode:raise RuntimeError('Agent bootstrap failed; enrollment ticket omitted')
     def connected():
-        return any(h['id']==host['id'] and h['agent_version']=='0.23.6' and h['online'] and h['cleanup_capable'] for h in api('hosts'))
+        return any(h['id']==host['id'] and h['agent_version']=='0.23.7' and h['online'] and h['cleanup_capable'] for h in api('hosts'))
     wait(connected,'Agent registration and verified heartbeat')
     wait(lambda:any(k['engine']=='sing-box' and k['ready'] for k in api('hosts/'+host['id']+'/kernels')),'Native kernel capabilities')
     agent_env=Path('/etc/harbor-agent/agent.env')
@@ -159,6 +159,22 @@ def main():
                     with urllib.request.urlopen(urllib.request.Request(device['url'],headers=request_headers),timeout=15) as response:
                         fields=dict(part.strip().split('=',1) for part in response.headers['Subscription-Userinfo'].split(';'))
                     assert int(fields['upload'])+int(fields['download'])>=bill['used_bytes']
+                    # Expire the link while the parent user remains active, then
+                    # test the already imported native proxy credential itself.
+                    subrow=next(v for v in api('subscriptions') if v['id']==subscription['id'])
+                    subbody={'name':subrow['name'],'profile_id':subrow['profile_id'] or '', 'version':subrow['version'], 'expires_at':(datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(seconds=10)).isoformat()}
+                    api('subscriptions/'+subscription['id'],subbody,method='PUT')
+                    wait(lambda:deployed() and not transfer(),'Expired subscription credential denied by the native inbound')
+                    assert api('proxy-users/'+user['id'])['active'], 'Parent user unexpectedly disabled'
+                    subrow=next(v for v in api('subscriptions') if v['id']==subscription['id'])
+                    subbody.update(version=subrow['version'],expires_at=(datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(hours=1)).isoformat())
+                    api('subscriptions/'+subscription['id'],subbody,method='PUT')
+                    wait(lambda:deployed() and transfer(),'Renewed subscription credential restored')
+                    api('hosts/'+host['id']+'/connection',{'paused':True})
+                    wait(lambda:not transfer(),'Paused Agent stopped the native inbound')
+                    assert any(h['id']==host['id'] and h['online'] and h['connection_paused'] for h in api('hosts')), 'Paused Agent did not retain heartbeat'
+                    api('hosts/'+host['id']+'/connection',{'paused':False})
+                    wait(transfer,'Resumed Agent restored the native inbound')
                     current=next(v for v in api(device_path) if v['id']==device['id'])
                     api(device_path+'/'+device['id'],{'version':current['version'],'name':current['name'],'client_id':'sing-box','enabled':False},method='PUT')
                     wait(deployed,'Disabled device identity removed from native inbound')
@@ -196,7 +212,7 @@ def main():
     wait(lambda:all(not Path(path).exists() for path in paths),'Agent files and units fully removed',30)
     assert all(v['id']!=row['id'] for v in api('live'))
     api('agent/heartbeat',{},401,agent=credentials)
-    assert api('session')['version']=='0.23.6' and root.joinpath('control.env').exists()
+    assert api('session')['version']=='0.23.7' and root.joinpath('control.env').exists()
     subprocess.run(['docker','exec','starhub-control-db','pg_isready','-U','harbor','-d','harbor'],check=True,stdout=subprocess.DEVNULL)
     print('Remote Agent files and control-side deployment data removed; manager and database preserved: PASS',flush=True)
     # This is an isolated CI VM. Verify both safe uninstall and explicit purge.

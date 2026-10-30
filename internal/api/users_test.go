@@ -103,7 +103,7 @@ func TestHostKernelUsersIntegration(t *testing.T) {
 		t.Fatal("cross-host or engine deployment leaked")
 	}
 	member := bundles[0].Members[0]
-	if len(member.Spec.Accounts) != 1 || member.Spec.Accounts[0].Name != user["id"] || member.Spec.Accounts[0].UUID == member.Spec.UUID {
+	if len(member.Spec.Accounts) != 1 || member.Spec.Accounts[0].Name == user["id"] || member.Spec.Accounts[0].UUID == member.Spec.UUID {
 		t.Fatal("user credentials not materialized independently")
 	}
 	call("POST", "agent/live/sync", map[string]any{"reports": []map[string]any{{"id": member.ID, "version": member.Version, "state": "running"}}, "bundle_mode": true, "kernel_reports": []live.KernelReport{{Engine: "sing-box", Checksum: bundles[0].Revision(), State: "running"}}}, 200, h1)

@@ -221,7 +221,19 @@ func (s *Server) userSubscription(w http.ResponseWriter, r *http.Request) error 
 		if e != nil {
 			return e
 		}
-		if _, e = tx.Exec(r.Context(), `INSERT INTO subscriptions(tenant_id,id,name,token_hash,expires_at,user_id,sealed_token) VALUES($1,$2,$3,$4,$5,$6,$7)`, tenant, id, name+"的订阅", Hash(token), expiry, user, sealed); e != nil {
+		if _, e = tx.Exec(r.Context(), `INSERT INTO subscriptions(tenant_id,id,name,token_hash,expires_at,user_id,sealed_token,independent_identity) VALUES($1,$2,$3,$4,$5,$6,$7,true)`, tenant, id, name+"的订阅", Hash(token), expiry, user, sealed); e != nil {
+			return e
+		}
+		if _, _, e = s.ensureSubscriptionIdentity(r.Context(), tx, id, user, ""); e != nil {
+			return e
+		}
+		if _, e = tx.Exec(r.Context(), `UPDATE proxy_users SET legacy_credentials=false WHERE tenant_id=$1 AND id=$2 AND NOT EXISTS(SELECT 1 FROM subscriptions WHERE tenant_id=$1 AND user_id=$2 AND device_id IS NULL AND NOT independent_identity AND revoked_at IS NULL AND expires_at>now())`, tenant, user); e != nil {
+			return e
+		}
+		if e = checkDevicePolicies(r.Context(), tx); e != nil {
+			return e
+		}
+		if e = bumpDeviceUser(r.Context(), tx, user); e != nil {
 			return e
 		}
 		if e = audit(r.Context(), tx, "admin", "subscription.user-create", id); e != nil {

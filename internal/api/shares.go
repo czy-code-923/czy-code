@@ -78,6 +78,7 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 		}
 	}
 	var id, user, profileID, name, device string
+	var independent bool
 	var deviceLimit int
 	var deviceMode string
 	deviceAll := true
@@ -87,7 +88,7 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 	var expiry time.Time
 	var quota, upload, download int64
 	quotaReached := false
-	e = s.DB.QueryRow(r.Context(), "SELECT id,expires_at,COALESCE(user_id,''),COALESCE(profile_id,''),name,COALESCE(device_id,'') FROM subscriptions WHERE tenant_id=$1 AND token_hash=$2 AND revoked_at IS NULL AND expires_at>now()", tenant, Hash(token)).Scan(&id, &expiry, &user, &profileID, &name, &device)
+	e = s.DB.QueryRow(r.Context(), "SELECT id,expires_at,COALESCE(user_id,''),COALESCE(profile_id,''),name,COALESCE(device_id,''),independent_identity FROM subscriptions WHERE tenant_id=$1 AND token_hash=$2 AND revoked_at IS NULL AND expires_at>now()", tenant, Hash(token)).Scan(&id, &expiry, &user, &profileID, &name, &device, &independent)
 	if e != nil {
 		return problem{404, "subscription unavailable"}
 	}
@@ -123,6 +124,12 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 		}
 		if device != "" && !deviceAll && len(deviceServices) == 0 {
 			return problem{403, "此设备尚未授权任何入站"}
+		}
+		if independent {
+			sealed, e = s.subscriptionIdentity(r, id, user, device)
+			if e != nil {
+				return e
+			}
 		}
 		raw, err := live.Open(s.MasterKey, sealed)
 		if err != nil {
@@ -252,6 +259,11 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 		if !live.Proxy(spec.Kind) {
 			continue
 		}
+		if independent && !spec.ManagedUsers {
+			// A shared secret cannot be revoked per subscription.
+			excluded++
+			continue
+		}
 		if spec.ManagedUsers {
 			if user == "" {
 				return problem{403, "this inbound requires a user subscription"}
@@ -309,6 +321,9 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 	w.Header().Set("X-Starhub-Client", client.ID)
 	if len(out) == 0 {
 		if excluded > 0 {
+			if independent {
+				return problem{422, "没有可用的独立身份节点：共享密钥入口无法按订阅到期撤销，已过滤；也请检查所选客户端协议兼容性"}
+			}
 			return problem{422, "所选客户端不兼容已授权的节点协议，请选择兼容客户端"}
 		}
 		return problem{503, "没有可发布的运行中节点，请检查用户组授权、节点启用状态、部署结果与 Agent 在线状态"}

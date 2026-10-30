@@ -62,7 +62,7 @@ func (s *Server) telemetry(w http.ResponseWriter, r *http.Request, host string) 
 		}
 		seen[v.ID] = true
 		var allowed bool
-		if e = tx.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM traffic_subjects WHERE tenant_id=$1 AND host_id=$2 AND subject_kind=$3 AND subject_id=$4) AND CASE WHEN $3='user' THEN (EXISTS(SELECT 1 FROM proxy_users WHERE tenant_id=$1 AND id=$4) OR EXISTS(SELECT 1 FROM user_devices WHERE tenant_id=$1 AND id=$4)) ELSE EXISTS(SELECT 1 FROM live_services WHERE tenant_id=$1 AND id=$4 AND host_id=$2) END`, tenant, host, v.Kind, v.Subject).Scan(&allowed); e != nil {
+		if e = tx.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM traffic_subjects WHERE tenant_id=$1 AND host_id=$2 AND subject_kind=$3 AND subject_id=$4) AND CASE WHEN $3='user' THEN (EXISTS(SELECT 1 FROM proxy_users WHERE tenant_id=$1 AND id=$4) OR EXISTS(SELECT 1 FROM user_devices WHERE tenant_id=$1 AND id=$4) OR EXISTS(SELECT 1 FROM subscription_identities WHERE tenant_id=$1 AND id=$4)) ELSE EXISTS(SELECT 1 FROM live_services WHERE tenant_id=$1 AND id=$4 AND host_id=$2) END`, tenant, host, v.Kind, v.Subject).Scan(&allowed); e != nil {
 			return e
 		}
 		if !allowed {
@@ -93,7 +93,7 @@ func (s *Server) telemetry(w http.ResponseWriter, r *http.Request, host string) 
 			var before, limit, rawUp, rawDown int64
 			var mode string
 			var milli int
-			if e = tx.QueryRow(r.Context(), `SELECT u.id,u.used_bytes,u.quota_bytes,u.upload_bytes,u.download_bytes,u.billing_mode,u.multiplier_milli FROM proxy_users u WHERE u.tenant_id=$1 AND (u.id=$2 OR u.id=(SELECT user_id FROM user_devices WHERE tenant_id=$1 AND id=$2)) FOR UPDATE`, tenant, v.Subject).Scan(&subject, &before, &limit, &rawUp, &rawDown, &mode, &milli); e != nil {
+			if e = tx.QueryRow(r.Context(), `SELECT u.id,u.used_bytes,u.quota_bytes,u.upload_bytes,u.download_bytes,u.billing_mode,u.multiplier_milli FROM proxy_users u WHERE u.tenant_id=$1 AND (u.id=$2 OR u.id=(SELECT user_id FROM user_devices WHERE tenant_id=$1 AND id=$2) OR u.id=(SELECT user_id FROM subscription_identities WHERE tenant_id=$1 AND id=$2)) FOR UPDATE`, tenant, v.Subject).Scan(&subject, &before, &limit, &rawUp, &rawDown, &mode, &milli); e != nil {
 				return e
 			}
 			amount, chargedUp, chargedDown, err := billing.Delta(rawUp, rawDown, du, dd, mode, milli)
@@ -104,7 +104,7 @@ func (s *Server) telemetry(w http.ResponseWriter, r *http.Request, host string) 
 				return e
 			}
 			if subject != v.Subject {
-				if _, e = tx.Exec(r.Context(), `UPDATE user_devices SET last_connected_at=now() WHERE tenant_id=$1 AND id=$2`, tenant, v.Subject); e != nil {
+				if _, e = tx.Exec(r.Context(), `UPDATE user_devices SET last_connected_at=now() WHERE tenant_id=$1 AND (id=$2 OR id=(SELECT device_id FROM subscription_identities WHERE tenant_id=$1 AND id=$2))`, tenant, v.Subject); e != nil {
 					return e
 				}
 			}
@@ -136,7 +136,7 @@ func (s *Server) telemetry(w http.ResponseWriter, r *http.Request, host string) 
 		}
 		var user, device string
 		if v.User != "" {
-			err := tx.QueryRow(r.Context(), `SELECT user_id,id FROM user_devices WHERE tenant_id=$1 AND id=$2`, tenant, v.User).Scan(&user, &device)
+			err := tx.QueryRow(r.Context(), `SELECT user_id,id FROM user_devices WHERE tenant_id=$1 AND id=$2 UNION ALL SELECT user_id,COALESCE(device_id,'') FROM subscription_identities WHERE tenant_id=$1 AND id=$2 LIMIT 1`, tenant, v.User).Scan(&user, &device)
 			if err == pgx.ErrNoRows {
 				user = v.User
 			} else if err != nil {

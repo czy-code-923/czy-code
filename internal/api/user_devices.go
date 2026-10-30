@@ -23,7 +23,7 @@ func checkDevicePolicies(ctx context.Context, tx pgx.Tx) error {
 	if invalid {
 		return problem{409, "设备数超过新的用户/用户组限制，请先停用多余设备"}
 	}
-	e = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM live_services l WHERE l.tenant_id=$1 AND l.managed_users AND (SELECT count(*) FROM (SELECT u.id FROM proxy_users u WHERE u.tenant_id=l.tenant_id AND u.enabled AND (u.device_limit_mode='compatible' OR `+deviceLimitSQL+`=0) AND EXISTS(SELECT 1 FROM user_group_members gm JOIN user_group_services gs USING(tenant_id,group_id) WHERE gm.tenant_id=u.tenant_id AND gm.user_id=u.id AND gs.service_id=l.id) UNION SELECT d.id FROM user_devices d JOIN proxy_users u ON (u.tenant_id,u.id)=(d.tenant_id,d.user_id) WHERE d.tenant_id=l.tenant_id AND d.enabled AND (d.all_nodes OR d.service_ids ? l.id) AND u.enabled AND EXISTS(SELECT 1 FROM user_group_members gm JOIN user_group_services gs USING(tenant_id,group_id) WHERE gm.tenant_id=u.tenant_id AND gm.user_id=u.id AND gs.service_id=l.id)) identities)>500)`, tenant).Scan(&invalid)
+	e = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM live_services l WHERE l.tenant_id=$1 AND l.managed_users AND (SELECT count(*) FROM (SELECT u.id FROM proxy_users u WHERE u.tenant_id=l.tenant_id AND u.enabled AND u.legacy_credentials AND (u.device_limit_mode='compatible' OR `+deviceLimitSQL+`=0) AND EXISTS(SELECT 1 FROM user_group_members gm JOIN user_group_services gs USING(tenant_id,group_id) WHERE gm.tenant_id=u.tenant_id AND gm.user_id=u.id AND gs.service_id=l.id) UNION SELECT d.id FROM user_devices d JOIN proxy_users u ON (u.tenant_id,u.id)=(d.tenant_id,d.user_id) WHERE d.tenant_id=l.tenant_id AND d.enabled AND (d.all_nodes OR d.service_ids ? l.id) AND (u.legacy_credentials OR EXISTS(SELECT 1 FROM subscriptions sd WHERE sd.tenant_id=d.tenant_id AND sd.device_id=d.id AND NOT sd.independent_identity)) AND u.enabled AND EXISTS(SELECT 1 FROM user_group_members gm JOIN user_group_services gs USING(tenant_id,group_id) WHERE gm.tenant_id=u.tenant_id AND gm.user_id=u.id AND gs.service_id=l.id) UNION SELECT si.id FROM subscription_identities si JOIN proxy_users u ON (u.tenant_id,u.id)=(si.tenant_id,si.user_id) JOIN subscriptions s ON (s.tenant_id,s.id)=(si.tenant_id,si.subscription_id) LEFT JOIN user_devices d ON (d.tenant_id,d.id)=(si.tenant_id,si.device_id) WHERE si.tenant_id=l.tenant_id AND u.enabled AND u.expires_at>now() AND s.independent_identity AND s.revoked_at IS NULL AND s.expires_at>now() AND (si.device_id IS NULL OR d.enabled AND (d.all_nodes OR d.service_ids ? l.id)) AND EXISTS(SELECT 1 FROM user_group_members gm JOIN user_group_services gs USING(tenant_id,group_id) WHERE gm.tenant_id=u.tenant_id AND gm.user_id=u.id AND gs.service_id=l.id)) identities)>500)`, tenant).Scan(&invalid)
 	if e != nil {
 		return e
 	}
@@ -286,6 +286,33 @@ func (s *Server) rotateDeviceCredentials(ctx context.Context, tx pgx.Tx, user st
 			return err
 		}
 		if _, e = tx.Exec(ctx, `UPDATE user_devices SET sealed=$3,version=version+1 WHERE tenant_id=$1 AND id=$2`, tenant, id, sealed); e != nil {
+			return e
+		}
+	}
+	rows, e = tx.Query(ctx, `SELECT id FROM subscription_identities WHERE tenant_id=$1 AND user_id=$2`, tenant, user)
+	if e != nil {
+		return e
+	}
+	ids = nil
+	for rows.Next() {
+		var id string
+		if e = rows.Scan(&id); e != nil {
+			rows.Close()
+			return e
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	if e = rows.Err(); e != nil {
+		return e
+	}
+	for _, id := range ids {
+		raw, _ := json.Marshal(live.Account{Name: id, UUID: live.UUID(), Password: live.Secret()})
+		sealed, err := live.Seal(s.MasterKey, raw)
+		if err != nil {
+			return err
+		}
+		if _, e = tx.Exec(ctx, `UPDATE subscription_identities SET sealed=$3 WHERE tenant_id=$1 AND id=$2`, tenant, id, sealed); e != nil {
 			return e
 		}
 	}

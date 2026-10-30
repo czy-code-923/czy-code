@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "星枢 · VPS 多机管理 API",
-    "version": "0.23.6",
+    "version": "0.23.7",
     "description": "Self-workspace API for host agents, proxy protocols, user quotas and client subscriptions. Bearer administrator token or expiring scoped xs_ API key. No arbitrary shell; privileged gateway work and API key administration remain root-only."
   },
   "servers": [
@@ -7328,6 +7328,101 @@
           }
         },
         "x-root-only": true
+      }
+    },
+    "/api/v1/subscriptions/{id}/independent-identity": {
+      "post": {
+        "operationId": "migrateSubscriptionIdentity",
+        "summary": "Migrate a legacy user subscription to an independent credential",
+        "description": "Existing clients must refresh; shared-secret inbounds are excluded. Other legacy subscriptions may retain the previous common credential.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Migration queued for agent synchronization"
+          },
+          "409": {
+            "description": "Subscription cannot be migrated"
+          }
+        }
+      }
+    },
+    "/api/v1/hosts/{id}/connection": {
+      "post": {
+        "operationId": "setHostConnectionPaused",
+        "summary": "Pause or resume managed proxy synchronization for an outbound Agent",
+        "description": "A paused Agent retains its heartbeat and accounting channel; managed proxy processes stop. A completely offline Agent cannot be awakened remotely.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "paused"
+                ],
+                "properties": {
+                  "paused": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Desired connection state saved"
+          },
+          "404": {
+            "description": "Host unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/panel-release": {
+      "get": {
+        "operationId": "panelRelease",
+        "summary": "Check the latest published Starhub version on GitHub",
+        "description": "Root administrator only. This endpoint checks version metadata and does not install an update.",
+        "responses": {
+          "200": {
+            "description": "Current and latest versions"
+          },
+          "502": {
+            "description": "Release metadata unavailable"
+          }
+        }
       }
     }
   },

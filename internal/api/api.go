@@ -29,6 +29,7 @@ type Server struct {
 	AdminToken           string
 	AgentReleaseDir      string
 	telegramClient       *http.Client
+	panelReleaseClient   *http.Client
 	keyRates             keyLimiter
 	resolveEngineRelease func(context.Context, string, string) (engine.Release, error)
 }
@@ -123,6 +124,15 @@ func (s *Server) agent(f func(http.ResponseWriter, *http.Request, string) error)
 		if e != nil || !strings.HasPrefix(header, "Bearer ") || !equal(Hash(token), hash) {
 			return problem{401, "unauthorized agent"}
 		}
+		if r.URL.Path == "/api/v1/agent/live/sync" || r.URL.Path == "/api/v1/agent/claim" || r.URL.Path == "/api/v1/agent/engines/sync" {
+			var paused bool
+			if e = s.DB.QueryRow(r.Context(), `SELECT connection_paused FROM hosts WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL`, tenant, host).Scan(&paused); e != nil {
+				return e
+			}
+			if paused {
+				return problem{423, "host synchronization paused"}
+			}
+		}
 		return f(w, r, host)
 	})
 }
@@ -130,6 +140,7 @@ func (s *Server) Handler() http.Handler {
 	m := http.NewServeMux()
 	m.HandleFunc("POST /api/v1/configuration/inspect", s.admin(s.inspectConfiguration))
 	m.HandleFunc("GET /api/v1/notifications/telegram", s.admin(s.notifications))
+	m.HandleFunc("GET /api/v1/panel-release", s.admin(s.panelRelease))
 	m.HandleFunc("PUT /api/v1/notifications/telegram", s.admin(s.notifications))
 	m.HandleFunc("DELETE /api/v1/notifications/telegram", s.admin(s.notifications))
 	m.HandleFunc("POST /api/v1/notifications/telegram/test", s.admin(s.notificationTest))
@@ -138,6 +149,7 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("GET /api/v1/notifications/log", s.admin(s.notificationLog))
 	m.HandleFunc("GET /api/v1/hosts/{id}/retirement", s.admin(s.retirement))
 	m.HandleFunc("POST /api/v1/hosts/{id}/retirement", s.admin(s.retirement))
+	m.HandleFunc("POST /api/v1/hosts/{id}/connection", s.admin(s.hostConnection))
 	m.HandleFunc("POST /api/v1/agent/retirement/{action}", s.agent(s.retirementAgent))
 	m.HandleFunc("GET /api/v1/client-catalog", s.admin(s.clientCatalog))
 	m.HandleFunc("POST /api/v1/proxy-users/{id}/subscription", s.admin(s.userSubscription))
@@ -191,6 +203,7 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("DELETE /api/v1/subscriptions/{id}", s.admin(s.removeManaged))
 	m.HandleFunc("DELETE /api/v1/live/{id}", s.admin(s.liveDelete))
 	m.HandleFunc("PUT /api/v1/subscriptions/{id}", s.admin(s.subscriptionUpdate))
+	m.HandleFunc("POST /api/v1/subscriptions/{id}/independent-identity", s.admin(s.migrateSubscriptionIdentity))
 	m.HandleFunc("GET /api/v1/subscriptions/{id}/link", s.admin(s.subscriptionLink))
 	m.HandleFunc("GET /api/v1/proxy-users/{id}/devices", s.admin(s.devices))
 	m.HandleFunc("POST /api/v1/proxy-users/{id}/devices", s.admin(s.devices))
@@ -293,7 +306,7 @@ func audit(ctx context.Context, tx pgx.Tx, actor, action, id string) error {
 }
 func (s *Server) list(w http.ResponseWriter, r *http.Request) error {
 	// SQL identifiers are selected solely from this fixed allowlist.
-	tables := map[string]string{"hosts": "SELECT tenant_id,id,name,provider,address,last_seen,COALESCE(last_seen>now()-interval '90 seconds',false) online,agent_mode,agent_version,platform,reported_addresses,retire_state,retire_requested_at,cleanup_capable,created_at,(SELECT " + hostTrafficJSON + " FROM host_traffic t WHERE t.tenant_id=hosts.tenant_id AND t.host_id=hosts.id) traffic FROM hosts", "nodes": "SELECT * FROM nodes", "instances": "SELECT * FROM instances", "tunnels": "SELECT * FROM tunnels", "configs": "SELECT * FROM configs", "tasks": "SELECT tenant_id,id,instance_id,config_id,request_key,state,attempts,lease_until,result,created_at,updated_at,mode,operation,artifact_checksum FROM tasks", "audit": "SELECT * FROM audit", "routes": "SELECT * FROM route_plans"}
+	tables := map[string]string{"hosts": "SELECT tenant_id,id,name,provider,address,last_seen,COALESCE(last_seen>now()-interval '90 seconds',false) online,agent_mode,agent_version,platform,reported_addresses,connection_paused,retire_state,retire_requested_at,cleanup_capable,created_at,(SELECT " + hostTrafficJSON + " FROM host_traffic t WHERE t.tenant_id=hosts.tenant_id AND t.host_id=hosts.id) traffic FROM hosts", "nodes": "SELECT * FROM nodes", "instances": "SELECT * FROM instances", "tunnels": "SELECT * FROM tunnels", "configs": "SELECT * FROM configs", "tasks": "SELECT tenant_id,id,instance_id,config_id,request_key,state,attempts,lease_until,result,created_at,updated_at,mode,operation,artifact_checksum FROM tasks", "audit": "SELECT * FROM audit", "routes": "SELECT * FROM route_plans"}
 	tables["firewalls"] = "SELECT tenant_id,id,host_id,name,version,checksum,archived_at,deleted_at,created_at FROM firewall_policies"
 	q, ok := tables[r.PathValue("kind")]
 	if !ok {

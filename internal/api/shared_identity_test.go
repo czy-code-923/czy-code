@@ -21,7 +21,7 @@ func TestIndependentSSIdentityAndRevocation(t *testing.T) {
 			}
 		}
 	}
-	if len(server.Accounts) != 1 || server.Accounts[0].Name != f.user {
+	if len(server.Accounts) != 1 || server.Accounts[0].Name == f.user {
 		t.Fatal("independent SS identity missing")
 	}
 	expected := server

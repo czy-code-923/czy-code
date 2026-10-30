@@ -36,6 +36,7 @@ func newSubscriptionFixture(t *testing.T, limit int) subscriptionFixture {
 	sub := obj018(h.call("POST", "subscriptions", map[string]any{"name": "stable-link", "days": 1, "user_id": f.user}, 201, nil))
 	f.url = sub["url"].(string) + "?format=mihomo"
 	f.subscription = sub["id"].(string)
+	f.ack() // Provision the new subscription identity before using its link.
 	return f
 }
 func (f subscriptionFixture) addNode(name string, port int) string {
@@ -108,6 +109,10 @@ func TestExistingSubscriptionRefreshesGroupsWithoutRotatingIdentity(t *testing.T
 		t.Fatal("initial nodes", len(first))
 	}
 	uuid := first[0]["uuid"]
+	var identityID string
+	if err := f.h.s.DB.QueryRow(context.Background(), `SELECT id FROM subscription_identities WHERE tenant_id=$1 AND subscription_id=$2 AND device_id IS NULL`, tenant, f.subscription).Scan(&identityID); err != nil {
+		t.Fatal(err)
+	}
 	device := obj018(f.h.call("POST", "proxy-users/"+f.user+"/devices", map[string]any{"name": "legacy-device", "client_id": "mihomo"}, 201, nil))
 	f.ack()
 	durl := device["url"].(string)
@@ -153,7 +158,7 @@ func TestExistingSubscriptionRefreshesGroupsWithoutRotatingIdentity(t *testing.T
 		}
 	}
 	for _, node := range []string{f.node, next} {
-		if accounts[node][f.user] != uuid || accounts[node][device["id"].(string)] != duuid {
+		if accounts[node][identityID] != uuid || accounts[node][device["id"].(string)] != duuid {
 			t.Fatal("client export differs from deployed credentials")
 		}
 	}

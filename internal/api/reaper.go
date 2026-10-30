@@ -47,6 +47,33 @@ func (s *Server) Reap(ctx context.Context) error {
 	if e = resetPeriods(ctx, tx); e != nil {
 		return e
 	}
+	// Once all common-identity legacy links have expired, users who have opted
+	// into an independent subscription no longer need the old shared identity.
+	rows, e := tx.Query(ctx, `UPDATE proxy_users u SET legacy_credentials=false WHERE u.tenant_id=$1 AND u.legacy_credentials AND EXISTS(SELECT 1 FROM subscriptions s WHERE s.tenant_id=u.tenant_id AND s.user_id=u.id AND s.independent_identity) AND NOT EXISTS(SELECT 1 FROM subscriptions s WHERE s.tenant_id=u.tenant_id AND s.user_id=u.id AND s.device_id IS NULL AND NOT s.independent_identity AND s.revoked_at IS NULL AND s.expires_at>now()) RETURNING u.id`, tenant)
+	if e != nil {
+		return e
+	}
+	legacyUsers := []string{}
+	for rows.Next() {
+		var id string
+		if e = rows.Scan(&id); e != nil {
+			rows.Close()
+			return e
+		}
+		legacyUsers = append(legacyUsers, id)
+	}
+	rows.Close()
+	if e = rows.Err(); e != nil {
+		return e
+	}
+	for _, id := range legacyUsers {
+		if e = bumpDeviceUser(ctx, tx, id); e != nil {
+			return e
+		}
+		if e = audit(ctx, tx, "control", "user.legacy-identity-retired", id); e != nil {
+			return e
+		}
+	}
 	if e = reap(ctx, tx); e != nil {
 		return e
 	}

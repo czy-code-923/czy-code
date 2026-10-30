@@ -849,7 +849,7 @@ func (s *Server) siteOrigin(r *http.Request, share bool) (string, error) {
 }
 func (s *Server) subscriptionList(w http.ResponseWriter, r *http.Request) error {
 	var b json.RawMessage
-	e := s.DB.QueryRow(r.Context(), `SELECT COALESCE(jsonb_agg(x),'[]') FROM (SELECT s.id,s.name,s.user_id,s.device_id,s.profile_id,s.expires_at,s.revoked_at,s.created_at,s.version,(s.revoked_at IS NULL AND s.expires_at>now()) active,COALESCE((SELECT jsonb_agg(l.id ORDER BY l.id) FROM live_services l WHERE l.tenant_id=s.tenant_id AND l.delete_requested_at IS NULL AND ((s.user_id IS NULL AND EXISTS(SELECT 1 FROM subscription_services ss WHERE ss.tenant_id=s.tenant_id AND ss.subscription_id=s.id AND ss.service_id=l.id)) OR (s.user_id IS NOT NULL AND EXISTS(SELECT 1 FROM user_group_services gs JOIN user_group_members gm USING(tenant_id,group_id) WHERE gm.tenant_id=s.tenant_id AND gm.user_id=s.user_id AND gs.service_id=l.id))) AND (s.device_id IS NULL OR (l.managed_users AND EXISTS(SELECT 1 FROM user_devices d WHERE d.tenant_id=s.tenant_id AND d.id=s.device_id AND (d.all_nodes OR d.service_ids ? l.id))))),'[]') service_ids,CASE WHEN s.user_id IS NULL THEN 'shared' ELSE 'user' END mode,CASE WHEN s.user_id IS NULL THEN 'shared_selection' WHEN s.device_id IS NULL THEN 'user_groups' ELSE 'device_permission' END membership_mode FROM subscriptions s WHERE s.tenant_id=$1 ORDER BY s.created_at DESC LIMIT 200) x`, tenant).Scan(&b)
+	e := s.DB.QueryRow(r.Context(), `SELECT COALESCE(jsonb_agg(x),'[]') FROM (SELECT s.id,s.name,s.user_id,s.device_id,s.profile_id,s.expires_at,s.revoked_at,s.created_at,s.version,s.independent_identity,(s.revoked_at IS NULL AND s.expires_at>now()) active,COALESCE((SELECT jsonb_agg(l.id ORDER BY l.id) FROM live_services l WHERE l.tenant_id=s.tenant_id AND l.delete_requested_at IS NULL AND ((s.user_id IS NULL AND EXISTS(SELECT 1 FROM subscription_services ss WHERE ss.tenant_id=s.tenant_id AND ss.subscription_id=s.id AND ss.service_id=l.id)) OR (s.user_id IS NOT NULL AND EXISTS(SELECT 1 FROM user_group_services gs JOIN user_group_members gm USING(tenant_id,group_id) WHERE gm.tenant_id=s.tenant_id AND gm.user_id=s.user_id AND gs.service_id=l.id))) AND (s.device_id IS NULL OR (l.managed_users AND EXISTS(SELECT 1 FROM user_devices d WHERE d.tenant_id=s.tenant_id AND d.id=s.device_id AND (d.all_nodes OR d.service_ids ? l.id))))),'[]') service_ids,CASE WHEN s.user_id IS NULL THEN 'shared' ELSE 'user' END mode,CASE WHEN s.user_id IS NULL THEN 'shared_selection' WHEN s.device_id IS NULL THEN 'user_groups' ELSE 'device_permission' END membership_mode FROM subscriptions s WHERE s.tenant_id=$1 ORDER BY s.created_at DESC LIMIT 200) x`, tenant).Scan(&b)
 	if e != nil {
 		return e
 	}
@@ -916,9 +916,23 @@ func (s *Server) subscriptionCreate(w http.ResponseWriter, r *http.Request) erro
 	if e != nil {
 		return e
 	}
-	_, e = tx.Exec(r.Context(), "INSERT INTO subscriptions(tenant_id,id,name,token_hash,expires_at,user_id,profile_id,sealed_token) VALUES($1,$2,$3,$4,$5,NULLIF($6,''),NULLIF($7,''),$8)", tenant, id, b.Name, Hash(token), time.Now().Add(time.Duration(b.Days)*24*time.Hour), b.UserID, b.ProfileID, sealedToken)
+	_, e = tx.Exec(r.Context(), "INSERT INTO subscriptions(tenant_id,id,name,token_hash,expires_at,user_id,profile_id,sealed_token,independent_identity) VALUES($1,$2,$3,$4,$5,NULLIF($6,''),NULLIF($7,''),$8,$6<>'')", tenant, id, b.Name, Hash(token), time.Now().Add(time.Duration(b.Days)*24*time.Hour), b.UserID, b.ProfileID, sealedToken)
 	if e != nil {
 		return e
+	}
+	if b.UserID != "" {
+		if _, _, e = s.ensureSubscriptionIdentity(r.Context(), tx, id, b.UserID, ""); e != nil {
+			return e
+		}
+		if _, e = tx.Exec(r.Context(), `UPDATE proxy_users SET legacy_credentials=false WHERE tenant_id=$1 AND id=$2 AND NOT EXISTS(SELECT 1 FROM subscriptions WHERE tenant_id=$1 AND user_id=$2 AND device_id IS NULL AND NOT independent_identity AND revoked_at IS NULL AND expires_at>now())`, tenant, b.UserID); e != nil {
+			return e
+		}
+		if e = checkDevicePolicies(r.Context(), tx); e != nil {
+			return e
+		}
+		if e = bumpDeviceUser(r.Context(), tx, b.UserID); e != nil {
+			return e
+		}
 	}
 	for _, service := range b.ServiceIDs {
 		var kind string
@@ -956,12 +970,25 @@ func (s *Server) subscriptionRevoke(w http.ResponseWriter, r *http.Request) erro
 		return e
 	}
 	defer tx.Rollback(r.Context())
+	if e = graphLock(r, tx); e != nil {
+		return e
+	}
+	var user string
+	var independent bool
+	if e = tx.QueryRow(r.Context(), `SELECT COALESCE(user_id,''),independent_identity FROM subscriptions WHERE tenant_id=$1 AND id=$2 FOR UPDATE`, tenant, r.PathValue("id")).Scan(&user, &independent); e != nil {
+		return e
+	}
 	tag, e := tx.Exec(r.Context(), "UPDATE subscriptions SET revoked_at=COALESCE(revoked_at,now()) WHERE tenant_id=$1 AND id=$2", tenant, r.PathValue("id"))
 	if e != nil {
 		return e
 	}
 	if tag.RowsAffected() == 0 {
 		return pgx.ErrNoRows
+	}
+	if independent {
+		if e = bumpDeviceUser(r.Context(), tx, user); e != nil {
+			return e
+		}
 	}
 	if e = audit(r.Context(), tx, "admin", "subscription.revoke", r.PathValue("id")); e != nil {
 		return e

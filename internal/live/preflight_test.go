@@ -91,4 +91,10 @@ func TestCannotRetainRevokedOrChangedIdentity(t *testing.T) {
 	if canRetainMembers([]Work{w}, []Work{changed}) {
 		t.Fatal("retained stopped inbound")
 	}
+	withAccount := Work{ID: strings.Repeat("b", 32), Enabled: true, Spec: Spec{Accounts: []Account{{Name: "subscription", UUID: "expired"}}}}
+	withoutAccount := withAccount
+	withoutAccount.Spec.Accounts = nil
+	if canRetainMembers([]Work{withAccount}, []Work{withoutAccount}) {
+		t.Fatal("failed replacement could retain an expired subscription identity")
+	}
 }

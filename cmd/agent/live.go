@@ -109,6 +109,13 @@ func runLive(ctx context.Context, call func(context.Context, string, any) ([]byt
 		}
 		reports := runner.Reports()
 		raw, status, e := call(ctx, "live/sync", map[string]any{"reports": reports, "bundle_mode": true, "capabilities": capabilities, "kernel_reports": runner.KernelReports()})
+		if status == 423 {
+			// The administrator explicitly paused this host. Stop managed
+			// inbounds, while continuing heartbeats and accounting for resume.
+			if err := runner.Reconcile(ctx, nil); err != nil {
+				log.Print("pause reconciliation failed")
+			}
+		}
 		if e == nil && status == 200 {
 			var work []live.Work
 			if json.Unmarshal(raw, &work) == nil {

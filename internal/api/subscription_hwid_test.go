@@ -45,12 +45,16 @@ func TestSubscriptionHWIDAutomaticallyRegistersAndEnforcesLimit(t *testing.T) {
 	if err := f.h.s.DB.QueryRow(context.Background(), `SELECT hwid_hash FROM user_devices WHERE id=$1`, id).Scan(&stored); err != nil || stored == headers["X-Hwid"] || len(stored) != 64 {
 		t.Fatal("fingerprint not stored as bounded hash", err)
 	}
+	var identityID string
+	if err := f.h.s.DB.QueryRow(context.Background(), `SELECT id FROM subscription_identities WHERE tenant_id=$1 AND subscription_id=$2 AND device_id=$3`, tenant, f.subscription, id).Scan(&identityID); err != nil {
+		t.Fatal(err)
+	}
 	work := f.ack()
 	var uuid string
 	for _, b := range work {
 		for _, m := range b.Members {
 			if m.ID == f.node {
-				if len(m.Spec.Accounts) != 1 || m.Spec.Accounts[0].Name != id {
+				if len(m.Spec.Accounts) != 1 || m.Spec.Accounts[0].Name != identityID {
 					t.Fatal("generic user identity survived enforced HWID")
 				}
 				uuid = m.Spec.Accounts[0].UUID

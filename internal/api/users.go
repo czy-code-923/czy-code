@@ -141,7 +141,7 @@ func (s *Server) users(w http.ResponseWriter, r *http.Request) error {
 		return e
 	}
 	if !fresh {
-		if _, e = tx.Exec(r.Context(), `UPDATE subscriptions SET expires_at=$3 WHERE tenant_id=$1 AND user_id=$2 AND device_id IS NOT NULL`, tenant, id, b.Expires); e != nil {
+		if _, e = tx.Exec(r.Context(), `UPDATE subscriptions SET expires_at=$3 WHERE tenant_id=$1 AND user_id=$2 AND device_id IS NOT NULL AND NOT independent_identity`, tenant, id, b.Expires); e != nil {
 			return e
 		}
 	}
@@ -401,7 +401,7 @@ func (s *Server) materializeAccounts(r *http.Request, tx pgx.Tx, id string, spec
 		return nil
 	}
 	spec.Accounts = []live.Account{}
-	rows, e := tx.Query(r.Context(), `WITH eligible AS (SELECT DISTINCT u.* FROM proxy_users u JOIN user_group_members m ON (u.tenant_id,u.id)=(m.tenant_id,m.user_id) JOIN user_group_services g ON (g.tenant_id,g.group_id)=(m.tenant_id,m.group_id) WHERE u.tenant_id=$1 AND g.service_id=$2 AND u.enabled AND u.expires_at>now() AND (u.quota_bytes=0 OR (u.used_bytes<u.quota_bytes AND EXISTS(SELECT 1 FROM telemetry_status t JOIN live_services l ON (l.tenant_id,l.host_id,l.engine)=(t.tenant_id,t.host_id,t.engine) WHERE l.tenant_id=u.tenant_id AND l.id=$2 AND t.state='collecting' AND t.reported_at>now()-interval '30 seconds')))) SELECT u.id,u.sealed FROM eligible u WHERE (u.device_limit_mode='compatible' OR `+deviceLimitSQL+`=0) UNION ALL SELECT d.id,d.sealed FROM eligible u JOIN user_devices d ON (d.tenant_id,d.user_id)=(u.tenant_id,u.id) WHERE d.enabled AND (d.all_nodes OR d.service_ids ? $2) ORDER BY id LIMIT 501`, tenant, id)
+	rows, e := tx.Query(r.Context(), `WITH eligible AS (SELECT DISTINCT u.* FROM proxy_users u JOIN user_group_members m ON (u.tenant_id,u.id)=(m.tenant_id,m.user_id) JOIN user_group_services g ON (g.tenant_id,g.group_id)=(m.tenant_id,m.group_id) WHERE u.tenant_id=$1 AND g.service_id=$2 AND u.enabled AND u.expires_at>now() AND (u.quota_bytes=0 OR (u.used_bytes<u.quota_bytes AND EXISTS(SELECT 1 FROM telemetry_status t JOIN live_services l ON (l.tenant_id,l.host_id,l.engine)=(t.tenant_id,t.host_id,t.engine) WHERE l.tenant_id=u.tenant_id AND l.id=$2 AND t.state='collecting' AND t.reported_at>now()-interval '30 seconds')))) SELECT u.id,u.sealed FROM eligible u WHERE u.legacy_credentials AND (u.device_limit_mode='compatible' OR `+deviceLimitSQL+`=0) UNION ALL SELECT d.id,d.sealed FROM eligible u JOIN user_devices d ON (d.tenant_id,d.user_id)=(u.tenant_id,u.id) WHERE d.enabled AND (d.all_nodes OR d.service_ids ? $2) AND (u.legacy_credentials OR EXISTS(SELECT 1 FROM subscriptions sd WHERE sd.tenant_id=d.tenant_id AND sd.device_id=d.id AND NOT sd.independent_identity)) UNION ALL SELECT si.id,si.sealed FROM eligible u JOIN subscription_identities si ON(si.tenant_id,si.user_id)=(u.tenant_id,u.id) JOIN subscriptions sb ON(sb.tenant_id,sb.id)=(si.tenant_id,si.subscription_id) LEFT JOIN user_devices d ON(d.tenant_id,d.id)=(si.tenant_id,si.device_id) WHERE sb.independent_identity AND sb.revoked_at IS NULL AND sb.expires_at>now() AND ((si.device_id IS NULL AND (u.device_limit_mode='compatible' OR `+deviceLimitSQL+`=0)) OR (si.device_id IS NOT NULL AND (sb.device_id=si.device_id OR (sb.device_id IS NULL AND u.device_limit_mode='hwid' AND `+deviceLimitSQL+`>0)) AND d.enabled AND (d.all_nodes OR d.service_ids ? $2))) ORDER BY id LIMIT 501`, tenant, id)
 	if e != nil {
 		return e
 	}
