@@ -239,7 +239,7 @@ func (s *Server) notificationAlerts(ctx context.Context, c notificationConfig, t
 		query := `SELECT h.id,h.name,CASE WHEN t.quota_bytes>0 AND t.used_bytes::numeric*100>=t.quota_bytes::numeric*$2 THEN 'alert' ELSE 'ok' END FROM host_traffic t JOIN hosts h ON(h.tenant_id,h.id)=(t.tenant_id,t.host_id) WHERE t.tenant_id=$1 AND h.deleted_at IS NULL LIMIT 200`
 		args := []any{tenant, c.QuotaPercent}
 		if event == "device_limit" {
-			query = `SELECT u.id,u.name,CASE WHEN ` + deviceLimitSQL + `>0 AND (SELECT count(*) FROM user_devices d WHERE d.tenant_id=u.tenant_id AND d.user_id=u.id AND d.enabled)>=` + deviceLimitSQL + ` THEN 'alert' ELSE 'ok' END FROM proxy_users u WHERE u.tenant_id=$1 AND u.enabled LIMIT 500`
+			query = `SELECT u.id,u.name,CASE WHEN ` + deviceLimitSQL + `>0 AND CASE WHEN u.device_limit_mode='compatible' THEN (SELECT count(*) FROM subscription_clients c WHERE c.tenant_id=u.tenant_id AND c.user_id=u.id AND c.enabled AND c.last_subscription_at>now()-interval '7 days') ELSE (SELECT count(*) FROM user_devices d WHERE d.tenant_id=u.tenant_id AND d.user_id=u.id AND d.enabled) END>=` + deviceLimitSQL + ` THEN 'alert' ELSE 'ok' END FROM proxy_users u WHERE u.tenant_id=$1 AND u.enabled LIMIT 500`
 			args = []any{tenant}
 		}
 		rows, e := s.DB.Query(ctx, query, args...)
@@ -305,7 +305,7 @@ func (s *Server) notificationAlerts(ctx context.Context, c notificationConfig, t
 				text += fmt.Sprintf("\n主机最后确认用量已达 %d%% 阈值；请在主机流量中查看采样时间与剩余量", c.QuotaPercent)
 			}
 			if i.Event == "device_limit" {
-				text += "\n用户设备凭据名额已满，新增设备将被拒绝；可先停用旧设备"
+				text += "\n用户客户端名额已满；兼容模式按近期订阅来源近似计算，严格模式按已登记身份计算。请在面板检查旧记录。"
 			}
 			if i.Event == "certificate" {
 				text += "\n证书不足 14 天，请检查续期"

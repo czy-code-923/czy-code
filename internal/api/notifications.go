@@ -282,7 +282,7 @@ func (s *Server) notificationSummary(ctx context.Context, command string) (strin
 			query = `SELECT name,round(used_bytes::numeric/1073741824,2)::text||' GiB / '||CASE WHEN quota_bytes=0 THEN '不限额' ELSE round(quota_bytes::numeric/1073741824,2)::text||' GiB' END||' · 倍率 '||(multiplier_milli::numeric/1000)::text||'x · '||billing_mode FROM proxy_users WHERE tenant_id=$1 ORDER BY name LIMIT 30`
 		}
 		if command == "devices" {
-			query = `SELECT u.name,(SELECT count(*) FROM user_devices d WHERE d.tenant_id=u.tenant_id AND d.user_id=u.id AND d.enabled)::text||' 个启用 / 上限 '||CASE WHEN ` + deviceLimitSQL + `=0 THEN '未启用' ELSE (` + deviceLimitSQL + `)::text END FROM proxy_users u WHERE u.tenant_id=$1 ORDER BY u.name LIMIT 30`
+			query = `SELECT u.name,CASE WHEN u.device_limit_mode='compatible' OR ` + deviceLimitSQL + `=0 THEN '兼容访问记录 '||(SELECT count(*) FROM subscription_clients c WHERE c.tenant_id=u.tenant_id AND c.user_id=u.id AND c.enabled AND c.last_subscription_at>now()-interval '7 days')::text||'（最近7天，非物理设备数）' ELSE '严格设备 '||(SELECT count(*) FROM user_devices d WHERE d.tenant_id=u.tenant_id AND d.user_id=u.id AND d.enabled)::text END||' / 上限 '||CASE WHEN ` + deviceLimitSQL + `=0 THEN '不限' ELSE (` + deviceLimitSQL + `)::text END FROM proxy_users u WHERE u.tenant_id=$1 ORDER BY u.name LIMIT 30`
 		}
 
 		rows, e := s.DB.Query(ctx, query, tenant)

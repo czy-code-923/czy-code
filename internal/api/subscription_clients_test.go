@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -14,6 +15,57 @@ func (f subscriptionFixture) compatible(limit int) {
 	f.h.t.Helper()
 	f.h.call("PUT", "proxy-users/"+f.user, map[string]any{"name": "existing-user", "enabled": true, "expires_at": time.Now().Add(24 * time.Hour), "device_limit_mode": "compatible", "max_devices": limit}, 200, nil)
 	f.ack()
+}
+
+func TestUnlimitedObservationBoundAndTelegramCount(t *testing.T) {
+	f := newSubscriptionFixture(t, 0)
+	f.compatible(0)
+	for i := 1; i <= 32; i++ {
+		r := httptest.NewRequest("GET", "https://vps.example.com/s/fixture", nil)
+		r.RemoteAddr = fmt.Sprintf("192.0.2.%d:1234", i)
+		r.Header.Set("User-Agent", "Clash-Verge/2.4")
+		if err := f.h.s.observeSubscription(httptest.NewRecorder(), r, f.user, "mihomo"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rows := f.observations()
+	if len(rows) != 30 {
+		t.Fatalf("wanted 30 most recent observations, got %d", len(rows))
+	}
+	summary, err := f.h.s.notificationSummary(context.Background(), "devices")
+	if err != nil || !strings.Contains(summary, "兼容访问记录 30") || !strings.Contains(summary, "非物理设备数") {
+		t.Fatalf("incorrect Telegram summary: %q %v", summary, err)
+	}
+	// A disabled observation is not discarded by the capacity cap.
+	id := rows[0]["id"].(string)
+	f.h.call("PUT", "proxy-users/"+f.user+"/devices/"+id, map[string]any{"name": "blocked", "enabled": false, "version": rows[0]["version"]}, 200, nil)
+	r := httptest.NewRequest("GET", "https://vps.example.com/s/fixture", nil)
+	r.RemoteAddr = "192.0.2.100:1234"
+	if err := f.h.s.observeSubscription(httptest.NewRecorder(), r, f.user, "mihomo"); err != nil {
+		t.Fatal(err)
+	}
+	var enabled bool
+	if err := f.h.s.DB.QueryRow(context.Background(), `SELECT enabled FROM subscription_clients WHERE id=$1`, id).Scan(&enabled); err != nil || enabled {
+		t.Fatalf("blocked observation removed or enabled: %v", err)
+	}
+}
+
+func TestSubscriptionRenameRetainsLinkAndTitle(t *testing.T) {
+	f := newSubscriptionFixture(t, 0)
+	var expiry time.Time
+	var version int
+	if err := f.h.s.DB.QueryRow(context.Background(), `SELECT expires_at,version FROM subscriptions WHERE id=$1`, f.subscription).Scan(&expiry, &version); err != nil {
+		t.Fatal(err)
+	}
+	f.h.call("PUT", "subscriptions/"+f.subscription, map[string]any{"name": "新的订阅", "profile_id": "", "expires_at": expiry, "version": version}, 200, nil)
+	w := f.share(f.url, nil, 200)
+	if got := w.Header().Get("Profile-Title"); got != "base64:"+base64.StdEncoding.EncodeToString([]byte("新的订阅")) {
+		t.Fatalf("wrong title: %s", got)
+	}
+	got := obj018(f.h.call("GET", "subscriptions/"+f.subscription+"/link", nil, 200, nil))
+	if got["url"] != strings.Split(f.url, "?")[0] {
+		t.Fatal("renaming changed subscription link")
+	}
 }
 func (f subscriptionFixture) observations() []map[string]any {
 	f.h.t.Helper()

@@ -77,6 +77,14 @@ func (s *Server) observeSubscription(w http.ResponseWriter, r *http.Request, use
 		return problem{403, "此订阅客户端记录已停用，请联系管理员；该记录是兼容识别，不是物理硬件证明"}
 	}
 	if err == pgx.ErrNoRows {
+		// Unlimited users retain only the newest 30 enabled observations. These
+		// are IP-based observations, not reliable physical device identities.
+		// Never evict disabled records, or a blocked client could re-register.
+		if limit == 0 {
+			if _, err = tx.Exec(r.Context(), `DELETE FROM subscription_clients WHERE tenant_id=$1 AND user_id=$2 AND id IN (SELECT id FROM subscription_clients WHERE tenant_id=$1 AND user_id=$2 AND enabled ORDER BY last_subscription_at DESC,id DESC OFFSET 29)`, tenant, user); err != nil {
+				return err
+			}
+		}
 		var count, total int
 		if err = tx.QueryRow(r.Context(), `SELECT count(*) FILTER(WHERE user_id=$2 AND enabled AND last_subscription_at>now()-interval '7 days'),count(*) FROM subscription_clients WHERE tenant_id=$1`, tenant, user).Scan(&count, &total); err != nil {
 			return err
