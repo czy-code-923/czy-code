@@ -16,12 +16,12 @@ import urllib.request
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.23.8"
-PREVIOUS = "0.23.7"
+VERSION = "0.23.9"
+PREVIOUS = "0.23.8"
 REPOSITORY = "czy-code-923/czy-code"
 BASE = f"https://github.com/{REPOSITORY}/releases/download/v{VERSION}-distribution/"
 OLD_BASE = f"https://github.com/{REPOSITORY}/releases/download/v{PREVIOUS}-distribution/"
-PINNED = {'starhub-v0237-update.zip': '804817091b3646e87c2e3a5f8f501e94665ebf5727aca85bd5cd08636e10e072'}
+PINNED = {'starhub-v0238-update.zip': 'edc21375cac23da963205d142a869044f7c3248a45a76b50821b63b1236613a4'}
 ENGINE_VERSIONS = {"sing-box": "v1.14.4", "xray": "v26.10.21", "frp": "v0.71.1"}
 
 
@@ -102,16 +102,11 @@ def main():
     if not os.environ.get("TEST_DATABASE_URL"):
         raise RuntimeError("Release packaging requires PostgreSQL-backed standalone API verification")
     subprocess.run([str(api_tests), "-test.count=1"], cwd=clean, check=True)
-    update = out / "starhub-v0238-update.zip"
-    with zipfile.ZipFile(previous("starhub-v0237-update.zip")) as old, zipfile.ZipFile(update, "w", zipfile.ZIP_DEFLATED) as archive:
-        apply = old.read("apply.py").decode("utf-8").replace("v0237", "v0238").replace("V0237", "V0238").replace(PREVIOUS, VERSION)
-        if "gateway_names=('managed-gateway.py','gateway-config.py','domain-sync.py')" not in apply:
-            raise RuntimeError('Previous updater gateway script list changed')
-        apply = apply.replace("gateway_names=('managed-gateway.py','gateway-config.py','domain-sync.py')", "gateway_names=('managed-gateway.py','gateway-config.py','domain-sync.py','panel-updater.py','install-panel-updater.py')")
-        installer_marker = "    notify=api('notifications/telegram')['config']"
-        if installer_marker not in apply:
-            raise RuntimeError('Previous updater installation hook changed')
-        apply = apply.replace(installer_marker, "    run('python3',str(gateway_scripts/'install-panel-updater.py'),'--env','/etc/harbor/control.env')\n" + installer_marker)
+    update = out / "starhub-v0239-update.zip"
+    with zipfile.ZipFile(previous("starhub-v0238-update.zip")) as old, zipfile.ZipFile(update, "w", zipfile.ZIP_DEFLATED) as archive:
+        apply = old.read("apply.py").decode("utf-8").replace("v0238", "v0239").replace("V0238", "V0239").replace(PREVIOUS, VERSION)
+        if "gateway_names=('managed-gateway.py','gateway-config.py','domain-sync.py','panel-updater.py','install-panel-updater.py')" not in apply or "install-panel-updater.py" not in apply:
+            raise RuntimeError("Previous updater helper list changed")
         # Previous updater already contains transactional gateway backup and rollback.
         compile(apply, "apply.py", "exec")
         archive.writestr("apply.py", apply)

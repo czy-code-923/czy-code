@@ -252,16 +252,11 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 		if e = json.Unmarshal(raw, &spec); e != nil {
 			return e
 		}
-		if device != "" && (!spec.ManagedUsers || !deviceAll && !slices.Contains(deviceServices, service)) {
+		if device != "" && ((!spec.ManagedUsers && !sharedGroupProtocol(spec)) || !deviceAll && !slices.Contains(deviceServices, service)) {
 			excluded++
 			continue
 		}
 		if !live.Proxy(spec.Kind) {
-			continue
-		}
-		if independent && !spec.ManagedUsers {
-			// A shared secret cannot be revoked per subscription.
-			excluded++
 			continue
 		}
 		if spec.ManagedUsers {
@@ -321,9 +316,6 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 	w.Header().Set("X-Starhub-Client", client.ID)
 	if len(out) == 0 {
 		if excluded > 0 {
-			if independent {
-				return problem{422, "没有可用的独立身份节点：共享密钥入口无法按订阅到期撤销，已过滤；也请检查所选客户端协议兼容性"}
-			}
 			return problem{422, "所选客户端不兼容已授权的节点协议，请选择兼容客户端"}
 		}
 		return problem{503, "没有可发布的运行中节点，请检查用户组授权、节点启用状态、部署结果与 Agent 在线状态"}

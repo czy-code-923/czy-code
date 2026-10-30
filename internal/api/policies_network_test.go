@@ -133,7 +133,7 @@ func TestPoliciesNetworksAndRetirement(t *testing.T) {
 	mh := request("?client=mihomo", 200)
 	var config map[string]any
 	yaml.Unmarshal(mh.Body.Bytes(), &config)
-	if len(config["proxies"].([]any)) != 2 || !strings.Contains(mh.Body.String(), "netflix.com") {
+	if len(config["proxies"].([]any)) != 6 || !strings.Contains(mh.Body.String(), "netflix.com") {
 		t.Fatal("mixed nodes or rules missing")
 	}
 	xr := request("?client=v2rayng", 200)
@@ -141,7 +141,7 @@ func TestPoliciesNetworksAndRetirement(t *testing.T) {
 		t.Fatal("unsupported Snell not filtered", xr.Header())
 	}
 	decoded, err := base64.StdEncoding.DecodeString(xr.Body.String())
-	if err != nil || len(strings.Fields(string(decoded))) != 2 {
+	if err != nil || len(strings.Fields(string(decoded))) != 4 {
 		t.Fatal("v2rayNG must receive selectable compatible URI nodes", err)
 	}
 	request("?client=xray", 200)

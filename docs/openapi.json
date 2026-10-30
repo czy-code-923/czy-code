@@ -6680,7 +6680,7 @@
                   "all_nodes": {
                     "type": "boolean",
                     "default": true,
-                    "description": "Inherit all currently authorized independently authenticated inbounds. False with an empty service_ids list denies all."
+                    "description": "Inherit currently authorized managed and shared SS/Snell inbounds. Shared credentials cannot be individually revoked; false with an empty service_ids list denies all."
                   },
                   "service_ids": {
                     "type": "array",
@@ -6770,7 +6770,7 @@
                   "all_nodes": {
                     "type": "boolean",
                     "default": true,
-                    "description": "Inherit all currently authorized independently authenticated inbounds. False with an empty service_ids list denies all."
+                    "description": "Inherit currently authorized managed and shared SS/Snell inbounds. Shared credentials cannot be individually revoked; false with an empty service_ids list denies all."
                   },
                   "service_ids": {
                     "type": "array",
@@ -7286,7 +7286,7 @@
       "post": {
         "operationId": "migrateSubscriptionIdentity",
         "summary": "Migrate a legacy user subscription to an independent credential",
-        "description": "Existing clients must refresh; shared-secret inbounds are excluded. Other legacy subscriptions may retain the previous common credential.",
+        "description": "Existing clients must refresh; authorized shared-secret inbounds remain included and cannot be individually revoked. Other legacy subscriptions may retain the previous common credential.",
         "parameters": [
           {
             "name": "id",

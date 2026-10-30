@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "星枢 · VPS 多机管理 API",
-    "version": "0.23.8",
+    "version": "0.23.9",
     "description": "Self-workspace API for host agents, proxy protocols, user quotas and client subscriptions. Bearer administrator token or expiring scoped xs_ API key. No arbitrary shell; privileged gateway work and API key administration remain root-only."
   },
   "servers": [
@@ -6680,7 +6680,7 @@
                   "all_nodes": {
                     "type": "boolean",
                     "default": true,
-                    "description": "Inherit all currently authorized independently authenticated inbounds. False with an empty service_ids list denies all."
+                    "description": "Inherit currently authorized managed and shared SS/Snell inbounds. Shared credentials cannot be individually revoked; false with an empty service_ids list denies all."
                   },
                   "service_ids": {
                     "type": "array",
@@ -6770,7 +6770,7 @@
                   "all_nodes": {
                     "type": "boolean",
                     "default": true,
-                    "description": "Inherit all currently authorized independently authenticated inbounds. False with an empty service_ids list denies all."
+                    "description": "Inherit currently authorized managed and shared SS/Snell inbounds. Shared credentials cannot be individually revoked; false with an empty service_ids list denies all."
                   },
                   "service_ids": {
                     "type": "array",
@@ -7334,7 +7334,7 @@
       "post": {
         "operationId": "migrateSubscriptionIdentity",
         "summary": "Migrate a legacy user subscription to an independent credential",
-        "description": "Existing clients must refresh; shared-secret inbounds are excluded. Other legacy subscriptions may retain the previous common credential.",
+        "description": "Existing clients must refresh; authorized shared-secret inbounds remain included and cannot be individually revoked. Other legacy subscriptions may retain the previous common credential.",
         "parameters": [
           {
             "name": "id",

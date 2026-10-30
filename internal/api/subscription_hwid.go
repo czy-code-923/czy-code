@@ -89,11 +89,11 @@ func (s *Server) subscriptionDevice(w http.ResponseWriter, r *http.Request, user
 			return "", problem{409, "客户端设备登记容量已满，请联系管理员清理旧设备"}
 		}
 		var managed bool
-		if err = tx.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM user_group_services gs JOIN user_group_members gm USING(tenant_id,group_id) JOIN live_services l ON(l.tenant_id,l.id)=(gs.tenant_id,gs.service_id) WHERE gm.tenant_id=$1 AND gm.user_id=$2 AND l.managed_users AND l.delete_requested_at IS NULL)`, tenant, user).Scan(&managed); err != nil {
+		if err = tx.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM user_group_services gs JOIN user_group_members gm USING(tenant_id,group_id) JOIN live_services l ON(l.tenant_id,l.id)=(gs.tenant_id,gs.service_id) WHERE gm.tenant_id=$1 AND gm.user_id=$2 AND (l.managed_users OR l.kind IN ('snell','shadowsocks')) AND l.delete_requested_at IS NULL)`, tenant, user).Scan(&managed); err != nil {
 			return "", err
 		}
 		if !managed {
-			return "", problem{422, "当前用户未获授权独立身份协议；SS/Snell 共享密钥不能执行逐用户设备限制"}
+			return "", problem{422, "当前用户没有授权的代理入口"}
 		}
 		id = ID()
 		raw, _ := json.Marshal(live.Account{Name: id, UUID: live.UUID(), Password: live.Secret()})
@@ -129,6 +129,6 @@ func (s *Server) subscriptionDevice(w http.ResponseWriter, r *http.Request, user
 // an online Agent is still applying newly granted user/device credentials.
 func (s *Server) subscriptionPending(ctx context.Context, user, device string) (int, error) {
 	var count int
-	err := s.DB.QueryRow(ctx, `SELECT count(*) FROM live_services l JOIN hosts h ON(l.tenant_id,l.host_id)=(h.tenant_id,h.id) WHERE l.tenant_id=$1 AND l.enabled AND l.delete_requested_at IS NULL AND h.last_seen>now()-interval '90 seconds' AND l.state<>'failed' AND (l.state='pending' OR l.version<>l.reported_version) AND EXISTS(SELECT 1 FROM user_group_services gs JOIN user_group_members gm USING(tenant_id,group_id) WHERE gm.tenant_id=l.tenant_id AND gm.user_id=$2 AND gs.service_id=l.id) AND ($3='' OR (l.managed_users AND EXISTS(SELECT 1 FROM user_devices d WHERE d.tenant_id=l.tenant_id AND d.id=$3 AND (d.all_nodes OR d.service_ids ? l.id))))`, tenant, user, device).Scan(&count)
+	err := s.DB.QueryRow(ctx, `SELECT count(*) FROM live_services l JOIN hosts h ON(l.tenant_id,l.host_id)=(h.tenant_id,h.id) WHERE l.tenant_id=$1 AND l.enabled AND l.delete_requested_at IS NULL AND h.last_seen>now()-interval '90 seconds' AND l.state<>'failed' AND (l.state='pending' OR l.version<>l.reported_version) AND EXISTS(SELECT 1 FROM user_group_services gs JOIN user_group_members gm USING(tenant_id,group_id) WHERE gm.tenant_id=l.tenant_id AND gm.user_id=$2 AND gs.service_id=l.id) AND ($3='' OR ((l.managed_users OR l.kind IN ('snell','shadowsocks')) AND EXISTS(SELECT 1 FROM user_devices d WHERE d.tenant_id=l.tenant_id AND d.id=$3 AND (d.all_nodes OR d.service_ids ? l.id))))`, tenant, user, device).Scan(&count)
 	return count, err
 }

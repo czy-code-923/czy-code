@@ -142,11 +142,11 @@ func (s *Server) devices(w http.ResponseWriter, r *http.Request) error {
 			return bad("new devices start enabled; disable an existing device instead")
 		}
 		var managed bool
-		if e = tx.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM user_group_services gs JOIN user_group_members gm USING(tenant_id,group_id) JOIN live_services l ON(l.tenant_id,l.id)=(gs.tenant_id,gs.service_id) WHERE gm.tenant_id=$1 AND gm.user_id=$2 AND l.managed_users AND l.delete_requested_at IS NULL)`, tenant, user).Scan(&managed); e != nil {
+		if e = tx.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM user_group_services gs JOIN user_group_members gm USING(tenant_id,group_id) JOIN live_services l ON(l.tenant_id,l.id)=(gs.tenant_id,gs.service_id) WHERE gm.tenant_id=$1 AND gm.user_id=$2 AND (l.managed_users OR l.kind IN ('snell','shadowsocks')) AND l.delete_requested_at IS NULL)`, tenant, user).Scan(&managed); e != nil {
 			return e
 		}
 		if !managed {
-			return bad("请先授权支持独立身份的协议入站；SS/Snell 共享密钥不能提供用户设备限制")
+			return bad("请先授权代理入站；共享密钥无法单独撤销设备")
 		}
 		var active, total int
 		if e = tx.QueryRow(r.Context(), `SELECT count(*) FILTER(WHERE enabled),count(*) FROM user_devices WHERE tenant_id=$1 AND user_id=$2`, tenant, user).Scan(&active, &total); e != nil {
@@ -257,7 +257,7 @@ func (s *Server) devices(w http.ResponseWriter, r *http.Request) error {
 	if fresh {
 		status = 201
 	}
-	send(w, status, map[string]any{"id": id, "url": url, "enforcement": "credential_slots", "note": "设备专属凭据可单独撤销；客户端名称/请求头为自报信息。同一凭据被复制时无法可靠区分物理设备。"})
+	send(w, status, map[string]any{"id": id, "url": url, "enforcement": "credential_slots", "note": "独立身份可单独撤销；共享密钥不能单独撤销或按设备计量。客户端标识为自报。"})
 	return nil
 }
 
@@ -334,11 +334,11 @@ func validateDeviceServices(ctx context.Context, tx pgx.Tx, user string, all boo
 		}
 		seen[id] = true
 		var ok bool
-		if e := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM user_group_services gs JOIN user_group_members gm USING(tenant_id,group_id) JOIN live_services l ON(l.tenant_id,l.id)=(gs.tenant_id,gs.service_id) WHERE gm.tenant_id=$1 AND gm.user_id=$2 AND l.id=$3 AND l.managed_users AND l.delete_requested_at IS NULL)`, tenant, user, id).Scan(&ok); e != nil {
+		if e := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM user_group_services gs JOIN user_group_members gm USING(tenant_id,group_id) JOIN live_services l ON(l.tenant_id,l.id)=(gs.tenant_id,gs.service_id) WHERE gm.tenant_id=$1 AND gm.user_id=$2 AND l.id=$3 AND (l.managed_users OR l.kind IN ('snell','shadowsocks')) AND l.delete_requested_at IS NULL)`, tenant, user, id).Scan(&ok); e != nil {
 			return e
 		}
 		if !ok {
-			return bad("设备只能选择用户当前已获授权的独立身份入站")
+			return bad("设备只能选择用户当前已获授权的代理入站")
 		}
 	}
 	return nil
