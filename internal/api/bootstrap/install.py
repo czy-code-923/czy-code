@@ -2,6 +2,7 @@
 import hashlib,io,json,os,platform,re,shutil,subprocess,sys,tempfile,time,urllib.error,urllib.parse,urllib.request,zipfile
 from pathlib import Path
 rollback={'dirs':[],'unit':False,'complete':False}
+class ExistingAgentFound(ValueError):pass
 
 def run(*args):return subprocess.run(args,check=True,stdout=subprocess.DEVNULL)
 def main():
@@ -12,7 +13,7 @@ def main():
     arch={'x86_64':'amd64','amd64':'amd64','aarch64':'arm64','arm64':'arm64'}.get(platform.machine().lower())
     if not arch:raise ValueError('Supported CPU architectures: amd64 and arm64')
     unit=Path('/etc/systemd/system/harbor-agent.service');root=Path('/opt/harbor-agent');env=Path('/etc/harbor-agent/agent.env')
-    if unit.exists() or root.exists() or env.exists() or Path('/etc/harbor-agent-cleanup.json').exists():raise ValueError('Existing Agent found. Installation refused; preserve it and use deliberate upgrade/reconnect.')
+    if unit.exists() or root.exists() or env.exists() or Path('/etc/harbor-agent-cleanup.json').exists():raise ExistingAgentFound('Existing Agent found; this command is only for a new installation.')
     class NoRedirect(urllib.request.HTTPRedirectHandler):
         def redirect_request(self,*args):raise ValueError('Unexpected redirect refused')
     opener=urllib.request.build_opener(NoRedirect())
@@ -104,8 +105,13 @@ def rollback_install():
 
 if __name__=='__main__':
     try:main()
+    except ExistingAgentFound as error:
+        print(str(error),file=sys.stderr)
+        print('Existing Agent, identity and configuration were preserved. In the panel use Connect / Recover -> Repair control address or Upgrade Agent. Do not delete the Agent or regenerate new-install commands for this machine.',file=sys.stderr)
+        sys.exit(2)
     except Exception as error:
+        changed=bool(rollback['dirs'] or rollback['unit'])
         rollback_install()
         print('Installation failed: '+str(error),file=sys.stderr)
-        print('New installation files were rolled back. Generate a new command in the panel and retry. Pre-existing Agents are never overwritten.',file=sys.stderr)
+        print(('New installation files were rolled back.' if changed else 'No installation files were changed.')+' Fix the reported error before retrying a fresh installation. Existing Agents are never overwritten.',file=sys.stderr)
         sys.exit(1)

@@ -30,3 +30,15 @@ it('offers repair and versioned Agent upgrade without rotating host credentials'
  expect(api.mock.calls.every(([p])=>!p.includes('enrollment'))).toBe(true)
 })
 
+
+it('keeps fresh-machine replacement behind an explicit target confirmation',async()=>{
+ const api=vi.fn(async(p:string,m='GET')=>p==='hosts'?[{id:'b',online:true}]:m==='POST'?{command:'new-machine-only',expires_at:new Date().toISOString()}:{state:'waiting'})
+ wrapper=mount(HostConnect,{props:{host:{id:'b',name:'Existing',agent_version:'0.23.8'},api}});await flushPromises()
+ expect(wrapper.text()).not.toContain('生成安装命令（更换或重装）')
+ const button=wrapper.findAll('button').find(b=>b.text()==='生成新机器替换命令')!
+ expect(button.attributes('disabled')).toBeDefined()
+ await wrapper.get('input[type="checkbox"]').setValue(true)
+ expect(button.attributes('disabled')).toBeUndefined()
+ await button.trigger('click');await flushPromises()
+ expect(api).toHaveBeenCalledWith('hosts/b/enrollment','POST',expect.anything())
+})
