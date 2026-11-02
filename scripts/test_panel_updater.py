@@ -6,6 +6,16 @@ if os.name=='nt':sys.modules.setdefault('fcntl',types.SimpleNamespace())
 spec=importlib.util.spec_from_file_location('panel_updater',Path(__file__).with_name('panel-updater.py'));u=importlib.util.module_from_spec(spec);spec.loader.exec_module(u)
 
 class UpdateTests(unittest.TestCase):
+    def test_database_headroom_only_increases_a_small_cap(self):
+        self.assertEqual(u.memory_target(2<<30),512<<20)
+        self.assertEqual(u.memory_target(1<<30),384<<20)
+        self.assertEqual(u.memory_target(512<<20),256<<20)
+        for cap,calls in ((192,1),(768,0),(0,0)):
+            with self.subTest(cap=cap),patch.object(u.Path,'read_text',return_value='MemTotal: 2048000 kB\n'),patch.object(u,'run') as run:
+                report=u.database_headroom({'container':'fixture','database_memory_limit':cap<<20,'database_memory_swap':-1})
+                self.assertEqual(run.call_count,calls)
+                self.assertEqual(report['limit_bytes'],(512 if cap==192 else cap)<<20)
+                if calls:self.assertIn('-1',run.call_args.args)
     def test_archive_rejects_traversal_and_symlinks(self):
         for name,mode in [('../escape',0),('/absolute',0),('bin/link',0o120777<<16),('bin\\escape',0)]:
             with self.subTest(name=name),tempfile.TemporaryDirectory() as d:

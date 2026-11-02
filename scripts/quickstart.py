@@ -23,10 +23,12 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--prefix',default=str(Path(os.environ.get('ProgramData','C:/ProgramData'))/'StarhubControl') if os.name=='nt' else '/opt/starhub-control')
     parser.add_argument('--port',type=int,default=18080);parser.add_argument('--db-port',type=int,default=15432)
+    parser.add_argument('--db-memory-mb',type=int,default=512,help='PostgreSQL hard cap in MiB, 256-65536; actual use grows on demand')
     parser.add_argument('--public',action='store_true',help='Explicitly allow authenticated web UI on all interfaces; HTTP has no transport encryption')
     parser.add_argument('--origin',help='Configured http(s)://IP:port or domain; DNS/TLS reverse proxy is configured separately')
     parser.add_argument('--foreground',action='store_true',help='Do not install service/task; suitable for OpenRC or supervised manual operation')
     args=parser.parse_args()
+    if not 256<=args.db_memory_mb<=65536:raise ValueError('Database memory cap must be 256-65536 MiB')
     from urllib.parse import urlsplit
     origin=(args.origin or 'http://'+(detected_ip() if args.public else '127.0.0.1')+':'+str(args.port)).rstrip('/')
     u=urlsplit(origin)
@@ -68,7 +70,7 @@ def main():
     pg=root/'postgres.env';pg.write_text('POSTGRES_DB=harbor\nPOSTGRES_USER=harbor\nPOSTGRES_PASSWORD='+password+'\n',encoding='utf-8');pg.chmod(0o600)
     env={'ADMIN_TOKEN':admin,'MASTER_KEY':master,'DATABASE_URL':f'postgres://harbor:{password}@127.0.0.1:{args.db_port}/harbor?sslmode=disable','HTTP_ADDR':'127.0.0.1:8080','SHARE_ADDR':'127.0.0.1:8091','WEB_ADDR':(public_bind() if args.public else '127.0.0.1')+':'+str(args.port),'WEB_DIR':str(root/'web'),'PUBLIC_ORIGIN':origin,'AGENT_RELEASE_DIR':str(agent_dir),'GOMEMLIMIT':'128MiB','GOMAXPROCS':'1'}
     private=root/'control.env';private.write_text(''.join(k+'='+v+'\n' for k,v in env.items()),encoding='utf-8');private.chmod(0o600)
-    run('docker','run','--detach','--name',container,'--restart','unless-stopped','--memory','384m','--pids-limit','100','--publish',f'127.0.0.1:{args.db_port}:5432','--env-file',str(pg),'--volume','starhub-control-pgdata:/var/lib/postgresql/data','postgres:17-alpine','postgres','-c','shared_buffers=64MB','-c','max_connections=30','-c','work_mem=2MB',stdout=subprocess.DEVNULL)
+    run('docker','run','--detach','--name',container,'--restart','unless-stopped','--memory',str(args.db_memory_mb)+'m','--pids-limit','100','--publish',f'127.0.0.1:{args.db_port}:5432','--env-file',str(pg),'--volume','starhub-control-pgdata:/var/lib/postgresql/data','postgres:17-alpine','postgres','-c','shared_buffers=64MB','-c','max_connections=30','-c','work_mem=2MB',stdout=subprocess.DEVNULL)
     for _ in range(60):
         if subprocess.run(['docker','exec',container,'pg_isready','-U','harbor','-d','harbor'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode==0:break
         time.sleep(1)

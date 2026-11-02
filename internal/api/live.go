@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"vps-control/internal/controlorigin"
 	"vps-control/internal/live"
 )
 
@@ -52,17 +53,25 @@ func (s *Server) site(w http.ResponseWriter, r *http.Request) error {
 		if e = s.DB.QueryRow(r.Context(), `SELECT ip_origin,share_domain,share_https FROM site_settings WHERE tenant_id=$1`, tenant).Scan(&ipOrigin, &shareDomain, &shareHTTPS); e != nil && e != pgx.ErrNoRows {
 			return e
 		}
-		send(w, 200, map[string]any{"share_gateway_domain": shareGatewayDomain, "share_gateway_state": shareGatewayState, "share_gateway_checked_at": shareGatewayChecked, "ip_origin": ipOrigin, "share_domain": shareDomain, "share_https": shareHTTPS, "title": title, "api_origins": origins, "domain": domain, "https": https, "gateway_domain": actualDomain, "gateway_https": actualHTTPS, "gateway_state": state, "gateway_checked_at": checked, "live_enabled": len(s.MasterKey) == 32})
+		var agentOrigins json.RawMessage
+		if e = s.DB.QueryRow(r.Context(), `SELECT agent_origins FROM site_settings WHERE tenant_id=$1`, tenant).Scan(&agentOrigins); e != nil && e != pgx.ErrNoRows {
+			return e
+		}
+		if len(agentOrigins) == 0 {
+			agentOrigins = json.RawMessage(`[]`)
+		}
+		send(w, 200, map[string]any{"agent_origins": agentOrigins, "share_gateway_domain": shareGatewayDomain, "share_gateway_state": shareGatewayState, "share_gateway_checked_at": shareGatewayChecked, "ip_origin": ipOrigin, "share_domain": shareDomain, "share_https": shareHTTPS, "title": title, "api_origins": origins, "domain": domain, "https": https, "gateway_domain": actualDomain, "gateway_https": actualHTTPS, "gateway_state": state, "gateway_checked_at": checked, "live_enabled": len(s.MasterKey) == 32})
 		return nil
 	}
 	var b struct {
-		Domain      string    `json:"domain"`
-		IPOrigin    *string   `json:"ip_origin"`
-		ShareDomain *string   `json:"share_domain"`
-		ShareHTTPS  *bool     `json:"share_https"`
-		HTTPS       *bool     `json:"https"`
-		Title       *string   `json:"title"`
-		Origins     *[]string `json:"api_origins"`
+		AgentOrigins *[]string `json:"agent_origins"`
+		Domain       string    `json:"domain"`
+		IPOrigin     *string   `json:"ip_origin"`
+		ShareDomain  *string   `json:"share_domain"`
+		ShareHTTPS   *bool     `json:"share_https"`
+		HTTPS        *bool     `json:"https"`
+		Title        *string   `json:"title"`
+		Origins      *[]string `json:"api_origins"`
 	}
 	if e := decode(w, r, &b); e != nil {
 		return e
@@ -143,6 +152,24 @@ func (s *Server) site(w http.ResponseWriter, r *http.Request) error {
 		}
 		b.Origins = &values
 	}
+	if b.AgentOrigins != nil {
+		if len(*b.AgentOrigins) > 4 {
+			return bad("at most four Agent control origins")
+		}
+		values := []string{}
+		seen := map[string]bool{}
+		for _, raw := range *b.AgentOrigins {
+			u, e := controlorigin.Normalize(raw, false)
+			if e != nil {
+				return bad(e.Error())
+			}
+			if !seen[u] {
+				values = append(values, u)
+				seen[u] = true
+			}
+		}
+		b.AgentOrigins = &values
+	}
 	tx, e := s.DB.Begin(r.Context())
 	if e != nil {
 		return e
@@ -150,6 +177,12 @@ func (s *Server) site(w http.ResponseWriter, r *http.Request) error {
 	defer tx.Rollback(r.Context())
 	if _, e = tx.Exec(r.Context(), "INSERT INTO site_settings(tenant_id,domain,https,gateway_state) VALUES($1,$2,$3,'pending') ON CONFLICT(tenant_id) DO UPDATE SET gateway_state=CASE WHEN site_settings.domain IS DISTINCT FROM excluded.domain OR site_settings.https IS DISTINCT FROM excluded.https THEN 'pending' ELSE site_settings.gateway_state END,domain=excluded.domain,https=excluded.https,updated_at=now()", tenant, b.Domain, *b.HTTPS); e != nil {
 		return e
+	}
+	if b.AgentOrigins != nil {
+		raw, _ := json.Marshal(*b.AgentOrigins)
+		if _, e = tx.Exec(r.Context(), `UPDATE site_settings SET agent_origins=$2 WHERE tenant_id=$1`, tenant, raw); e != nil {
+			return e
+		}
 	}
 	if b.Title != nil {
 		if _, e = tx.Exec(r.Context(), `UPDATE site_settings SET title=$2 WHERE tenant_id=$1`, tenant, *b.Title); e != nil {

@@ -19,4 +19,14 @@ it('checks an existing offline host without generating a replacement credential'
  expect(api).toHaveBeenCalledWith('hosts');expect(api).toHaveBeenCalledTimes(1);expect(wrapper.text()).toContain('主机暂时离线');expect(wrapper.text()).toContain('systemctl restart harbor-agent.service')
  await wrapper.findAll('button').find(b=>b.text()==='检查连接')!.trigger('click');await flushPromises();expect(api).toHaveBeenCalledTimes(2)
 })
+it('offers repair and versioned Agent upgrade without rotating host credentials',async()=>{
+ const api=vi.fn(async(p:string)=>p==='hosts'?[{id:'b',online:false}]:{command:'pinned-identity-preserving-command'})
+ wrapper=mount(HostConnect,{props:{host:{id:'b',name:'Existing',agent_version:'0.23.9'},api}});await flushPromises()
+ await wrapper.findAll('button').find(b=>b.text()==='生成控制端地址修复命令')!.trigger('click');await flushPromises()
+ expect(api).toHaveBeenCalledWith('hosts/b/repair-command')
+ expect(wrapper.get('textarea').element.value).toBe('pinned-identity-preserving-command')
+ await wrapper.findAll('button').find(b=>b.text()==='生成 Agent 升级命令')!.trigger('click');await flushPromises()
+ expect(api).toHaveBeenCalledWith('hosts/b/repair-command?upgrade=1')
+ expect(api.mock.calls.every(([p])=>!p.includes('enrollment'))).toBe(true)
+})
 

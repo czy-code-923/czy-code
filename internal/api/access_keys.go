@@ -89,7 +89,7 @@ func requiredScopes(r *http.Request) []string {
 		if write && (r.Method == "DELETE" || len(a) > 2 && a[2] == "retirement") {
 			return []string{"hosts:uninstall"}
 		}
-		if len(a) > 2 && (a[2] == "enrollment" || a[2] == "rotate-agent-token") {
+		if len(a) > 2 && (a[2] == "enrollment" || a[2] == "rotate-agent-token" || a[2] == "repair-command") {
 			return []string{"hosts:enroll"}
 		}
 		if len(a) > 2 && (a[2] == "kernels" || a[2] == "kernel-config") {

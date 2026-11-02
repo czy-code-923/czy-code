@@ -3,7 +3,7 @@ services:
   db:
     image: postgres:17-alpine
     command: ["postgres", "-c", "shared_buffers=64MB", "-c", "max_connections=30", "-c", "work_mem=2MB", "-c", "maintenance_work_mem=32MB"]
-    mem_limit: 384m
+    mem_limit: ${POSTGRES_MEMORY_LIMIT:-512m}
     pids_limit: 100
     environment:
       POSTGRES_DB: harbor

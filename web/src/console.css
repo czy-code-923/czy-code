@@ -13,3 +13,23 @@
 @media(max-width:760px){.console-layout{display:block}.console-sidebar{width:100%;min-width:0;height:auto;position:static;padding:18px 15px 13px;border-right:0;border-bottom:1px solid var(--line)}.console-brand{padding:0 4px 16px;flex-wrap:nowrap;gap:8px;font-size:21px}.console-brand small{width:auto;padding-left:10px;font-size:8px}.console-brand b{font-size:26px}.console-sidebar .nav-caption{display:none}.console-sidebar nav{display:grid;grid-template-columns:repeat(4,1fr);padding:0;gap:5px;overflow:visible}.console-sidebar nav button{width:100%;padding:10px 6px;justify-content:center;gap:5px;font-size:11px}.console-sidebar nav button .step-number{font-size:9px}.console-sidebar nav button small{display:none}.sidebar-bottom{display:flex;align-items:center;padding:12px 0 0;gap:10px}.sidebar-bottom button{width:auto;min-height:30px;font-size:10px;padding:5px 10px}.sidebar-bottom p{margin:0;font-size:9px}.sidebar-bottom>small{display:none}.console-header{height:58px;padding:0 18px;font-size:10px}.console-header>div{gap:10px}.theme-picker{font-size:0;gap:0}.console-content{padding:23px 16px}.console-title{margin-bottom:22px;gap:10px}.console-title h1{font-size:26px}.control-domain{font-size:9px;padding:5px 9px}.console-root .publish-card{padding:19px}.console-root .section-heading{align-items:flex-start;flex-wrap:wrap;gap:10px}.console-root .section-heading>.primary{width:100%;justify-content:center}.console-root .table-scroll{max-width:100%;margin-left:0;margin-right:0}.console-root .fields{grid-template-columns:1fr}.console-root .text-button{font-size:12px}.console-footer{padding:17px;font-size:9px;gap:12px}.console-root .modal-backdrop{padding:10px}.console-root .modal{max-height:95dvh}.console-root td{white-space:normal;min-width:100px}.console-root td.row-actions{min-width:160px}}
 
 .console-home{margin:0 12px 20px;justify-content:flex-start}.console-home.active{border-color:var(--accent);color:var(--accent)}@media(max-width:760px){.console-home{position:absolute;right:18px;top:19px;min-height:30px!important;padding:4px 10px!important;margin:0;font-size:10px!important}.console-sidebar{position:relative}}
+
+/* Shared sizing keeps forms, long origins and update diagnostics within the viewport. */
+.console-root :is(.server-card,.setting-row>div,.section-heading>div,.fields>*,.share-box){min-width:0;overflow-wrap:anywhere}
+.host-control-origin{display:block;margin:9px 0;font-family:ui-monospace,monospace;overflow-wrap:anywhere}
+.resource-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;padding:20px;margin:20px 0;border:1px solid var(--line);border-radius:12px;background:var(--panel-soft)}
+.resource-summary small{display:block;color:var(--muted)}.resource-summary strong{display:block;margin-top:6px;font-size:21px}.resource-summary p{grid-column:1/-1;color:var(--muted);font-size:12px;margin:0}
+.console-root .setting-row{flex-wrap:wrap}.console-root .modal-footer{flex-wrap:wrap}.console-root .row-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+@media(max-width:760px){
+ .console-sidebar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:0 8px}
+ .console-brand{grid-column:1;min-width:0;flex-wrap:wrap;letter-spacing:1px}.console-brand small{display:none}
+ .console-home{position:static;grid-column:2;grid-row:1;align-self:start;margin:0;min-height:44px!important}
+ .console-sidebar nav{grid-column:1/-1;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+ .console-sidebar nav button{min-height:44px}.sidebar-bottom{grid-column:1/-1;flex-wrap:wrap}.sidebar-bottom button{min-height:44px}
+ .console-title{flex-wrap:wrap}.control-domain{max-width:100%;overflow-wrap:anywhere}.console-footer{flex-wrap:wrap}
+ .console-root :is(input:not([type=checkbox]),select,textarea){font-size:16px!important}
+ .console-root :is(.primary,.secondary,.text-button){min-height:44px}
+ .console-root .subnav{flex-wrap:nowrap;overflow-x:auto;max-width:100%;padding-bottom:6px;scrollbar-width:thin}.console-root .subnav button{flex:none}
+ .console-root .install-command{font-size:12px!important;white-space:pre-wrap}
+ .resource-summary{padding:15px;gap:12px}.resource-summary strong{font-size:18px}
+}

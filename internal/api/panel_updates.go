@@ -30,7 +30,14 @@ func (s *Server) panelUpdates(w http.ResponseWriter, r *http.Request) error {
 		if err := s.DB.QueryRow(r.Context(), `SELECT COALESCE(jsonb_agg(x),'[]') FROM(SELECT id,from_version,target_version,state,detail,created_at,updated_at FROM panel_updates WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT 20)x`, tenant).Scan(&rows); err != nil {
 			return err
 		}
-		send(w, 200, map[string]any{"helper_ready": s.panelUpdaterReady(r), "current": buildinfo.Version, "items": rows})
+		var resources json.RawMessage
+		if err := s.DB.QueryRow(r.Context(), `SELECT database_resources FROM panel_updater WHERE tenant_id=$1`, tenant).Scan(&resources); err != nil && err != pgx.ErrNoRows {
+			return err
+		}
+		if len(resources) == 0 {
+			resources = json.RawMessage(`{}`)
+		}
+		send(w, 200, map[string]any{"database_resources": resources, "helper_ready": s.panelUpdaterReady(r), "current": buildinfo.Version, "items": rows})
 		return nil
 	}
 	var b struct {
@@ -99,8 +106,9 @@ func (s *Server) panelWorker(w http.ResponseWriter, r *http.Request) error {
 	switch r.PathValue("action") {
 	case "heartbeat":
 		var b struct {
-			Layout   string `json:"layout"`
-			Platform string `json:"platform"`
+			DatabaseResources json.RawMessage `json:"database_resources"`
+			Layout            string          `json:"layout"`
+			Platform          string          `json:"platform"`
 		}
 		if err := decode(w, r, &b); err != nil {
 			return err
@@ -108,7 +116,13 @@ func (s *Server) panelWorker(w http.ResponseWriter, r *http.Request) error {
 		if !slices.Contains([]string{"legacy", "quickstart"}, b.Layout) || !slices.Contains([]string{"linux-amd64", "linux-arm64"}, b.Platform) {
 			return bad("unsupported updater installation")
 		}
-		if _, err := s.DB.Exec(r.Context(), `INSERT INTO panel_updater(tenant_id,layout,platform) VALUES($1,$2,$3) ON CONFLICT(tenant_id) DO UPDATE SET layout=excluded.layout,platform=excluded.platform,last_seen=now()`, tenant, b.Layout, b.Platform); err != nil {
+		if len(b.DatabaseResources) == 0 {
+			b.DatabaseResources = json.RawMessage(`{}`)
+		}
+		if len(b.DatabaseResources) > 2048 || b.DatabaseResources[0] != '{' {
+			return bad("invalid database resource report")
+		}
+		if _, err := s.DB.Exec(r.Context(), `INSERT INTO panel_updater(tenant_id,layout,platform,database_resources) VALUES($1,$2,$3,$4) ON CONFLICT(tenant_id) DO UPDATE SET layout=excluded.layout,platform=excluded.platform,database_resources=excluded.database_resources,last_seen=now()`, tenant, b.Layout, b.Platform, b.DatabaseResources); err != nil {
 			return err
 		}
 		send(w, 200, map[string]bool{"saved": true})

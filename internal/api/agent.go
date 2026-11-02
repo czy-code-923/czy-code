@@ -7,15 +7,17 @@ import (
 	"net/http"
 	"net/netip"
 	"regexp"
+	"vps-control/internal/controlorigin"
 )
 
 func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request, host string) error {
 	var b struct {
-		Cleanup   bool     `json:"cleanup_capable"`
-		Mode      string   `json:"mode"`
-		Version   string   `json:"version"`
-		Platform  string   `json:"platform"`
-		Addresses []string `json:"addresses"`
+		ControlOrigin string   `json:"control_origin"`
+		Cleanup       bool     `json:"cleanup_capable"`
+		Mode          string   `json:"mode"`
+		Version       string   `json:"version"`
+		Platform      string   `json:"platform"`
+		Addresses     []string `json:"addresses"`
 	}
 	if e := decode(w, r, &b); e != nil {
 		return e
@@ -53,8 +55,13 @@ func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request, host string) 
 			primary = a.String()
 		}
 	}
+	if b.ControlOrigin != "" {
+		if _, e := controlorigin.Normalize(b.ControlOrigin, true); e != nil {
+			return bad("invalid reported control origin")
+		}
+	}
 	raw, _ := json.Marshal(addresses)
-	_, e := s.DB.Exec(r.Context(), "UPDATE hosts SET last_seen=now(),cleanup_capable=$8,agent_mode=$3,agent_version=CASE WHEN $4<>'' THEN $4 ELSE agent_version END,platform=CASE WHEN $5<>'' THEN $5 ELSE platform END,reported_addresses=$6,address=CASE WHEN address='outbound-agent' AND $7<>'' THEN $7 ELSE address END WHERE tenant_id=$1 AND id=$2", tenant, host, b.Mode, b.Version, b.Platform, raw, primary, b.Cleanup)
+	_, e := s.DB.Exec(r.Context(), "UPDATE hosts SET last_seen=now(),cleanup_capable=$8,agent_mode=$3,agent_version=CASE WHEN $4<>'' THEN $4 ELSE agent_version END,control_origin=CASE WHEN $9<>'' THEN $9 ELSE control_origin END,platform=CASE WHEN $5<>'' THEN $5 ELSE platform END,reported_addresses=$6,address=CASE WHEN address='outbound-agent' AND $7<>'' THEN $7 ELSE address END WHERE tenant_id=$1 AND id=$2", tenant, host, b.Mode, b.Version, b.Platform, raw, primary, b.Cleanup, b.ControlOrigin)
 	if e != nil {
 		return e
 	}
@@ -63,7 +70,11 @@ func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request, host string) 
 	if e = s.DB.QueryRow(r.Context(), `SELECT retire_id,retire_state FROM hosts WHERE tenant_id=$1 AND id=$2`, tenant, host).Scan(&rid, &state); e != nil {
 		return e
 	}
-	send(w, 200, map[string]any{"mode": b.Mode, "retire_id": rid, "retire_state": state})
+	origins, e := s.agentOrigins(r)
+	if e != nil {
+		return e
+	}
+	send(w, 200, map[string]any{"control_origins": origins, "mode": b.Mode, "retire_id": rid, "retire_state": state})
 	return nil
 }
 func (s *Server) claim(w http.ResponseWriter, r *http.Request, host string) error {

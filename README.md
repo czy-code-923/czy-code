@@ -1,8 +1,8 @@
-# 星枢 · VPS 多机管理 0.23.9
+# 星枢 · VPS 多机管理 0.23.10
 
-本版修复用户订阅包含已授权的 SS / Snell 共享节点，兼容客户端刷新现有订阅即可获取。共享密钥不能对单个用户撤销、限制设备或计量。[0.23.9 发布说明](docs/RELEASE-v0239.md)。
+本版增加 Agent 控制地址安全迁移、保留凭据的修复 / 升级命令、数据库内存扩容与状态显示，并改善手机导航和弹窗布局。[0.23.10 发布说明](docs/RELEASE-v02310.md)。
 
-此前新增后台版本检查与 Linux 自动更新：校验正式发布包、停写备份、失败回滚和中断恢复；新订阅使用独立 UUID/密码，旧订阅可手动迁移。[0.23.9 发布说明](docs/RELEASE-v0239.md)。
+保留已有协议、用户权限、流量计量、客户端策略与订阅功能。更新使用正式发布包、校验、停写备份和失败回退；控制面升级与远端 Agent 升级分开处理。
 
 已修正 Android NekoBox / sing-box / Hiddify 订阅适配与规则集出站引用；增加受权限保护的订阅正文、节点与二维码 API；加固安装令牌；增加可选 SS 2022 / Snell 独立身份计量、证书编辑删除、公网 HTTPS 反代及流量查看。[0.23 功能与兼容边界](docs/WORKFLOW-v023.md)。
 
@@ -17,18 +17,18 @@
 Linux（Debian 11+ / Ubuntu 22.04+、Fedora、Rocky / Alma / RHEL 8+ / CentOS Stream、openSUSE / SLES 的 systemd 系统；需 root 或 sudo）：
 
 ```bash
-sh -c 'set -eu; S=; if [ "$(id -u)" != 0 ]; then command -v sudo >/dev/null || { echo "Run as root"; exit 1; }; S=sudo; fi; if ! command -v curl >/dev/null; then if command -v apt-get >/dev/null; then $S apt-get update; $S apt-get install -y curl ca-certificates; elif command -v dnf >/dev/null; then $S dnf install -y curl ca-certificates; elif command -v zypper >/dev/null; then $S zypper --non-interactive install curl ca-certificates; elif command -v apk >/dev/null; then $S apk add --no-cache curl ca-certificates; else echo "Install curl first on this OS"; exit 1; fi; fi; F=$(mktemp); curl --proto "=https" --tlsv1.2 -fL https://github.com/czy-code-923/czy-code/releases/download/v0.23.9-distribution/install-starhub.sh -o "$F"; $S sh "$F" --public; rm -f "$F"'
+sh -c 'set -eu; S=; if [ "$(id -u)" != 0 ]; then command -v sudo >/dev/null || { echo "Run as root"; exit 1; }; S=sudo; fi; if ! command -v curl >/dev/null; then if command -v apt-get >/dev/null; then $S apt-get update; $S apt-get install -y curl ca-certificates; elif command -v dnf >/dev/null; then $S dnf install -y curl ca-certificates; elif command -v zypper >/dev/null; then $S zypper --non-interactive install curl ca-certificates; elif command -v apk >/dev/null; then $S apk add --no-cache curl ca-certificates; else echo "Install curl first on this OS"; exit 1; fi; fi; F=$(mktemp); curl --proto "=https" --tlsv1.2 -fL https://github.com/czy-code-923/czy-code/releases/download/v0.23.10-distribution/install-starhub.sh -o "$F"; $S sh "$F" --public; rm -f "$F"'
 ```
 
 Windows 10/11 **管理员 PowerShell**：自动寻找或安装 Python、WinGet、Docker Desktop / WSL 组件，启动并等待 Linux 引擎。首次启用 WSL 需要重启时会提示，重启后重跑同一命令；不会自动重启、切换已有 Windows 容器或跳过 Docker 首次许可 / 虚拟化要求。Windows Server 使用 Linux 虚拟机。
 
 ```powershell
-Invoke-WebRequest https://github.com/czy-code-923/czy-code/releases/download/v0.23.9-distribution/install-starhub.ps1 -OutFile "$env:TEMP/install-starhub.ps1"; & "$env:TEMP/install-starhub.ps1" -Public
+Invoke-WebRequest https://github.com/czy-code-923/czy-code/releases/download/v0.23.10-distribution/install-starhub.ps1 -OutFile "$env:TEMP/install-starhub.ps1"; & "$env:TEMP/install-starhub.ps1" -Public
 ```
 
 默认公开 IP:18080 的认证网页（HTTP）；安装后可在设置绑定域名和 HTTPS。内部 API、分享处理器及数据库仍只监听回环。若要仅本机访问，去掉 `--public` / `-Public`。Windows 默认当前用户登录任务；Linux 服务由 systemd 管理。Alpine / OpenRC 可自动准备依赖，但面板用包内 `quickstart.py --foreground` 配合自己的监督器。环境安装不会卸载旧 Docker、清理镜像/数据或放开数据库端口。
 
-[完整源码与四平台附件](https://github.com/czy-code-923/czy-code/releases/tag/v0.23.9-distribution) · [手动 / Compose / 离线安装](docs/INSTALL.md)
+[完整源码与四平台附件](https://github.com/czy-code-923/czy-code/releases/tag/v0.23.10-distribution) · [手动 / Compose / 离线安装](docs/INSTALL.md)
 
 ## 后台版本与自动更新
 
@@ -126,7 +126,7 @@ Nginx / 宝塔站点、Docker 本身及其他软件不会随面板卸载。更�
 - 防火墙版本编辑、回收站删除/恢复、本机受控移除和取消，保留独立回滚。
 - 原生配置识别草稿、客户端路由引用检查、可视化规则自动同步、嵌套组展开去重。
 - 空授权账号不再可能变为免认证；新增端口失败时保留完全未变的有效入站。补齐扩展协议的用户流量与访问日志解析。
-- 控制面与 Agent 均为 **0.23.9**；新功能需升级 Agent。
+- 控制面与 Agent 均为 **0.23.10**；新功能需升级 Agent。
 - [0.13 功能、配置、通知与兼容边界](docs/WORKFLOW-v013.md)。
 
 ## 0.12 新增
@@ -234,3 +234,23 @@ fetch-engines.py 下载官方发行文件，无需 Go。使用 --sing-box-versio
 ## 卸载与管理员令牌
 
 Linux / Windows 通用命令见本文前部，更多布局见 [安装文档](docs/INSTALL.md)。令牌是星枢面板的 ADMIN_TOKEN。
+
+## 控制端换域名与 Agent 地址修复
+
+「系统设置 → 站点与域名」可单独设置最多 4 个 Agent HTTPS 控制地址（按优先级）。地址必须事先拥有有效证书，并反代至同一个管理 API；该输入框不自动创建第三个 Nginx 网关。留空跟随控制台域名，订阅域名单独维护。
+
+先保持旧域名可达，设置并验证新地址。Agent **0.23.10+** 从已鉴权心跳获取地址，通过绑定目标域名和随机挑战的 HMAC 证明后切换；不跟随 HTTP 重定向、不绕过 TLS、不向未经验证的目标发送令牌。已验证地址保存在私有状态目录，重启后可恢复。变更时请保留旧入口，等全部主机的“控制地址”回报更新后再关闭。
+
+若原地址已失效，进入「连接主机 → 连接 / 恢复 → 生成控制端地址修复命令」，在原 VPS SSH 执行。保留 HOST_ID / AGENT_TOKEN、内核、协议配置和流量账本，无需删除主机或重新注册。“生成 Agent 升级命令”会校验本控制端版本对应的 GitHub 正式发行包，仅更新标准 Linux `/opt/harbor-agent` 安装的 Agent；失败恢复旧二进制，现有内核不切换。总管理机的旧布局 Agent 由面板升级流程维护。两种操作均可能短暂中断本机托管代理。
+
+## 数据库内存
+
+内存上限不是预占内存。新安装和 Compose 默认 512 MiB，Compose 用 `POSTGRES_MEMORY_LIMIT`，新安装用 `quickstart.py --db-memory-mb 512` 调整。旧 Linux 安装的更新助手仅扩大过小上限：物理内存 ≥1.5 GiB 时为 512 MiB，≥768 MiB 时为 384 MiB，否则为 256 MiB；保持原有更大或不限额设置，不重启数据库、不清理数据、不自动调高连接数。设置 → 后台版本可查看最近回报的限制与主机内存。
+
+需要更大容量时，在 SSH 执行（只允许扩大上限）：
+
+```bash
+sudo python3 /opt/harbor/scripts/panel-updater.py --env /etc/harbor/control.env --database-memory-mb 768
+```
+
+新安装使用 `/opt/starhub-control/scripts/panel-updater.py --env /opt/starhub-control/control.env`。几十台 VPS / 上百用户不是单靠内存额度就能保证的容量：持续观察峰值、OOM、响应延迟、磁盘、计量断报与备份；默认应用连接池 4 条并复用连接，VPS 数不等于数据库连接数。

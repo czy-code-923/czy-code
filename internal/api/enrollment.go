@@ -15,9 +15,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"vps-control/internal/buildinfo"
 )
 
-//go:embed bootstrap/*
+//go:embed bootstrap/*.py bootstrap/*.sh
 var bootstrapFiles embed.FS
 var ticketPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 var bootstrapDownloads = make(chan struct{}, 4)
@@ -81,10 +82,12 @@ func (s *Server) agentRelease(w http.ResponseWriter, r *http.Request) error {
 }
 func (s *Server) bootstrapScript(w http.ResponseWriter, r *http.Request) {
 	name := "install.sh"
-	if strings.HasSuffix(r.URL.Path, ".py") {
+	if strings.HasSuffix(r.URL.Path, "/repair.py") {
+		name = "repair.py"
+	} else if strings.HasSuffix(r.URL.Path, ".py") {
 		name = "install.py"
 	}
-	b, _ := bootstrapFiles.ReadFile("bootstrap/" + name)
+	b := bootstrapSource(name)
 	// Source checkouts and ZIP builders on Windows may use CRLF. A POSIX
 	// shell treats the CR as part of `set -eu`, so always serve portable LF.
 	b = bytes.ReplaceAll(b, []byte("\r\n"), []byte("\n"))
@@ -99,6 +102,10 @@ func (s *Server) enrollmentCreate(w http.ResponseWriter, r *http.Request) error 
 		return e
 	}
 	origin, e := s.managementOrigin(r)
+	if candidates, err := s.agentOrigins(r); err == nil && len(candidates) > 0 {
+		origin = candidates[0]
+		e = nil
+	}
 	if e != nil {
 		return e
 	}
@@ -259,4 +266,35 @@ func packageDigest(path string) (string, error) {
 	h := sha256.New()
 	_, e = io.Copy(h, f)
 	return hex.EncodeToString(h.Sum(nil)), e
+}
+
+func (s *Server) agentRepairCommand(w http.ResponseWriter, r *http.Request) error {
+	var id string
+	if e := s.DB.QueryRow(r.Context(), `SELECT id FROM hosts WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL AND retire_state=''`, tenant, r.PathValue("id")).Scan(&id); e != nil {
+		return e
+	}
+	origins, e := s.agentOrigins(r)
+	if e != nil {
+		return e
+	}
+	if len(origins) == 0 {
+		return bad("请先配置 HTTPS 管理地址或 Agent 控制地址")
+	}
+	source := bootstrapSource("repair.py")
+	source = bytes.ReplaceAll(source, []byte("\r\n"), []byte("\n"))
+	sum := sha256.Sum256(source)
+	origin := origins[0]
+	extra := ""
+	if r.URL.Query().Get("upgrade") == "1" {
+		extra = " --upgrade-agent"
+	}
+	command := "(S=; if [ \"$(id -u)\" != 0 ]; then S=sudo; fi; f=$(mktemp) && curl --proto '=https' --tlsv1.2 -fsS '" + origin + "/api/v1/agent/repair.py' -o \"$f\" && printf '%s  %s\\n' '" + hex.EncodeToString(sum[:]) + "' \"$f\" | sha256sum -c - && $S python3 \"$f\" '" + origin + "'" + extra + "; rc=$?; rm -f \"$f\"; exit $rc)"
+	send(w, 200, map[string]string{"command": command, "origin": origin})
+	return nil
+}
+
+func bootstrapSource(name string) []byte {
+	b, _ := bootstrapFiles.ReadFile("bootstrap/" + name)
+	b = bytes.ReplaceAll(b, []byte("\r\n"), []byte("\n"))
+	return bytes.ReplaceAll(b, []byte("__PANEL_VERSION__"), []byte(buildinfo.Version))
 }

@@ -61,7 +61,8 @@ func run(ctx context.Context) error {
 		defer stager.Close()
 	}
 	client := &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	call := controlCaller(client, base, host, token)
+	connection := newControlConnection(client, base, host, token, os.Getenv("LIVE_STATE_DIR"))
+	call := connection.call
 	if os.Getenv("ENABLE_LIVE") == "1" {
 		liveCtx, cancel := context.WithCancel(ctx)
 		defer cancel()
@@ -103,8 +104,16 @@ func run(ctx context.Context) error {
 					}
 				}
 			}
-			data, _, err := call(ctx, "heartbeat", map[string]any{"cleanup_capable": os.Getenv("RETIRE_MARKER") != "", "mode": mode, "version": buildinfo.Version, "platform": runtime.GOOS + "/" + runtime.GOARCH, "addresses": addresses})
+			data, _, err := call(ctx, "heartbeat", map[string]any{"cleanup_capable": os.Getenv("RETIRE_MARKER") != "", "mode": mode, "version": buildinfo.Version, "platform": runtime.GOOS + "/" + runtime.GOARCH, "addresses": addresses, "control_origin": connection.origin()})
 			e = err
+			if e == nil {
+				var endpointSettings struct {
+					Origins []string `json:"control_origins"`
+				}
+				if json.Unmarshal(data, &endpointSettings) == nil {
+					connection.update(ctx, endpointSettings.Origins)
+				}
+			}
 			if e == nil && os.Getenv("RETIRE_MARKER") != "" {
 				var retirement struct {
 					ID    *string `json:"retire_id"`
@@ -240,6 +249,10 @@ func idleDelay(n int, cap time.Duration) time.Duration {
 }
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--version" {
+		fmt.Println(buildinfo.Version)
+		return
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if e := run(ctx); e != nil {

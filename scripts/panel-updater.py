@@ -44,8 +44,26 @@ def load_install(env_path):
     c=info[0]['Config'];e=dict(v.split('=',1) for v in c.get('Env',[]) if '=' in v)
     if not c.get('Image','').startswith('postgres:') or e.get('POSTGRES_DB')!='harbor' or e.get('POSTGRES_USER')!='harbor' or e.get('POSTGRES_PASSWORD')!=urllib.parse.unquote(db.password or ''):raise ValueError('Database container ownership mismatch')
     ports=info[0].get('NetworkSettings',{}).get('Ports',{}).get('5432/tcp',[])
-    if not any(p.get('HostIp') in ('127.0.0.1','::1') and int(p.get('HostPort',0))==(db.port or 5432) for p in ports):raise ValueError('Database port does not match installation')
-    return {'root':root,'layout':layout,'service':service,'container':container,'platform':'linux-'+machine,'token':values['ADMIN_TOKEN']}
+    if not ports or not all(p.get('HostIp') in ('127.0.0.1','::1') and int(p.get('HostPort',0))==(db.port or 5432) for p in ports):raise ValueError('Database port does not match installation')
+    return {'root':root,'layout':layout,'service':service,'container':container,'platform':'linux-'+machine,'token':values['ADMIN_TOKEN'],'database_memory_limit':info[0].get('HostConfig',{}).get('Memory',0),'database_memory_swap':info[0].get('HostConfig',{}).get('MemorySwap',0)}
+
+def memory_target(total_bytes):
+    # The cap is not a reservation. Leave room for Baota, cores and the OS.
+    return (512 if total_bytes>=1536*(1<<20) else 384 if total_bytes>=768*(1<<20) else 256)<<20
+
+def database_headroom(install):
+    total=0
+    for line in Path('/proc/meminfo').read_text().splitlines():
+        if line.startswith('MemTotal:'):total=int(line.split()[1])*1024;break
+    current=install.get('database_memory_limit',0)
+    target=memory_target(total)
+    # Only enlarge an existing small cap; respect unlimited/custom larger caps.
+    adjusted=False
+    if current and current<target:
+        swap=install.get('database_memory_swap',0)
+        run('docker','update','--memory',str(target),'--memory-swap',str(-1 if swap==-1 else max(target*2,swap)),install['container'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=30)
+        current=target;adjusted=True
+    return {'limit_bytes':current,'host_memory_bytes':total,'recommended_bytes':target,'adjusted':adjusted}
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self,*args):raise ValueError('Local API redirects forbidden')
@@ -228,7 +246,7 @@ class Updater:
             raise
     def once(self):
         self.recover()
-        self.api('panel-updates/worker/heartbeat',{'layout':self.i['layout'],'platform':self.i['platform']})
+        self.api('panel-updates/worker/heartbeat',{'layout':self.i['layout'],'platform':self.i['platform'],**({'database_resources':self.i['database_resources']} if 'database_resources' in self.i else {})})
         job=self.api('panel-updates/worker/claim',{})['job']
         if job:
             # Persist the claim before any validation or I/O can fail. A crash
@@ -240,14 +258,23 @@ class Updater:
                 raise
 
 def main():
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--env',required=True);args=p.parse_args()
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--env',required=True);p.add_argument('--database-memory-mb',type=int,help='Only enlarge the verified project database cap, then exit');args=p.parse_args()
     if os.geteuid()!=0:raise ValueError('Root required')
     os.umask(0o077);install=load_install(Path(args.env))
+    if args.database_memory_mb is not None:
+        current=install['database_memory_limit'];target=args.database_memory_mb<<20
+        if not 256<=args.database_memory_mb<=65536 or not current or target<current:raise ValueError('Only increases of an existing cap are allowed (256-65536 MiB)')
+        swap=install.get('database_memory_swap',0)
+        run('docker','update','--memory',str(target),'--memory-swap',str(-1 if swap==-1 else max(target*2,swap)),install['container'],stdout=subprocess.DEVNULL,timeout=30)
+        print('Database memory cap: '+str(args.database_memory_mb)+' MiB; data and services preserved')
+        return
     state=Path('/var/lib/starhub-updater')/install['layout'];state.mkdir(parents=True,exist_ok=True,mode=0o700);trusted(state,True)
     if state.stat().st_mode&0o077:raise ValueError('Private updater state required')
     lock=os.open(state/'lock',os.O_CREAT|os.O_RDWR|os.O_NOFOLLOW,0o600)
     try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
     except BlockingIOError:return
+    try:install['database_resources']=database_headroom(install)
+    except Exception:install['database_resources']={'error':'无法检查或扩大数据库内存限制，请在 SSH 检查 Docker'}
     Updater(install,state).once()
 
 if __name__=='__main__':

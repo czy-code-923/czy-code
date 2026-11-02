@@ -12,7 +12,7 @@
 |数据库|默认最多4条池连接、最小0条、空闲2分钟释放；添加租约/时间索引|可通过连接 URL pool_max_conns/pool_min_conns 覆盖；大规模需按负载调优|
 |摘要|整文件读取改为流式 SHA-256；仍每次核验可信二进制|没有通过省略摘要验证换性能|
 |Web|自制 SVG/CSS，无图表/UI大库、网络字体或装饰视频；Nginx 单 worker、gzip、512连接|更高并发再调 worker/连接，不应盲目照搬小规模配置|
-|Compose|API/Agent GOMEMLIMIT 128MiB；API/Agent 各192MiB、Web64MiB、DB384MiB上限；DB64MiB shared_buffers /30连接|上限不是实测用量；超限会被容器终止；本机未运行Docker，需在目标机观察RSS/延迟/队列|
+|Compose|API/Agent GOMEMLIMIT 128MiB；API/Agent 各192MiB、Web64MiB、DB默认512MiB上限；DB64MiB shared_buffers /30连接|上限不是实测用量；超限会被容器终止；本机未运行Docker，需在目标机观察RSS/延迟/队列|
 
 ## 实测摘要分配
 
@@ -33,3 +33,5 @@ go test ./internal/executor -run '^$' -bench BenchmarkBinaryDigest -benchmem
 域名与分享页仅打开时载入与轮询元数据，后台暂停；真实服务规范不进入库存快照，分享凭据按需解密。真实Agent每10秒协调，不重写未改变的配置；错误退避、离线90秒停止受管进程。域名同步每分钟检查，未改变的配置/证书不重载，证书检查12小时一次，失败30分钟退避。
 
 原生控制面直接提供已构建的静态前端，无Node常驻。Linux普通Agent的MemoryMax覆盖其受管子进程，实际需要按节点数/流量调整。新增真实引擎的占用不包含在v0.3单个控制面RSS样本内，不能宣称整台VPS或整套软件只占该数值。
+
+0.23.10：数据库容器上限可配置，新安装默认512MiB；旧 Linux 安装助手按物理内存扩大过小上限，保留更大自定义值。上限不等于预占；不自动放大数据库连接池。代理流量经过 VPS 内核，控制面只接收计量与元数据，不中转代理载荷。

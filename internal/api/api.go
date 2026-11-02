@@ -237,11 +237,13 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("GET /api/v1/engine-catalog", s.admin(s.engineCatalog))
 	m.HandleFunc("GET /api/v1/protocol-templates", s.admin(s.protocolTemplates))
 	m.HandleFunc("POST /api/v1/hosts/{id}/enrollment", s.admin(s.enrollmentCreate))
+	m.HandleFunc("GET /api/v1/hosts/{id}/repair-command", s.admin(s.agentRepairCommand))
 	m.HandleFunc("GET /api/v1/hosts/{id}/enrollment", s.admin(s.enrollmentStatus))
 	m.HandleFunc("POST /api/v1/hosts/{id}/enrollment/revoke", s.admin(s.enrollmentRevoke))
 	m.HandleFunc("POST /api/v1/agent/enroll", wrap(s.enrollmentClaim))
 	m.HandleFunc("GET /api/v1/agent/install.sh", s.bootstrapScript)
 	m.HandleFunc("GET /api/v1/agent/install.py", s.bootstrapScript)
+	m.HandleFunc("GET /api/v1/agent/repair.py", s.bootstrapScript)
 	m.HandleFunc("GET /api/v1/agent/releases/{platform}", wrap(s.agentRelease))
 	m.HandleFunc("GET /api/v1/site", s.admin(s.site))
 	m.HandleFunc("PUT /api/v1/site", s.admin(s.site))
@@ -288,6 +290,7 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("POST /api/v1/instances/{id}/rollback", s.admin(s.deploy))
 	m.HandleFunc("GET /api/v1/configs/{id}/preview", s.admin(s.preview))
 	m.HandleFunc("POST /api/v1/hosts/{id}/rotate-agent-token", s.admin(s.rotate))
+	m.HandleFunc("POST /api/v1/agent/verify-origin", wrap(s.verifyControlOrigin))
 	m.HandleFunc("POST /api/v1/agent/heartbeat", s.agent(s.heartbeat))
 	m.HandleFunc("POST /api/v1/agent/claim", s.agent(s.claim))
 	m.HandleFunc("POST /api/v1/agent/tasks/{id}/complete", s.agent(s.complete))
@@ -309,7 +312,7 @@ func audit(ctx context.Context, tx pgx.Tx, actor, action, id string) error {
 }
 func (s *Server) list(w http.ResponseWriter, r *http.Request) error {
 	// SQL identifiers are selected solely from this fixed allowlist.
-	tables := map[string]string{"hosts": "SELECT tenant_id,id,name,provider,address,last_seen,COALESCE(last_seen>now()-interval '90 seconds',false) online,agent_mode,agent_version,platform,reported_addresses,connection_paused,retire_state,retire_requested_at,cleanup_capable,created_at,(SELECT " + hostTrafficJSON + " FROM host_traffic t WHERE t.tenant_id=hosts.tenant_id AND t.host_id=hosts.id) traffic FROM hosts", "nodes": "SELECT * FROM nodes", "instances": "SELECT * FROM instances", "tunnels": "SELECT * FROM tunnels", "configs": "SELECT * FROM configs", "tasks": "SELECT tenant_id,id,instance_id,config_id,request_key,state,attempts,lease_until,result,created_at,updated_at,mode,operation,artifact_checksum FROM tasks", "audit": "SELECT * FROM audit", "routes": "SELECT * FROM route_plans"}
+	tables := map[string]string{"hosts": "SELECT tenant_id,id,name,provider,address,last_seen,COALESCE(last_seen>now()-interval '90 seconds',false) online,agent_mode,agent_version,platform,reported_addresses,control_origin,connection_paused,retire_state,retire_requested_at,cleanup_capable,created_at,(SELECT " + hostTrafficJSON + " FROM host_traffic t WHERE t.tenant_id=hosts.tenant_id AND t.host_id=hosts.id) traffic FROM hosts", "nodes": "SELECT * FROM nodes", "instances": "SELECT * FROM instances", "tunnels": "SELECT * FROM tunnels", "configs": "SELECT * FROM configs", "tasks": "SELECT tenant_id,id,instance_id,config_id,request_key,state,attempts,lease_until,result,created_at,updated_at,mode,operation,artifact_checksum FROM tasks", "audit": "SELECT * FROM audit", "routes": "SELECT * FROM route_plans"}
 	tables["firewalls"] = "SELECT tenant_id,id,host_id,name,version,checksum,archived_at,deleted_at,created_at FROM firewall_policies"
 	q, ok := tables[r.PathValue("kind")]
 	if !ok {
