@@ -13,6 +13,7 @@ class AgentRepairTests(unittest.TestCase):
         def response(request,**kwargs):
             self.assertNotIn(values['AGENT_TOKEN'],str(request.headers)+request.data.decode())
             self.assertNotIn('Authorization',request.headers)
+            self.assertTrue(request.get_header('User-agent').startswith('Starhub-Agent-Repair/'))
             body=json.loads(request.data)
             key=hashlib.sha256(values['AGENT_TOKEN'].encode()).hexdigest().encode()
             proof=hmac.new(key,('starhub-control-origin-v1:'+body['nonce']+':'+body['origin']).encode(),hashlib.sha256).hexdigest()

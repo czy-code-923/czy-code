@@ -72,7 +72,7 @@ def verify(origin,values):
     if u.scheme!='https' or not u.hostname or u.username or u.password or u.path or u.query or u.fragment:raise ValueError('An HTTPS origin without path is required')
     nonce=secrets.token_hex(32)
     body=json.dumps({'host_id':values['HOST_ID'],'nonce':nonce,'origin':origin}).encode()
-    req=urllib.request.Request(origin+'/api/v1/agent/verify-origin',data=body,headers={'Content-Type':'application/json'})
+    req=urllib.request.Request(origin+'/api/v1/agent/verify-origin',data=body,headers={'Content-Type':'application/json','User-Agent':'Starhub-Agent-Repair/'+VERSION})
     with urllib.request.build_opener(urllib.request.ProxyHandler({}),NoRedirect()).open(req,timeout=15) as response:
         proof=json.loads(response.read(2048))['proof']
     key=hashlib.sha256(values['AGENT_TOKEN'].encode()).hexdigest().encode()

@@ -1,6 +1,6 @@
-# 星枢 · VPS 多机管理 0.23.11
+# 星枢 · VPS 多机管理 0.23.12
 
-本版增加 Agent 控制地址安全迁移、保留凭据的修复 / 升级命令、数据库内存扩容与状态显示，并改善手机导航和弹窗布局。[0.23.11 发布说明](docs/RELEASE-v02311.md)。
+本版增加 Agent 控制地址安全迁移、保留凭据的修复 / 升级命令、数据库内存扩容与状态显示，并改善手机导航和弹窗布局。[0.23.12 发布说明](docs/RELEASE-v02312.md)。
 
 保留已有协议、用户权限、流量计量、客户端策略与订阅功能。更新使用正式发布包、校验、停写备份和失败回退；控制面升级与远端 Agent 升级分开处理。
 
@@ -17,18 +17,18 @@
 Linux（Debian 11+ / Ubuntu 22.04+、Fedora、Rocky / Alma / RHEL 8+ / CentOS Stream、openSUSE / SLES 的 systemd 系统；需 root 或 sudo）：
 
 ```bash
-sh -c 'set -eu; S=; if [ "$(id -u)" != 0 ]; then command -v sudo >/dev/null || { echo "Run as root"; exit 1; }; S=sudo; fi; if ! command -v curl >/dev/null; then if command -v apt-get >/dev/null; then $S apt-get update; $S apt-get install -y curl ca-certificates; elif command -v dnf >/dev/null; then $S dnf install -y curl ca-certificates; elif command -v zypper >/dev/null; then $S zypper --non-interactive install curl ca-certificates; elif command -v apk >/dev/null; then $S apk add --no-cache curl ca-certificates; else echo "Install curl first on this OS"; exit 1; fi; fi; F=$(mktemp); curl --proto "=https" --tlsv1.2 -fL https://github.com/czy-code-923/czy-code/releases/download/v0.23.11-distribution/install-starhub.sh -o "$F"; $S sh "$F" --public; rm -f "$F"'
+sh -c 'set -eu; S=; if [ "$(id -u)" != 0 ]; then command -v sudo >/dev/null || { echo "Run as root"; exit 1; }; S=sudo; fi; if ! command -v curl >/dev/null; then if command -v apt-get >/dev/null; then $S apt-get update; $S apt-get install -y curl ca-certificates; elif command -v dnf >/dev/null; then $S dnf install -y curl ca-certificates; elif command -v zypper >/dev/null; then $S zypper --non-interactive install curl ca-certificates; elif command -v apk >/dev/null; then $S apk add --no-cache curl ca-certificates; else echo "Install curl first on this OS"; exit 1; fi; fi; F=$(mktemp); curl --proto "=https" --tlsv1.2 -fL https://github.com/czy-code-923/czy-code/releases/download/v0.23.12-distribution/install-starhub.sh -o "$F"; $S sh "$F" --public; rm -f "$F"'
 ```
 
 Windows 10/11 **管理员 PowerShell**：自动寻找或安装 Python、WinGet、Docker Desktop / WSL 组件，启动并等待 Linux 引擎。首次启用 WSL 需要重启时会提示，重启后重跑同一命令；不会自动重启、切换已有 Windows 容器或跳过 Docker 首次许可 / 虚拟化要求。Windows Server 使用 Linux 虚拟机。
 
 ```powershell
-Invoke-WebRequest https://github.com/czy-code-923/czy-code/releases/download/v0.23.11-distribution/install-starhub.ps1 -OutFile "$env:TEMP/install-starhub.ps1"; & "$env:TEMP/install-starhub.ps1" -Public
+Invoke-WebRequest https://github.com/czy-code-923/czy-code/releases/download/v0.23.12-distribution/install-starhub.ps1 -OutFile "$env:TEMP/install-starhub.ps1"; & "$env:TEMP/install-starhub.ps1" -Public
 ```
 
 默认公开 IP:18080 的认证网页（HTTP）；安装后可在设置绑定域名和 HTTPS。内部 API、分享处理器及数据库仍只监听回环。若要仅本机访问，去掉 `--public` / `-Public`。Windows 默认当前用户登录任务；Linux 服务由 systemd 管理。Alpine / OpenRC 可自动准备依赖，但面板用包内 `quickstart.py --foreground` 配合自己的监督器。环境安装不会卸载旧 Docker、清理镜像/数据或放开数据库端口。
 
-[完整源码与四平台附件](https://github.com/czy-code-923/czy-code/releases/tag/v0.23.11-distribution) · [手动 / Compose / 离线安装](docs/INSTALL.md)
+[完整源码与四平台附件](https://github.com/czy-code-923/czy-code/releases/tag/v0.23.12-distribution) · [手动 / Compose / 离线安装](docs/INSTALL.md)
 
 ## 后台版本与自动更新
 
@@ -126,7 +126,7 @@ Nginx / 宝塔站点、Docker 本身及其他软件不会随面板卸载。更�
 - 防火墙版本编辑、回收站删除/恢复、本机受控移除和取消，保留独立回滚。
 - 原生配置识别草稿、客户端路由引用检查、可视化规则自动同步、嵌套组展开去重。
 - 空授权账号不再可能变为免认证；新增端口失败时保留完全未变的有效入站。补齐扩展协议的用户流量与访问日志解析。
-- 控制面与 Agent 均为 **0.23.11**；新功能需升级 Agent。
+- 控制面与 Agent 均为 **0.23.12**；新功能需升级 Agent。
 - [0.13 功能、配置、通知与兼容边界](docs/WORKFLOW-v013.md)。
 
 ## 0.12 新增
@@ -239,7 +239,7 @@ Linux / Windows 通用命令见本文前部，更多布局见 [安装文档](doc
 
 「系统设置 → 站点与域名」可单独设置最多 4 个 Agent HTTPS 控制地址（按优先级）。地址必须事先拥有有效证书，并反代至同一个管理 API；该输入框不自动创建第三个 Nginx 网关。留空跟随控制台域名，订阅域名单独维护。
 
-先保持旧域名可达，设置并验证新地址。Agent **0.23.11+** 从已鉴权心跳获取地址，通过绑定目标域名和随机挑战的 HMAC 证明后切换；不跟随 HTTP 重定向、不绕过 TLS、不向未经验证的目标发送令牌。已验证地址保存在私有状态目录，重启后可恢复。变更时请保留旧入口，等全部主机的“控制地址”回报更新后再关闭。
+先保持旧域名可达，设置并验证新地址。Agent **0.23.12+** 从已鉴权心跳获取地址，通过绑定目标域名和随机挑战的 HMAC 证明后切换；不跟随 HTTP 重定向、不绕过 TLS、不向未经验证的目标发送令牌。已验证地址保存在私有状态目录，重启后可恢复。变更时请保留旧入口，等全部主机的“控制地址”回报更新后再关闭。
 
 若原地址已失效，进入「连接主机 → 连接 / 恢复 → 生成控制端地址修复命令」，在原 VPS SSH 执行。保留 HOST_ID / AGENT_TOKEN、内核、协议配置和流量账本，无需删除主机或重新注册。“生成 Agent 升级命令”会校验本控制端版本对应的 GitHub 正式发行包，仅更新标准 Linux `/opt/harbor-agent` 安装的 Agent；失败恢复旧二进制，现有内核不切换。总管理机的旧布局 Agent 由面板升级流程维护。两种操作均可能短暂中断本机托管代理。
 
