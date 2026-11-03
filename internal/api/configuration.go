@@ -263,6 +263,9 @@ func (s *Server) liveUpdate(w http.ResponseWriter, r *http.Request) error {
 	if e = tx.QueryRow(r.Context(), "SELECT agent_version FROM hosts WHERE tenant_id=$1 AND id=$2 FOR UPDATE", tenant, host).Scan(&av); e != nil {
 		return e
 	}
+	if e = requireHopping(r, tx, host, spec); e != nil {
+		return e
+	}
 	if spec.RequiresV19() && !live.V19Capable(av) {
 		return problem{409, "upgrade host to Agent 0.19.0 for native listener selection"}
 	}
@@ -301,6 +304,10 @@ func (s *Server) liveUpdate(w http.ResponseWriter, r *http.Request) error {
 		if e = rows.Scan(&data, &parentVersion); e != nil {
 			rows.Close()
 			return e
+		}
+		if spec.HopPorts != "" && !live.HoppingCapable(parentVersion) {
+			rows.Close()
+			return problem{409, "upgrade dependent Agent to 0.23.14 for port hopping"}
 		}
 		if spec.RequiresV19() && !live.V19Capable(parentVersion) {
 			rows.Close()
@@ -347,19 +354,10 @@ func (s *Server) liveUpdate(w http.ResponseWriter, r *http.Request) error {
 	if e != nil {
 		return e
 	}
-	var collision bool
-	if e = tx.QueryRow(r.Context(), "SELECT EXISTS(SELECT 1 FROM port_reservations WHERE tenant_id=$1 AND host_id=$2 AND port=$3)", tenant, host, spec.Port).Scan(&collision); e != nil {
+	if e = reserveLivePorts(r, tx, host, r.PathValue("id"), spec); e != nil {
 		return e
 	}
-	if collision {
-		return problem{409, "port reserved by inventory instance"}
-	}
-	if _, e = tx.Exec(r.Context(), "DELETE FROM live_ports WHERE tenant_id=$1 AND service_id=$2", tenant, r.PathValue("id")); e != nil {
-		return e
-	}
-	if _, e = tx.Exec(r.Context(), "INSERT INTO live_ports VALUES($1,$2,$3,$4)", tenant, host, spec.Port, r.PathValue("id")); e != nil {
-		return e
-	}
+
 	raw, _ = json.Marshal(spec)
 	sealed, e = live.Seal(s.MasterKey, raw)
 	if e != nil {

@@ -101,6 +101,7 @@ func (s Spec) extraClient(tag string) (map[string]any, map[string]any, string, e
 	}
 	u := url.URL{Scheme: scheme, Host: net.JoinHostPort(s.Address, strconv.Itoa(s.Port)), User: url.UserPassword(s.username(), s.Password), Fragment: tag}
 	if kind == "hysteria" {
+		s.hoppingClient(sb, mh, q)
 		if s.HysteriaObfs != "" {
 			sb["obfs"] = s.HysteriaObfs
 			mh["obfs"] = s.HysteriaObfs

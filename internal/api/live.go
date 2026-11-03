@@ -420,6 +420,9 @@ func (s *Server) createLiveTx(r *http.Request, tx pgx.Tx, b liveInput, created *
 	if e := requireFRPVersion(r, tx, b.HostID, spec); e != nil {
 		return e
 	}
+	if e := requireHopping(r, tx, b.HostID, spec); e != nil {
+		return e
+	}
 	if spec.UsesTLS() {
 		if e := spec.VerifyPublicCertificate(); e != nil {
 			return bad(e.Error())
@@ -485,23 +488,8 @@ func (s *Server) createLiveTx(r *http.Request, tx pgx.Tx, b liveInput, created *
 		return e
 	}
 	if spec.Kind != "frpc" {
-		ports := []int{spec.Port}
-		if spec.Kind == "frps" {
-			for _, t := range spec.Tunnels {
-				ports = append(ports, t.RemotePort)
-			}
-		}
-		for _, p := range ports {
-			var exists bool
-			if e = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM port_reservations WHERE tenant_id=$1 AND host_id=$2 AND port=$3)", tenant, host, p).Scan(&exists); e != nil {
-				return e
-			}
-			if exists {
-				return problem{409, "port already reserved by an inventory instance"}
-			}
-			if _, e = tx.Exec(ctx, "INSERT INTO live_ports VALUES($1,$2,$3,$4)", tenant, host, p, id); e != nil {
-				return e
-			}
+		if e = reserveLivePorts(r, tx, host, id, spec); e != nil {
+			return e
 		}
 	}
 	if spec.Kind == "frpc" {
@@ -564,6 +552,9 @@ func (s *Server) liveToggle(w http.ResponseWriter, r *http.Request) error {
 			}
 			if hasFRPUDP(spec) && !engineUpdateCapable(version) {
 				return problem{409, "FRP UDP requires Agent 0.17 or newer"}
+			}
+			if spec.RequiresHopping() && !live.HoppingCapable(version) {
+				return problem{409, "upgrade Agent to 0.23.14 for port hopping"}
 			}
 			if spec.RequiresV19() && !live.V19Capable(version) {
 				return problem{409, "upgrade host to Agent 0.19.0 for native listener selection"}
@@ -737,6 +728,9 @@ func (s *Server) liveSync(w http.ResponseWriter, r *http.Request, host string) e
 		if hasFRPUDP(v.Spec) && !engineUpdateCapable(agentVersion) {
 			v.Enabled = false
 		}
+		if v.Spec.RequiresHopping() && !live.HoppingCapable(agentVersion) {
+			v.Enabled = false
+		}
 		if v.Spec.RequiresV19() && !live.V19Capable(agentVersion) {
 			v.Enabled = false
 		}
@@ -778,6 +772,9 @@ func (s *Server) liveSync(w http.ResponseWriter, r *http.Request, host string) e
 			var next live.Spec
 			if e = json.Unmarshal(raw, &next); e != nil {
 				return e
+			}
+			if next.RequiresHopping() && !live.HoppingCapable(agentVersion) {
+				work[i].Enabled = false
 			}
 			if next.RequiresV19() && !live.V19Capable(agentVersion) {
 				work[i].Enabled = false

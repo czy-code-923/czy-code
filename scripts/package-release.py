@@ -16,7 +16,7 @@ import urllib.request
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.23.13"
+VERSION = "0.23.14"
 PREVIOUS = "0.23.8"
 REPOSITORY = "czy-code-923/czy-code"
 BASE = f"https://github.com/{REPOSITORY}/releases/download/v{VERSION}-distribution/"
@@ -81,6 +81,7 @@ def main():
     for target in targets[:2]:
         path = agents / (target + ".zip")
         with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
+            archive.write(ROOT / "internal/api/bootstrap/agent-network.py", "agent-network.py")
             for name in ("harbor-agent", "harbor-agent-cleanup"):
                 archive.write(binaries[target] / name, name)
             for name in ("sing-box", "xray", "frps", "frpc", "LICENSE.sing-box", "sing-box-source.zip"):
@@ -102,9 +103,9 @@ def main():
     if not os.environ.get("TEST_DATABASE_URL"):
         raise RuntimeError("Release packaging requires PostgreSQL-backed standalone API verification")
     subprocess.run([str(api_tests), "-test.count=1"], cwd=clean, check=True)
-    update = out / "starhub-v02313-update.zip"
+    update = out / "starhub-v02314-update.zip"
     with zipfile.ZipFile(previous("starhub-v0238-update.zip")) as old, zipfile.ZipFile(update, "w", zipfile.ZIP_DEFLATED) as archive:
-        apply = old.read("apply.py").decode("utf-8").replace("v0238", "v02313").replace("V0238", "V02313").replace(PREVIOUS, VERSION)
+        apply = old.read("apply.py").decode("utf-8").replace("v0238", "v02314").replace("V0238", "V02314").replace(PREVIOUS, VERSION)
         if "gateway_names=('managed-gateway.py','gateway-config.py','domain-sync.py','panel-updater.py','install-panel-updater.py')" not in apply or "install-panel-updater.py" not in apply:
             raise RuntimeError("Previous updater helper list changed")
         # Previous updater already contains transactional gateway backup and rollback.

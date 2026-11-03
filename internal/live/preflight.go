@@ -44,22 +44,28 @@ func preflightAdditional(old, next []Work) error {
 			continue
 		}
 		for _, network := range portNetworks(w.Spec) {
-			if occupied[network+"/"+portString(w.Spec.Port)] {
-				continue
+			ports := []int{w.Spec.Port}
+			if w.Spec.HopPorts != "" {
+				ports = w.Spec.ReservedPorts()
 			}
-			address := net.JoinHostPort(w.Spec.Listen, portString(w.Spec.Port))
-			if network == "tcp" {
-				l, e := net.Listen("tcp", address)
-				if e != nil {
-					return e
+			for _, port := range ports {
+				if occupied[network+"/"+portString(port)] {
+					continue
 				}
-				l.Close()
-			} else {
-				l, e := net.ListenPacket("udp", address)
-				if e != nil {
-					return e
+				address := net.JoinHostPort(w.Spec.Listen, portString(port))
+				if network == "tcp" {
+					l, e := net.Listen("tcp", address)
+					if e != nil {
+						return e
+					}
+					l.Close()
+				} else {
+					l, e := net.ListenPacket("udp", address)
+					if e != nil {
+						return e
+					}
+					l.Close()
 				}
-				l.Close()
 			}
 		}
 	}

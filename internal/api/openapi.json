@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "星枢 · VPS 多机管理 API",
-    "version": "0.23.13",
+    "version": "0.23.14",
     "description": "Self-workspace API for host agents, proxy protocols, user quotas and client subscriptions. Bearer administrator token or expiring scoped xs_ API key. No arbitrary shell; privileged gateway work and API key administration remain root-only."
   },
   "servers": [
@@ -7597,6 +7597,17 @@
               ]
             },
             "description": "Also upgrade a standard Linux Agent to the running control release, preserving engines and credentials"
+          },
+          {
+            "name": "hopping",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ]
+            },
+            "description": "Upgrade existing standard Linux Agent and install the restricted UDP hopping helper."
           }
         ],
         "responses": {
@@ -9021,6 +9032,17 @@
               "udp"
             ],
             "description": "Shadowsocks native OS listener networks, separate from transport framing. Absent defaults to TCP+UDP. Requires Agent 0.19."
+          },
+          "hop_ports": {
+            "type": "string",
+            "maxLength": 256,
+            "description": "Optional Hysteria/HY2 UDP ranges, e.g. 30000-30100,30200. Up to 16 disjoint ranges and 4096 ports. Linux Agent 0.23.14+ with bounded helper."
+          },
+          "hop_interval_seconds": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3600,
+            "description": "0 uses 30 seconds. When supplied with hop_ports, use 5-3600 seconds."
           }
         }
       },

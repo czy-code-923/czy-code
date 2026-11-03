@@ -19,7 +19,7 @@
 .host-control-origin{display:block;margin:9px 0;font-family:ui-monospace,monospace;overflow-wrap:anywhere}
 .resource-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;padding:20px;margin:20px 0;border:1px solid var(--line);border-radius:12px;background:var(--panel-soft)}
 .resource-summary small{display:block;color:var(--muted)}.resource-summary strong{display:block;margin-top:6px;font-size:21px}.resource-summary p{grid-column:1/-1;color:var(--muted);font-size:12px;margin:0}
-.console-root .setting-row{flex-wrap:wrap}.console-root .modal-footer{flex-wrap:wrap}.console-root .row-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.console-root .setting-row{flex-wrap:wrap}.console-root .modal-footer{flex-wrap:wrap}.console-root .row-actions:not(td){display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 @media(max-width:760px){
  .console-sidebar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:0 8px}
  .console-brand{grid-column:1;min-width:0;flex-wrap:wrap;letter-spacing:1px}.console-brand small{display:none}
@@ -33,3 +33,22 @@
  .console-root .install-command{font-size:12px!important;white-space:pre-wrap}
  .resource-summary{padding:15px;gap:12px}.resource-summary strong{font-size:18px}
 }
+
+/* Keep table cells in the table formatting context; only their contents flex. */
+.console-root td.action-cell,.console-root td.row-actions{display:table-cell;vertical-align:middle;white-space:normal;overflow:visible}
+.console-root .data-table{table-layout:fixed;white-space:normal;min-width:840px}
+.console-root .data-table td{max-width:none;overflow:visible;overflow-wrap:anywhere;vertical-align:top;line-height:1.7}
+.console-root .data-table th{white-space:nowrap}
+.console-root .action-cell .row-actions{gap:5px 12px;align-content:flex-start}
+.console-root .action-cell .text-button{margin:0;white-space:nowrap;min-height:30px;line-height:1.5;text-align:left}
+.workspace-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:22px 0}
+.workspace-stats>div{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;border:1px solid var(--line);border-radius:10px;background:var(--panel-soft)}
+.workspace-stats small{display:block;color:var(--muted);font-size:11px}.workspace-stats strong{font-size:22px;font-weight:600;color:var(--ink)}
+.workspace-help{padding:12px 16px;border:1px solid var(--line);border-radius:10px;background:var(--panel-soft);margin:20px 0}
+.workspace-help summary{color:var(--muted)}.workspace-help .form-note{margin:12px 0}
+.share-selector{max-width:780px}.share-actions{margin:14px 0}.qr-settings{max-width:780px}
+.console-root .share-box .fields{align-items:start}.console-root .share-box input[readonly]{font-family:ui-monospace,monospace;font-size:12px}
+@media(max-width:1100px){.console-root .publish-card{padding:22px}.console-root .section-heading{align-items:flex-start}.console-root .section-heading>.primary{flex-shrink:0}}
+@media(max-width:760px){.workspace-stats{gap:8px}.workspace-stats>div{padding:12px}.workspace-stats strong{font-size:22px}.console-root .action-cell .text-button{min-height:44px}.console-root .data-table{min-width:820px}.console-root .share-actions>.primary{flex:1}.console-root .publish-card{padding:17px}}
+
+.console-root[data-theme=light] .primary{color:#fff}

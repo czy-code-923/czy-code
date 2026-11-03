@@ -14,10 +14,11 @@ class ReleaseRedirect(urllib.request.HTTPRedirectHandler):
         if u.scheme!='https' or u.username or u.port or u.hostname not in ('github.com','release-assets.githubusercontent.com','objects.githubusercontent.com'):raise ValueError('Unexpected release redirect')
         return super().redirect_request(req,fp,code,msg,headers,url)
 
-def upgrade_agent():
+def upgrade_agent(env_path=Path('/etc/harbor-agent/agent.env')):
     arch={'x86_64':'amd64','aarch64':'arm64'}.get(platform.machine())
     if not arch:raise ValueError('Unsupported Linux architecture')
-    binary=Path('/opt/harbor-agent/harbor-agent');backup=binary.with_name('harbor-agent.previous')
+    binary=Path('/opt/harbor-agent/harbor-agent') if env_path==Path('/etc/harbor-agent/agent.env') else Path('/opt/harbor/bin/harbor-agent')
+    backup=binary.with_name('harbor-agent.previous')
     for path in (binary,binary.parent,backup if backup.exists() or backup.is_symlink() else binary.parent):
         st=path.lstat()
         if path.is_symlink() or st.st_uid!=0 or st.st_mode&0o022:raise ValueError('Root-owned standard Agent installation required')
@@ -47,6 +48,18 @@ def upgrade_agent():
         if len(nested)!=manifest['size'] or hashlib.sha256(nested).hexdigest()!=manifest['sha256']:raise ValueError('Platform archive checksum mismatch')
         candidate=Path(folder)/'harbor-agent'
         with zipfile.ZipFile(io.BytesIO(nested)) as z:
+            if '--enable-port-hopping' in sys.argv or Path('/usr/local/libexec/starhub-agent-network.py').exists():
+                info=z.getinfo('agent-network.py')
+                if info.file_size>65536:raise ValueError('Oversized network helper')
+                helper=Path(folder)/'agent-network.py';helper.write_bytes(z.read(info))
+                cleanup=Path('/usr/local/libexec/harbor-agent-cleanup')
+                if cleanup.is_symlink() or cleanup.exists() and (cleanup.stat().st_uid!=0 or cleanup.stat().st_mode&0o022):raise ValueError('Untrusted cleanup helper')
+                cleanup_info=z.getinfo('harbor-agent-cleanup')
+                if cleanup_info.file_size>64<<20:raise ValueError('Oversized cleanup helper')
+                staged_cleanup=Path(folder)/'harbor-agent-cleanup';staged_cleanup.write_bytes(z.read(cleanup_info));staged_cleanup.chmod(0o755)
+                cleanup.parent.mkdir(parents=True,exist_ok=True)
+                shutil.copy2(staged_cleanup,cleanup)
+                subprocess.run([sys.executable,str(helper),'--install','--env',str(env_path)],check=True,timeout=60)
             items=[f for f in z.infolist() if f.filename=='harbor-agent']
             if len(items)!=1 or items[0].file_size>64<<20:raise ValueError('Invalid Agent executable')
             with z.open(items[0]) as source,candidate.open('xb') as out:shutil.copyfileobj(source,out)
@@ -83,6 +96,7 @@ def main():
     if os.geteuid()!=0:raise ValueError('Run as root on the existing Agent host')
     origin=sys.argv[1].rstrip('/')
     path=Path('/etc/harbor-agent/agent.env')
+    if not path.exists() and Path('/etc/harbor/agent.env').exists():path=Path('/etc/harbor/agent.env')
     st=path.lstat()
     if not stat.S_ISREG(st.st_mode) or st.st_uid!=0 or st.st_mode&0o077:raise ValueError('Private root-owned Agent environment required')
     lines=path.read_text().splitlines();values=dict(line.split('=',1) for line in lines if '=' in line and not line.startswith('#'))
@@ -96,7 +110,7 @@ def main():
         with temporary.open('x') as out:out.write(updated);out.flush();os.fsync(out.fileno())
         temporary.chmod(0o600);os.replace(temporary,path)
     finally:temporary.unlink(missing_ok=True)
-    if '--upgrade-agent' in sys.argv[2:]:upgrade_agent()
+    if '--upgrade-agent' in sys.argv[2:]:upgrade_agent(path)
     else:subprocess.run(['systemctl','restart','harbor-agent.service'],check=True,timeout=40)
     print('Control address repaired. Agent identity, proxy configuration and traffic ledger were preserved. Confirm the new heartbeat in the panel.')
 

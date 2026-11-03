@@ -283,6 +283,7 @@ func (s Spec) Client(tag string) (map[string]any, map[string]any, string, error)
 		}
 	}
 	if s.Kind == "hysteria2" {
+		s.hoppingClient(sb, mh, q)
 		if s.UpMbps > 0 {
 			sb["up_mbps"] = s.UpMbps
 			mh["up"] = s.UpMbps

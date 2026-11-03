@@ -24,6 +24,7 @@ def main():
             archive=stage/f'linux-{arch}.zip'
             with zipfile.ZipFile(archive,'w',zipfile.ZIP_DEFLATED) as package:
                 package.write(binary,'harbor-agent')
+                package.write(project/'internal/api/bootstrap/agent-network.py','agent-network.py')
                 package.write(helper,'harbor-agent-cleanup')
                 for name in ('sing-box','frps','frpc','xray'):package.write(target/'engines'/name,name)
                 package.write(target/'engines/LICENSE.sing-box','LICENSE.sing-box')

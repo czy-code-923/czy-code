@@ -33,13 +33,14 @@ def main():
     if len(archive)!=manifest['size'] or hashlib.sha256(archive).hexdigest()!=manifest['sha256']:raise ValueError('Package integrity verification failed')
     names={'harbor-agent','harbor-agent-cleanup','sing-box','frps','frpc','xray'}
     legal={'LICENSE.sing-box','sing-box-source.zip'}
+    names.add('agent-network.py')
     with tempfile.TemporaryDirectory(prefix='harbor-install-') as temporary:
         stage=Path(temporary)
         with zipfile.ZipFile(io.BytesIO(archive)) as z:
             members=set(z.namelist())
             if members not in (names,names|legal) or len(z.infolist())!=len(members) or sum(m.file_size for m in z.infolist())>400<<20:raise ValueError('Unexpected package contents')
             for name in members:
-                p=stage/name;p.write_bytes(z.read(name));p.chmod(0o755 if name in names else 0o644)
+                p=stage/name;p.write_bytes(z.read(name));p.chmod(0o755 if name in names and name!='agent-network.py' else 0o644)
         for binary,args in [('harbor-agent',[]),('sing-box',['version']),('frps',['--version']),('frpc',['--version']),('xray',['version'])]:
             if args:run(str(stage/binary),*args)
         print('2/4 Exchanging the single-use registration ticket...',flush=True)
@@ -50,7 +51,7 @@ def main():
         if subprocess.run(['id','harbor-agent'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode:run('useradd','--system','--home-dir','/var/lib/harbor-agent','--shell','/usr/sbin/nologin','harbor-agent')
         root.mkdir(mode=0o755);rollback['dirs'].append(root);root.chmod(0o755)
         env.parent.mkdir(mode=0o700);rollback['dirs'].append(env.parent)
-        for name in members:shutil.copyfile(stage/name,root/name);(root/name).chmod(0o755 if name in names else 0o644)
+        for name in members:shutil.copyfile(stage/name,root/name);(root/name).chmod(0o755 if name in names and name!='agent-network.py' else 0o644)
         state=Path('/var/lib/harbor-agent');state.mkdir(mode=0o700);rollback['dirs'].append(state);run('chown','harbor-agent:harbor-agent',str(state))
         values={'ALLOW_INSECURE_HTTP':('1' if insecure else '0'),'CONTROL_URL':origin,'HOST_ID':registration['host_id'],'AGENT_TOKEN':registration['agent_token'],'AGENT_MODE':'simulation','ENABLE_LIVE':'1','RETIRE_MARKER':str(state/'retire.json'),'LIVE_STATE_DIR':str(state/'live'),'GOMEMLIMIT':'96MiB','GOMAXPROCS':'1'}
         for name,prefix in [('sing-box','SING_BOX'),('frps','FRPS'),('frpc','FRPC'),('xray','XRAY')]:values[prefix+'_BINARY']=str(root/name);values[prefix+'_SHA256']=hashlib.sha256((root/name).read_bytes()).hexdigest()

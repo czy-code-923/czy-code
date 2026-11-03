@@ -27,6 +27,7 @@ type Report struct {
 	State   string `json:"state"`
 }
 type process struct {
+	hops     []hopRule
 	rejected []Report
 	meter    *kernelMeter
 	members  []Work
@@ -42,12 +43,13 @@ type process struct {
 	release  func()
 }
 type Runner struct {
-	lastWork  []Work
-	usage     *usageStore
-	root      *os.Root
-	binary    map[string]executor.Binary
-	processes map[string]*process
-	unlock    func()
+	hopRevision string
+	lastWork    []Work
+	usage       *usageStore
+	root        *os.Root
+	binary      map[string]executor.Binary
+	processes   map[string]*process
+	unlock      func()
 }
 
 func NewRunner(dir string, binaries map[string]executor.Binary) (*Runner, error) {
@@ -85,6 +87,7 @@ func NewRunner(dir string, binaries map[string]executor.Binary) (*Runner, error)
 	return r, nil
 }
 func stopProcess(p *process) {
+	p.hops = nil
 	if p.meter != nil {
 		p.meter.close()
 		p.meter = nil
@@ -103,11 +106,13 @@ func (r *Runner) Close() {
 	for _, p := range r.processes {
 		stopProcess(p)
 	}
+	r.syncHopping()
 	r.saveUsage()
 	r.unlock()
 	r.root.Close()
 }
 func (r *Runner) Reports() []Report {
+	hoppingReady := r.hoppingReady()
 	reports := []Report{}
 	for id, p := range r.processes {
 		if p.cmd != nil {
@@ -134,10 +139,17 @@ func (r *Runner) Reports() []Report {
 				if !m.Enabled {
 					state = "stopped"
 				}
+				if m.Spec.HopPorts != "" && !hoppingReady && state != "failed" {
+					state = "pending"
+				}
 				reports = append(reports, Report{m.ID, m.Version, state})
 			}
 		} else {
-			reports = append(reports, Report{id, p.version, p.state})
+			state := p.state
+			if len(p.hops) > 0 && !hoppingReady {
+				state = "pending"
+			}
+			reports = append(reports, Report{id, p.version, state})
 		}
 		reports = append(reports, p.rejected...)
 	}
@@ -192,6 +204,10 @@ func (r *Runner) Reconcile(ctx context.Context, work []Work) error {
 				p.version = w.Version
 				p.state = "failed"
 			}
+			continue
+		}
+		if len(workHops(w)) > 0 && runtime.GOOS != "linux" {
+			p.state = "failed"
 			continue
 		}
 		if p.cmd != nil && p.sum == sum {
@@ -327,6 +343,7 @@ func (r *Runner) Reconcile(ctx context.Context, work []Work) error {
 			p.meter = meter
 		}
 		p.cmd = cmd
+		p.hops = workHops(w)
 		p.release = release
 		p.done = make(chan error, 1)
 		go func(done chan error, c *exec.Cmd) { done <- c.Wait() }(p.done, cmd)
@@ -335,5 +352,6 @@ func (r *Runner) Reconcile(ctx context.Context, work []Work) error {
 		p.state = "pending"
 		r.prune(w.ID, sum)
 	}
+	r.syncHopping()
 	return nil
 }

@@ -131,4 +131,5 @@ func (r *Runner) StopAll() {
 	for _, p := range r.processes {
 		stopProcess(p)
 	}
+	r.syncHopping()
 }

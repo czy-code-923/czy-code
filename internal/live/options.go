@@ -9,6 +9,8 @@ import (
 // ProtocolOptions are a bounded, versioned subset of native engine options.
 // Embedding keeps API, encrypted storage and Agent wire fields identical.
 type ProtocolOptions struct {
+	HopPorts      string `json:"hop_ports,omitempty"`
+	HopInterval   int    `json:"hop_interval_seconds,omitempty"`
 	ListenNetwork string `json:"listen_network,omitempty"`
 	Cipher        string `json:"cipher,omitempty"`
 	SnellVersion  int    `json:"snell_version,omitempty"`
@@ -49,6 +51,9 @@ func OptionsCapable(version string) bool {
 	return major > 0 || minor >= 9
 }
 func (s Spec) validateOptions() error {
+	if err := s.validateHopping(); err != nil {
+		return err
+	}
 	if s.ListenNetwork != "" && (s.Kind != "shadowsocks" || s.ListenNetwork != "tcp" && s.ListenNetwork != "udp" && s.ListenNetwork != "tcp,udp") {
 		return errors.New("native listen_network is only supported by Shadowsocks: tcp, udp or tcp,udp")
 	}

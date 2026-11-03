@@ -288,6 +288,9 @@ func (s *Server) agentRepairCommand(w http.ResponseWriter, r *http.Request) erro
 	if r.URL.Query().Get("upgrade") == "1" {
 		extra = " --upgrade-agent"
 	}
+	if r.URL.Query().Get("hopping") == "1" {
+		extra = " --upgrade-agent --enable-port-hopping"
+	}
 	command := "(S=; if [ \"$(id -u)\" != 0 ]; then S=sudo; fi; f=$(mktemp) && curl --proto '=https' --tlsv1.2 -fsS '" + origin + "/api/v1/agent/repair.py' -o \"$f\" && printf '%s  %s\\n' '" + hex.EncodeToString(sum[:]) + "' \"$f\" | sha256sum -c - && $S python3 \"$f\" '" + origin + "'" + extra + "; rc=$?; rm -f \"$f\"; exit $rc)"
 	send(w, 200, map[string]string{"command": command, "origin": origin})
 	return nil

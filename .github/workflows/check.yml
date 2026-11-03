@@ -29,6 +29,7 @@ jobs:
       - run: python3 scripts/test_nginx_gateway.py
       - run: python3 scripts/test_panel_updater.py
       - run: python3 scripts/test_agent_repair.py
+      - run: python3 scripts/test_port_hopping.py
       - run: python3 scripts/test_prepare.py
       - run: python3 scripts/test_gateway_config.py
       - run: python3 scripts/test_managed_gateway.py
@@ -47,6 +48,7 @@ jobs:
           sudo apt-get install -y nftables
           go run ./cmd/firewall preview --file docs/firewall-example.json > /tmp/harbor-example.nft
           sudo unshare --net nft --check -f /tmp/harbor-example.nft
+          sudo unshare --net python3 scripts/test_port_hopping_native.py
   frontend:
     runs-on: ubuntu-latest
     defaults:
@@ -97,7 +99,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Download the immutable binary distribution
         run: |
-          curl --proto '=https' --tlsv1.2 -fL https://github.com/czy-code-923/czy-code/releases/download/v0.23.0-distribution/harbor-0.23.0-linux-amd64.zip -o /tmp/starhub.zip
+          version="$(python3 -c 'import json; print(json.load(open("scripts/distribution-checksums.json"))["version"])')"
+          curl --proto '=https' --tlsv1.2 -fL "https://github.com/czy-code-923/czy-code/releases/download/v${version}-distribution/harbor-${version}-linux-amd64.zip" -o /tmp/starhub.zip
           python3 -c 'import json; print(json.load(open("scripts/distribution-checksums.json"))["sha256"]["linux-amd64"]+"  /tmp/starhub.zip")' | sha256sum --check
           mkdir /tmp/starhub-distribution
           unzip -q /tmp/starhub.zip -d /tmp/starhub-distribution

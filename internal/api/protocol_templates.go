@@ -72,6 +72,10 @@ func (s *Server) protocolTemplates(w http.ResponseWriter, r *http.Request) error
 			t["reality_optional"] = []string{"reality.short_id", "reality.fingerprint", "flow"}
 			t["note"] = "REALITY TCP uses a generated X25519 keypair, not a CA certificate. Xray 26.10.21 REALITY exports only verified Xray JSON; sing-box 1.14.4 clients use sing-box REALITY."
 		}
+		if kind == "hysteria" || kind == "hysteria2" {
+			t["port_hopping"] = true
+			t["port_hopping_agent"] = "0.23.14"
+		}
 		if kind == "tuic" {
 			t["transports"] = []string{"quic/udp"}
 			t["optional"] = []string{"congestion", "managed_users"}
@@ -85,7 +89,7 @@ func (s *Server) protocolTemplates(w http.ResponseWriter, r *http.Request) error
 			t["note"] = "TLS certificate and password required; default native padding and session settings. JSON clients only."
 		}
 		if kind == "hysteria2" {
-			t["optional"] = []string{"next_id", "managed_users", "hy2_obfs_password", "up_mbps", "down_mbps"}
+			t["optional"] = []string{"next_id", "managed_users", "hy2_obfs_password", "up_mbps", "down_mbps", "hop_ports", "hop_interval_seconds"}
 			t["transports"] = []string{"quic/udp"}
 		}
 	}
@@ -106,7 +110,7 @@ func (s *Server) protocolTemplates(w http.ResponseWriter, r *http.Request) error
 		t["transports"] = transports
 		if kind == "hysteria" {
 			t["required_options"] = []string{"up_mbps", "down_mbps"}
-			t["optional"] = []string{"hysteria_obfs_password", "managed_users", "next_id"}
+			t["optional"] = []string{"hysteria_obfs_password", "managed_users", "next_id", "hop_ports", "hop_interval_seconds"}
 			t["note"] = "Hysteria v1 over QUIC/TLS; both bandwidth values required"
 		}
 		if kind == "naive" {

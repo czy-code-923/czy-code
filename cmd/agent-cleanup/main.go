@@ -150,6 +150,22 @@ func run() error {
 			if e = exec.Command("/usr/bin/systemctl", "disable", "--now", "harbor-agent.service").Run(); e != nil {
 				return e
 			}
+			if _, err := os.Stat("/usr/local/libexec/starhub-agent-network.py"); err == nil {
+				if e = exec.Command("/usr/bin/systemctl", "disable", "--now", "starhub-agent-network.timer").Run(); e != nil {
+					return e
+				}
+				if e = exec.Command("/usr/bin/systemctl", "stop", "starhub-agent-network.service").Run(); e != nil {
+					return e
+				}
+				if e = exec.Command("/usr/bin/python3", "/usr/local/libexec/starhub-agent-network.py", "--env", m.Env, "--clear").Run(); e != nil {
+					return e
+				}
+				for _, name := range []string{"/etc/systemd/system/starhub-agent-network.service", "/etc/systemd/system/starhub-agent-network.timer", "/usr/local/libexec/starhub-agent-network.py"} {
+					if e = os.Remove(name); e != nil && !os.IsNotExist(e) {
+						return e
+					}
+				}
+			}
 		}
 		for _, p := range m.Paths {
 			if e = removeOwned(p); e != nil {
