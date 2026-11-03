@@ -268,6 +268,9 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 			return problem{403, "user group references an unmanaged inbound"}
 		}
 		spec.StripServerSecrets()
+		if format != "sing-box" && format != "mihomo" && format != "mihomo-nodes" && (spec.NeedsTunedClientAgent() || spec.HY2ClientMode == "brutal") {
+			w.Header().Set("X-Starhub-Client-Tuning", "Full sing-box/Mihomo profile required for all client tuning options; URI clients use their local settings")
+		}
 		addresses := spec.EndpointAddresses
 		if len(addresses) == 0 {
 			addresses = []string{spec.Address}

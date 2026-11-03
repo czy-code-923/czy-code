@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "星枢 · VPS 多机管理 API",
-    "version": "0.23.15",
+    "version": "0.23.16",
     "description": "Self-workspace API for host agents, proxy protocols, user quotas and client subscriptions. Bearer administrator token or expiring scoped xs_ API key. No arbitrary shell; privileged gateway work and API key administration remain root-only."
   },
   "servers": [
@@ -8981,11 +8981,11 @@
           },
           "up_mbps": {
             "type": "integer",
-            "description": "Protocol-specific option; requires Agent 0.9+"
+            "description": "Hysteria server transmit Mbps (VPS to client). HY2: 0 unset, Brutal negotiation ceiling only; does not cap BBR. Empty hy2_client_mode preserves legacy client exports."
           },
           "down_mbps": {
             "type": "integer",
-            "description": "Protocol-specific option; requires Agent 0.9+"
+            "description": "Hysteria server receive Mbps (client to VPS). HY2: 0 unset, Brutal negotiation ceiling only; does not cap BBR."
           },
           "cipher": {
             "type": "string",
@@ -9043,6 +9043,67 @@
             "minimum": 0,
             "maximum": 3600,
             "description": "0 uses 30 seconds. When supplied with hop_ports, use 5-3600 seconds."
+          },
+          "hy2_client_mode": {
+            "type": "string",
+            "enum": [
+              "",
+              "bbr",
+              "brutal"
+            ],
+            "description": "HY2 subscription client mode: empty preserves legacy same-value exports; bbr omits client bandwidth; brutal uses independent measured client bandwidth."
+          },
+          "hy2_client_up_mbps": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100000,
+            "description": "Client to VPS Mbps; brutal mode only. 0 selects automatic estimation for this direction."
+          },
+          "hy2_client_down_mbps": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100000,
+            "description": "VPS to client Mbps; brutal mode only. At least one direction must be positive."
+          },
+          "hy2_bbr_profile": {
+            "type": "string",
+            "enum": [
+              "",
+              "standard",
+              "conservative",
+              "aggressive"
+            ],
+            "description": "Client-only HY2 BBR profile. Empty keeps native default."
+          },
+          "tuic_udp_relay_mode": {
+            "type": "string",
+            "enum": [
+              "",
+              "native",
+              "quic"
+            ],
+            "description": "Client-only TUIC UDP relay; empty keeps client default."
+          },
+          "tuic_heartbeat_seconds": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 300,
+            "description": "Client heartbeat in seconds; 0 default. Mihomo is converted to milliseconds."
+          },
+          "anytls_idle_check_seconds": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3600
+          },
+          "anytls_idle_timeout_seconds": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 86400
+          },
+          "anytls_min_idle_sessions": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 32
           }
         }
       },

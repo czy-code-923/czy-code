@@ -9,18 +9,27 @@ import (
 // ProtocolOptions are a bounded, versioned subset of native engine options.
 // Embedding keeps API, encrypted storage and Agent wire fields identical.
 type ProtocolOptions struct {
-	HopPorts      string `json:"hop_ports,omitempty"`
-	HopInterval   int    `json:"hop_interval_seconds,omitempty"`
-	ListenNetwork string `json:"listen_network,omitempty"`
-	Cipher        string `json:"cipher,omitempty"`
-	SnellVersion  int    `json:"snell_version,omitempty"`
-	SnellObfs     string `json:"snell_obfs,omitempty"`
-	SnellHost     string `json:"snell_host,omitempty"`
-	SnellMode     string `json:"snell_mode,omitempty"`
-	HY2Obfs       string `json:"hy2_obfs_password,omitempty"`
-	HysteriaObfs  string `json:"hysteria_obfs_password,omitempty"`
-	UpMbps        int    `json:"up_mbps,omitempty"`
-	DownMbps      int    `json:"down_mbps,omitempty"`
+	HY2ClientMode     string `json:"hy2_client_mode,omitempty"`
+	HY2ClientUpMbps   int    `json:"hy2_client_up_mbps,omitempty"`
+	HY2ClientDownMbps int    `json:"hy2_client_down_mbps,omitempty"`
+	HY2BBRProfile     string `json:"hy2_bbr_profile,omitempty"`
+	TUICRelayMode     string `json:"tuic_udp_relay_mode,omitempty"`
+	TUICHeartbeat     int    `json:"tuic_heartbeat_seconds,omitempty"`
+	AnyTLSIdleCheck   int    `json:"anytls_idle_check_seconds,omitempty"`
+	AnyTLSIdleTimeout int    `json:"anytls_idle_timeout_seconds,omitempty"`
+	AnyTLSMinIdle     int    `json:"anytls_min_idle_sessions,omitempty"`
+	HopPorts          string `json:"hop_ports,omitempty"`
+	HopInterval       int    `json:"hop_interval_seconds,omitempty"`
+	ListenNetwork     string `json:"listen_network,omitempty"`
+	Cipher            string `json:"cipher,omitempty"`
+	SnellVersion      int    `json:"snell_version,omitempty"`
+	SnellObfs         string `json:"snell_obfs,omitempty"`
+	SnellHost         string `json:"snell_host,omitempty"`
+	SnellMode         string `json:"snell_mode,omitempty"`
+	HY2Obfs           string `json:"hy2_obfs_password,omitempty"`
+	HysteriaObfs      string `json:"hysteria_obfs_password,omitempty"`
+	UpMbps            int    `json:"up_mbps,omitempty"`
+	DownMbps          int    `json:"down_mbps,omitempty"`
 }
 
 func (s Spec) snellVersion() int {
@@ -51,6 +60,9 @@ func OptionsCapable(version string) bool {
 	return major > 0 || minor >= 9
 }
 func (s Spec) validateOptions() error {
+	if err := s.validateClientTuning(); err != nil {
+		return err
+	}
 	if err := s.validateHopping(); err != nil {
 		return err
 	}

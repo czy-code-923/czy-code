@@ -284,14 +284,7 @@ func (s Spec) Client(tag string) (map[string]any, map[string]any, string, error)
 	}
 	if s.Kind == "hysteria2" {
 		s.hoppingClient(sb, mh, q)
-		if s.UpMbps > 0 {
-			sb["up_mbps"] = s.UpMbps
-			mh["up"] = s.UpMbps
-		}
-		if s.DownMbps > 0 {
-			sb["down_mbps"] = s.DownMbps
-			mh["down"] = s.DownMbps
-		}
+		s.clientTuning(sb, mh)
 		if s.HY2Obfs != "" {
 			sb["obfs"] = map[string]any{"type": "salamander", "password": s.HY2Obfs}
 			mh["obfs"] = "salamander"
@@ -299,6 +292,9 @@ func (s Spec) Client(tag string) (map[string]any, map[string]any, string, error)
 			q.Set("obfs", "salamander")
 			q.Set("obfs-password", s.HY2Obfs)
 		}
+	}
+	if s.Kind == "tuic" || s.Kind == "anytls" {
+		s.clientTuning(sb, mh)
 	}
 	if len(s.ALPN) > 0 && s.UsesTLS() {
 		sb["tls"].(map[string]any)["alpn"] = s.ALPN

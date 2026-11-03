@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "星枢 · VPS 多机管理 API",
-    "version": "0.23.0",
+    "version": "0.23.16",
     "description": "Self-workspace API for host agents, proxy protocols, user quotas and client subscriptions. Bearer administrator token or expiring scoped xs_ API key. No arbitrary shell; privileged gateway work and API key administration remain root-only."
   },
   "servers": [
@@ -2476,6 +2476,15 @@
                     "items": {
                       "type": "string"
                     }
+                  },
+                  "agent_origins": {
+                    "type": "array",
+                    "maxItems": 4,
+                    "items": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "description": "Preferred exact HTTPS control origins; empty follows management domain"
                   }
                 },
                 "required": [
@@ -2488,7 +2497,8 @@
         },
         "x-required-scopes": [
           "site:write"
-        ]
+        ],
+        "description": "agent_origins: optional array of at most four exact HTTPS origins, ordered by preference. Empty uses the management origin. New gateways must be configured first; preserve the old origin during migration."
       }
     },
     "/api/v1/site/gateway-status": {
@@ -7282,6 +7292,54 @@
         }
       }
     },
+    "/api/v1/gateway/nginx": {
+      "get": {
+        "summary": "查看网关上报的 Nginx 版本",
+        "responses": {
+          "200": {
+            "description": "Nginx 版本及来源"
+          }
+        },
+        "x-required-scopes": [
+          "reverse:read"
+        ]
+      },
+      "post": {
+        "summary": "网关上报 Nginx 版本（管理员）",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "version",
+                  "source"
+                ],
+                "properties": {
+                  "version": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "baota",
+                      "system"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "已记录"
+          }
+        },
+        "x-root-only": true
+      }
+    },
     "/api/v1/subscriptions/{id}/independent-identity": {
       "post": {
         "operationId": "migrateSubscriptionIdentity",
@@ -7381,7 +7439,7 @@
       "get": {
         "operationId": "panelUpdateStatus",
         "summary": "Read panel update helper and job status",
-        "description": "Root administrator only. Updates use the latest verified stable GitHub release and an independent local helper.",
+        "description": "Returns helper readiness, update jobs and database_resources from the local helper: limit_bytes, host_memory_bytes, recommended_bytes and adjusted. Limits are not reservations; reports can be stale when helper_ready is false.",
         "responses": {
           "200": {
             "description": "Update status"
@@ -7456,6 +7514,108 @@
           },
           "409": {
             "description": "Job terminal or unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/agent/repair.py": {
+      "get": {
+        "summary": "Pinned existing-Agent origin repair script",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Python script; command includes SHA-256 pin"
+          }
+        }
+      }
+    },
+    "/api/v1/agent/verify-origin": {
+      "post": {
+        "summary": "Prove same control identity before sending Agent credentials",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "host_id",
+                  "nonce",
+                  "origin"
+                ],
+                "properties": {
+                  "host_id": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{32}$"
+                  },
+                  "nonce": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
+                  "origin": {
+                    "type": "string",
+                    "description": "Exact configured HTTPS origin; bound into HMAC to prevent challenge relay"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "HMAC proof bound to nonce and existing Agent token hash"
+          },
+          "404": {
+            "description": "Unknown host"
+          },
+          "429": {
+            "description": "Rate limited"
+          }
+        }
+      }
+    },
+    "/api/v1/hosts/{id}/repair-command": {
+      "get": {
+        "summary": "Generate credential-preserving Agent address repair command",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "upgrade",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ]
+            },
+            "description": "Also upgrade a standard Linux Agent to the running control release, preserving engines and credentials"
+          },
+          {
+            "name": "hopping",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ]
+            },
+            "description": "Upgrade existing standard Linux Agent and install the restricted UDP hopping helper."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pinned command and selected HTTPS origin"
+          },
+          "400": {
+            "description": "Configure HTTPS origin first"
           }
         }
       }
@@ -8205,6 +8365,10 @@
               "type": "string"
             },
             "maxItems": 16
+          },
+          "control_origin": {
+            "type": "string",
+            "description": "Actual control origin used by this Agent; reported by 0.23.13+"
           }
         }
       },
@@ -8817,11 +8981,11 @@
           },
           "up_mbps": {
             "type": "integer",
-            "description": "Protocol-specific option; requires Agent 0.9+"
+            "description": "Hysteria server transmit Mbps (VPS to client). HY2: 0 unset, Brutal negotiation ceiling only; does not cap BBR. Empty hy2_client_mode preserves legacy client exports."
           },
           "down_mbps": {
             "type": "integer",
-            "description": "Protocol-specific option; requires Agent 0.9+"
+            "description": "Hysteria server receive Mbps (client to VPS). HY2: 0 unset, Brutal negotiation ceiling only; does not cap BBR."
           },
           "cipher": {
             "type": "string",
@@ -8868,6 +9032,78 @@
               "udp"
             ],
             "description": "Shadowsocks native OS listener networks, separate from transport framing. Absent defaults to TCP+UDP. Requires Agent 0.19."
+          },
+          "hop_ports": {
+            "type": "string",
+            "maxLength": 256,
+            "description": "Optional Hysteria/HY2 UDP ranges, e.g. 30000-30100,30200. Up to 16 disjoint ranges and 4096 ports. Linux Agent 0.23.14+ with bounded helper."
+          },
+          "hop_interval_seconds": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3600,
+            "description": "0 uses 30 seconds. When supplied with hop_ports, use 5-3600 seconds."
+          },
+          "hy2_client_mode": {
+            "type": "string",
+            "enum": [
+              "",
+              "bbr",
+              "brutal"
+            ],
+            "description": "HY2 subscription client mode: empty preserves legacy same-value exports; bbr omits client bandwidth; brutal uses independent measured client bandwidth."
+          },
+          "hy2_client_up_mbps": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100000,
+            "description": "Client to VPS Mbps; brutal mode only. 0 selects automatic estimation for this direction."
+          },
+          "hy2_client_down_mbps": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100000,
+            "description": "VPS to client Mbps; brutal mode only. At least one direction must be positive."
+          },
+          "hy2_bbr_profile": {
+            "type": "string",
+            "enum": [
+              "",
+              "standard",
+              "conservative",
+              "aggressive"
+            ],
+            "description": "Client-only HY2 BBR profile. Empty keeps native default."
+          },
+          "tuic_udp_relay_mode": {
+            "type": "string",
+            "enum": [
+              "",
+              "native",
+              "quic"
+            ],
+            "description": "Client-only TUIC UDP relay; empty keeps client default."
+          },
+          "tuic_heartbeat_seconds": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 300,
+            "description": "Client heartbeat in seconds; 0 default. Mihomo is converted to milliseconds."
+          },
+          "anytls_idle_check_seconds": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3600
+          },
+          "anytls_idle_timeout_seconds": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 86400
+          },
+          "anytls_min_idle_sessions": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 32
           }
         }
       },

@@ -24,7 +24,7 @@ func TestProtocolTemplates(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	for _, kind := range []string{"vless", "hysteria2", "tuic", "trojan", "snell", "xray-vless", "xray-trojan", "vmess", "vmess-plain", "vmess-ws", "xray-vmess", "xray-vmess-plain", "xray-vless-ws", "trojan-ws", "anytls", "chain-vmess-ws", "xray-chain-vless", "vless-reality", "xray-vless-reality", "vless-grpc", "xray-vless-grpc", "managed-vless", "xray-managed-vmess", "managed-anytls", "managed-trojan", "xray-managed-trojan", "snell-http", "snell-v6", "hysteria2-obfs", "vmess-grpc", "trojan-grpc", "shadowsocks-aead", "xray-shadowsocks", "xray-shadowsocks-aead"} {
+	for _, kind := range []string{"hysteria2-tuned", "hysteria2-auto", "tuic-tuned", "anytls-tuned", "vless", "hysteria2", "tuic", "trojan", "snell", "xray-vless", "xray-trojan", "vmess", "vmess-plain", "vmess-ws", "xray-vmess", "xray-vmess-plain", "xray-vless-ws", "trojan-ws", "anytls", "chain-vmess-ws", "xray-chain-vless", "vless-reality", "xray-vless-reality", "vless-grpc", "xray-vless-grpc", "managed-vless", "xray-managed-vmess", "managed-anytls", "managed-trojan", "xray-managed-trojan", "snell-http", "snell-v6", "hysteria2-obfs", "vmess-grpc", "trojan-grpc", "shadowsocks-aead", "xray-shadowsocks", "xray-shadowsocks-aead"} {
 		t.Run(kind, func(t *testing.T) {
 			serverEngine := "sing-box"
 			if strings.HasPrefix(kind, "xray-") {
@@ -43,6 +43,23 @@ func TestProtocolTemplates(t *testing.T) {
 			ws := strings.HasSuffix(kind, "-ws")
 			kind = strings.TrimSuffix(strings.TrimSuffix(kind, "-plain"), "-ws")
 			options := ProtocolOptions{}
+			if kind == "hysteria2-tuned" {
+				kind = "hysteria2"
+				options = ProtocolOptions{UpMbps: 900, DownMbps: 200, HY2ClientMode: "brutal", HY2ClientUpMbps: 40, HY2ClientDownMbps: 500}
+			}
+			if kind == "hysteria2-auto" {
+				kind = "hysteria2"
+				options = ProtocolOptions{UpMbps: 900, DownMbps: 200, HY2ClientMode: "bbr"}
+			}
+			if kind == "tuic-tuned" {
+				kind = "tuic"
+				options = ProtocolOptions{TUICRelayMode: "quic", TUICHeartbeat: 15}
+			}
+			if kind == "anytls-tuned" {
+				kind = "anytls"
+				options = ProtocolOptions{AnyTLSIdleCheck: 20, AnyTLSIdleTimeout: 60, AnyTLSMinIdle: 2}
+			}
+
 			if kind == "shadowsocks-aead" {
 				kind = "shadowsocks"
 				options.Cipher = "chacha20-ietf-poly1305"

@@ -80,7 +80,7 @@ func (s *Server) protocolTemplates(w http.ResponseWriter, r *http.Request) error
 			t["port_hopping"] = false
 			t["note"] = "TUIC v5 is supported by sing-box with QUIC/UDP, TLS, UUID and password. Native Hysteria port hopping options are not part of this adapter."
 			t["transports"] = []string{"quic/udp"}
-			t["optional"] = []string{"congestion", "managed_users"}
+			t["optional"] = []string{"congestion", "managed_users", "tuic_udp_relay_mode", "tuic_heartbeat_seconds"}
 			t["credential"] = "UUID and password"
 		}
 		if kind == "snell" {
@@ -88,10 +88,15 @@ func (s *Server) protocolTemplates(w http.ResponseWriter, r *http.Request) error
 			t["note"] = "Snell 5 server is v4 TCP/UDP compatible; v6 export is sing-box only. No v5 QUIC. New options require Agent 0.9+."
 		}
 		if kind == "anytls" {
-			t["note"] = "TLS certificate and password required; default native padding and session settings. JSON clients only."
+			t["optional"] = []string{"anytls_idle_check_seconds", "anytls_idle_timeout_seconds", "anytls_min_idle_sessions"}
+			t["note"] = "TLS certificate and password required; bounded client session options exported to sing-box/Mihomo; default native server padding."
 		}
 		if kind == "hysteria2" {
-			t["optional"] = []string{"next_id", "managed_users", "hy2_obfs_password", "up_mbps", "down_mbps", "hop_ports", "hop_interval_seconds"}
+			t["bandwidth_units"] = "Mbps"
+			t["server_bandwidth"] = map[string]string{"up_mbps": "VPS to client; Brutal negotiation ceiling, 0 unset", "down_mbps": "client to VPS; Brutal negotiation ceiling, 0 unset"}
+			t["client_bandwidth_modes"] = []string{"bbr", "brutal", ""}
+			t["note"] = "Client-only bbr omits bandwidth hints; brutal uses measured client up/down Mbps independently. Empty mode preserves legacy exports. Server ceilings do not limit BBR. Full sing-box/Mihomo profiles carry client tuning."
+			t["optional"] = []string{"next_id", "managed_users", "hy2_obfs_password", "up_mbps", "down_mbps", "hy2_client_mode", "hy2_client_up_mbps", "hy2_client_down_mbps", "hy2_bbr_profile", "hop_ports", "hop_interval_seconds"}
 			t["transports"] = []string{"quic/udp"}
 		}
 	}

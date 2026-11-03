@@ -41,3 +41,10 @@ func applySecurity(s *live.Spec, b liveInput) error {
 	}
 	return nil
 }
+
+func requireTunedChainAgent(s live.Spec, version string) error {
+	if s.Outbound != nil && s.Outbound.NeedsTunedClientAgent() && !live.ClientTuningCapable(version) {
+		return problem{409, "upgrade chain entry Agent to 0.23.16 for client tuning"}
+	}
+	return nil
+}

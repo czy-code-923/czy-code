@@ -266,6 +266,9 @@ func (s *Server) liveUpdate(w http.ResponseWriter, r *http.Request) error {
 	if e = requireHopping(r, tx, host, spec); e != nil {
 		return e
 	}
+	if e := requireTunedChainAgent(spec, av); e != nil {
+		return e
+	}
 	if spec.RequiresV19() && !live.V19Capable(av) {
 		return problem{409, "upgrade host to Agent 0.19.0 for native listener selection"}
 	}
@@ -304,6 +307,10 @@ func (s *Server) liveUpdate(w http.ResponseWriter, r *http.Request) error {
 		if e = rows.Scan(&data, &parentVersion); e != nil {
 			rows.Close()
 			return e
+		}
+		if spec.NeedsTunedClientAgent() && !live.ClientTuningCapable(parentVersion) {
+			rows.Close()
+			return problem{409, "upgrade dependent chain Agent to 0.23.16 for client tuning"}
 		}
 		if spec.HopPorts != "" && !live.HoppingCapable(parentVersion) {
 			rows.Close()

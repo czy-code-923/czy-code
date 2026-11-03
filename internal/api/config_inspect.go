@@ -102,6 +102,7 @@ func inspectInbound(engine string, m map[string]any) inspectedInbound {
 		in["hysteria_obfs_password"] = text(settings["obfs"])
 	}
 	if kind == "hysteria2" {
+		in["hy2_client_mode"] = "bbr"
 		in["hy2_obfs_password"] = object(settings["obfs"])["password"]
 	}
 	if kind == "tuic" {

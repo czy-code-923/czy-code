@@ -452,6 +452,9 @@ func (s *Server) createLiveTx(r *http.Request, tx pgx.Tx, b liveInput, created *
 		if e = tx.QueryRow(ctx, "SELECT agent_version FROM hosts WHERE tenant_id=$1 AND id=$2", tenant, host).Scan(&version); e != nil {
 			return e
 		}
+		if e := requireTunedChainAgent(spec, version); e != nil {
+			return e
+		}
 		if spec.RequiresV19() && !live.V19Capable(version) {
 			return problem{409, "upgrade host to Agent 0.19.0 for native listener selection"}
 		}
@@ -553,8 +556,14 @@ func (s *Server) liveToggle(w http.ResponseWriter, r *http.Request) error {
 			if hasFRPUDP(spec) && !engineUpdateCapable(version) {
 				return problem{409, "FRP UDP requires Agent 0.17 or newer"}
 			}
+			if e := requireTunedChainAgent(spec, version); e != nil {
+				return e
+			}
 			if spec.RequiresHopping() && !live.HoppingCapable(version) {
 				return problem{409, "upgrade Agent to 0.23.14 for port hopping"}
+			}
+			if e := requireTunedChainAgent(spec, version); e != nil {
+				return e
 			}
 			if spec.RequiresV19() && !live.V19Capable(version) {
 				return problem{409, "upgrade host to Agent 0.19.0 for native listener selection"}
@@ -773,6 +782,9 @@ func (s *Server) liveSync(w http.ResponseWriter, r *http.Request, host string) e
 			if e = json.Unmarshal(raw, &next); e != nil {
 				return e
 			}
+			if next.NeedsTunedClientAgent() && !live.ClientTuningCapable(agentVersion) {
+				work[i].Enabled = false
+			}
 			if next.RequiresHopping() && !live.HoppingCapable(agentVersion) {
 				work[i].Enabled = false
 			}
@@ -814,7 +826,7 @@ func (s *Server) liveSync(w http.ResponseWriter, r *http.Request, host string) e
 				}
 			}
 		}
-		compiled = append(compiled, live.Work{ID: work[i].ID, Version: work[i].Version, Enabled: work[i].Enabled, Spec: work[i].Spec})
+		compiled = append(compiled, live.Work{ID: work[i].ID, Version: work[i].Version, Enabled: work[i].Enabled, Spec: work[i].Spec.AgentSpec()})
 	}
 	if b.BundleMode {
 		compiled = live.BundleWork(compiled)
