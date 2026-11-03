@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "星枢 · VPS 多机管理 API",
-    "version": "0.23.17",
+    "version": "0.23.18",
     "description": "Self-workspace API for host agents, proxy protocols, user quotas and client subscriptions. Bearer administrator token or expiring scoped xs_ API key. No arbitrary shell; privileged gateway work and API key administration remain root-only."
   },
   "servers": [
@@ -9274,6 +9274,14 @@
               "type": "string"
             },
             "description": "Empty selects OS-detected uplink interfaces; selecting an interface never retroactively adds its old counters."
+          },
+          "display_unit": {
+            "type": "string",
+            "enum": [
+              "GB",
+              "GiB"
+            ],
+            "description": "Persisted host display preference. GB = 10^9 B; GiB = 2^30 B. Does not change quota_bytes or the byte ledger. Omit to preserve the current preference; new records default to GiB."
           }
         }
       },
@@ -9325,6 +9333,14 @@
             "minimum": 0,
             "maximum": 9000000000000000,
             "description": "Provider usage before this Agent starts tracking; do not infer from OS lifetime counters."
+          },
+          "display_unit": {
+            "type": "string",
+            "enum": [
+              "GB",
+              "GiB"
+            ],
+            "description": "Persisted host display preference. GB = 10^9 B; GiB = 2^30 B. Does not change quota_bytes or the byte ledger. Omit to preserve the current preference; new records default to GiB."
           }
         }
       },

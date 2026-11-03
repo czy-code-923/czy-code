@@ -20,6 +20,7 @@ type hostTrafficInput struct {
 	ResetDay    int      `json:"reset_day"`
 	AutoReset   bool     `json:"auto_reset"`
 	Interfaces  []string `json:"interfaces"`
+	DisplayUnit string   `json:"display_unit,omitempty"`
 }
 
 func nextHostReset(now time.Time, day int) time.Time {
@@ -49,6 +50,9 @@ func saveHostTraffic(ctx context.Context, tx pgx.Tx, id string, in hostTrafficIn
 	if !fresh && in.InitialUsed != nil {
 		return bad("use the calibration endpoint for an existing host")
 	}
+	if in.DisplayUnit != "" && in.DisplayUnit != "GB" && in.DisplayUnit != "GiB" {
+		return bad("host display_unit must be GB or GiB")
+	}
 	if in.Quota < 0 || in.Quota > 9000000000000000 || !slices.Contains([]string{"both", "rx", "tx", "max"}, in.Mode) || in.ResetDay < 1 || in.ResetDay > 31 || len(in.Interfaces) > 16 {
 		return bad("invalid host quota, accounting mode, reset day or interfaces")
 	}
@@ -71,7 +75,7 @@ func saveHostTraffic(ctx context.Context, tx pgx.Tx, id string, in hostTrafficIn
 	if in.Interfaces == nil {
 		raw = []byte(`[]`)
 	}
-	_, e := tx.Exec(ctx, `UPDATE host_traffic SET quota_bytes=$3,mode=$4,reset_day=$5,auto_reset=$6,interfaces=$7,version=version+1,updated_at=now(),next_reset_at=CASE WHEN NOT $6 THEN NULL WHEN next_reset_at IS NULL OR reset_day<>$5 OR NOT auto_reset THEN $8 ELSE next_reset_at END WHERE tenant_id=$1 AND host_id=$2`, tenant, id, in.Quota, in.Mode, in.ResetDay, in.AutoReset, raw, nextHostReset(time.Now(), in.ResetDay))
+	_, e := tx.Exec(ctx, `UPDATE host_traffic SET quota_bytes=$3,mode=$4,reset_day=$5,auto_reset=$6,interfaces=$7,display_unit=COALESCE(NULLIF($9,''),display_unit),version=version+1,updated_at=now(),next_reset_at=CASE WHEN NOT $6 THEN NULL WHEN next_reset_at IS NULL OR reset_day<>$5 OR NOT auto_reset THEN $8 ELSE next_reset_at END WHERE tenant_id=$1 AND host_id=$2`, tenant, id, in.Quota, in.Mode, in.ResetDay, in.AutoReset, raw, nextHostReset(time.Now(), in.ResetDay), in.DisplayUnit)
 	return e
 }
 

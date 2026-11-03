@@ -2,15 +2,30 @@
 import {it,expect,vi,afterEach} from 'vitest'
 import {mount,flushPromises,type VueWrapper} from '@vue/test-utils'
 import HostTraffic from './HostTraffic.vue'
+import Hosts from './Hosts.vue'
 import Devices from './DeviceManager.vue'
 import Logs from './AccessLog.vue'
 let wrappers:VueWrapper[]=[]
-afterEach(()=>{for(const w of wrappers)w.unmount();wrappers=[];vi.useRealTimers();vi.restoreAllMocks()})
+afterEach(()=>{for(const w of wrappers)w.unmount();wrappers=[];vi.useRealTimers();vi.restoreAllMocks();vi.unstubAllGlobals()})
 it('preserves quota bytes when switching GB/GiB and sends the host period configuration',async()=>{
  const stats={version:1,quota_bytes:1073741824,used_bytes:200,remaining_bytes:1073741624,mode:'both',reset_day:1,auto_reset:true,interfaces:[],fresh:true,interfaces_available:[]}
  const api=vi.fn(async(_p:string,m='GET')=>m==='GET'?stats:{saved:true});const w=mount(HostTraffic,{props:{host:{id:'h',name:'VPS'},api}});wrappers.push(w);await flushPromises()
  await w.get('[aria-label="主机流量额度"]').setValue(3);await w.find('.host-billing-fields select').setValue('GB');await w.get('[aria-label="主机计费方式"]').setValue('max');await w.find('form').trigger('submit');await flushPromises()
- expect(api).toHaveBeenCalledWith('hosts/h/traffic','PUT',expect.objectContaining({quota_bytes:3221225472,mode:'max',version:1,reset_day:1}));expect(w.text()).toContain('套餐实时剩余')
+ expect(api).toHaveBeenCalledWith('hosts/h/traffic','PUT',expect.objectContaining({quota_bytes:3221225472,display_unit:'GB',mode:'max',version:1,reset_day:1}));expect(w.text()).toContain('套餐实时剩余')
+})
+it('shows each host in its saved unit without promoting GB or GiB to TB',async()=>{
+ const hosts=[{id:'decimal',name:'GB provider',traffic:{display_unit:'GB',quota_bytes:500e9,used_bytes:50e9,remaining_bytes:450e9}},{id:'binary',name:'GiB provider',traffic:{display_unit:'GiB',quota_bytes:2048*1073741824,used_bytes:256*1073741824,remaining_bytes:1792*1073741824}}]
+ const w=mount(Hosts,{props:{hosts,api:vi.fn()}});wrappers.push(w)
+ const cards=w.findAll('.server-card');expect(cards[0]!.text()).toContain('450.00 GB');expect(cards[0]!.text()).toContain('已用 50.00 GB / 500.00 GB');expect(cards[1]!.text()).toContain('1792.00 GiB');expect(cards[1]!.text()).toContain('已用 256.00 GiB / 2048.00 GiB');expect(w.text()).not.toContain('TiB')
+ await cards[0]!.findAll('button').find(b=>b.text()==='编辑')!.trigger('click')
+ expect(w.get('[aria-label="主机流量单位"]').element).toHaveProperty('value','GB');expect(w.get('[aria-label="主机流量额度"]').element).toHaveProperty('value','500')
+})
+it('keeps saved GB displays and calibration consistent after rereading settings',async()=>{
+ const stats={version:2,display_unit:'GB',quota_bytes:500e9,used_bytes:50e9,remaining_bytes:450e9,period_rx:20e9,period_tx:30e9,mode:'both',reset_day:5,auto_reset:true,interfaces:[],fresh:true}
+ const api=vi.fn(async(_p:string,m='GET')=>m==='GET'?stats:{saved:true});const w=mount(HostTraffic,{props:{host:{id:'h',name:'VPS'},api}});wrappers.push(w);await flushPromises()
+ expect(w.get('[aria-label="主机流量单位"]').element).toHaveProperty('value','GB');expect(w.text()).toContain('450.00 GB');expect(w.text()).toContain('↓ 20.00 GB / ↑ 30.00 GB');expect(w.text()).toContain('运营商本期已用（GB）')
+ vi.stubGlobal('confirm',vi.fn(()=>true));await w.get('.calibration-box input[type="number"]').setValue(60);await w.findAll('button').find(b=>b.text()==='校准 / 重置本期')!.trigger('click');await flushPromises()
+ expect(api).toHaveBeenCalledWith('hosts/h/traffic/calibrate','POST',{version:2,used_bytes:60e9,restart_cycle:false})
 })
 it('shows automatically identified clients without manual registration and preserves editable permissions',async()=>{
  const id='a'.repeat(32),rows:Record<string,any>[]=[{id:'device',name:'Phone',client_id:'sing-box',version:1,enabled:true,all_nodes:true,service_ids:[],registration_source:'subscription_hwid',hwid_registered:true,device_os:'Android',os_version:'15',device_model:'Pixel',user_agent:'Hiddify/fixture'}]
