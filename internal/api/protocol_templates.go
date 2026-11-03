@@ -77,6 +77,8 @@ func (s *Server) protocolTemplates(w http.ResponseWriter, r *http.Request) error
 			t["port_hopping_agent"] = "0.23.14"
 		}
 		if kind == "tuic" {
+			t["port_hopping"] = false
+			t["note"] = "TUIC v5 is supported by sing-box with QUIC/UDP, TLS, UUID and password. Native Hysteria port hopping options are not part of this adapter."
 			t["transports"] = []string{"quic/udp"}
 			t["optional"] = []string{"congestion", "managed_users"}
 			t["credential"] = "UUID and password"

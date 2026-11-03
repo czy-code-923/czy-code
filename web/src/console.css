@@ -37,9 +37,9 @@
 /* Keep table cells in the table formatting context; only their contents flex. */
 .console-root td.action-cell,.console-root td.row-actions{display:table-cell;vertical-align:middle;white-space:normal;overflow:visible}
 .console-root .data-table{table-layout:fixed;white-space:normal;min-width:840px}
-.console-root .data-table td{max-width:none;overflow:visible;overflow-wrap:anywhere;vertical-align:top;line-height:1.7}
+.console-root .data-table td{max-width:none;overflow:visible;overflow-wrap:anywhere;vertical-align:middle;line-height:1.7}
 .console-root .data-table th{white-space:nowrap}
-.console-root .action-cell .row-actions{gap:5px 12px;align-content:flex-start}
+.console-root .action-cell .row-actions{gap:5px 12px;align-content:center;align-items:center}
 .console-root .action-cell .text-button{margin:0;white-space:nowrap;min-height:30px;line-height:1.5;text-align:left}
 .workspace-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:22px 0}
 .workspace-stats>div{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;border:1px solid var(--line);border-radius:10px;background:var(--panel-soft)}
@@ -52,3 +52,14 @@
 @media(max-width:760px){.workspace-stats{gap:8px}.workspace-stats>div{padding:12px}.workspace-stats strong{font-size:22px}.console-root .action-cell .text-button{min-height:44px}.console-root .data-table{min-width:820px}.console-root .share-actions>.primary{flex:1}.console-root .publish-card{padding:17px}}
 
 .console-root[data-theme=light] .primary{color:#fff}
+
+/* Operational tables align the complete name / status / usage block to the row centre. */
+.console-root table :is(th,td){vertical-align:middle}
+.console-root .data-table th{font-weight:600;letter-spacing:.02em}
+.console-root :is(.access-panel,.subscriptions-panel) .table-scroll{border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+.console-root .data-table tbody tr:nth-child(even){background:var(--panel-soft)}
+.console-root .data-table .block-muted{line-height:1.6}
+.console-root .data-table .action-cell .row-actions{gap:4px 8px}
+.console-root .data-table .action-cell .text-button{padding:3px 6px;border-radius:6px}
+.console-root .data-table .action-cell .text-button:hover{background:var(--accent-soft)}
+.console-root .data-table .action-cell .danger:hover{background:var(--danger-bg)}
