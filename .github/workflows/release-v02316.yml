@@ -1,5 +1,5 @@
 name: Publish verified Starhub 0.23.16
-# Publish only after native gateway syntax and permission-safe temporary logs pass.
+# Verify portable two-direction HY2 negotiation and native protocol forwarding before publishing.
 on:
   push:
     branches: [main]

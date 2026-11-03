@@ -57,12 +57,9 @@ func TestHY2BandwidthDirectionsAndLegacyCompatibility(t *testing.T) {
 		})
 	}
 	s.HY2ClientMode = "brutal"
-	s.HY2ClientUpMbps = 0
-	s.HY2ClientDownMbps = 350
-	sb, _, _, err := s.Client("one-direction")
-	if err != nil || sb["up_mbps"] != nil || sb["down_mbps"] != 350 {
-		t.Fatal("per-direction BBR fallback", err, sb)
-	}
+ s.HY2ClientUpMbps, s.HY2ClientDownMbps = 0, 350
+ if _,_,_,err:=s.Client("one-direction");err==nil {t.Fatal("portable adapter accepted ambiguous one-direction Brutal")}
+
 }
 
 func TestProtocolClientTuningValidationAndFormats(t *testing.T) {
@@ -92,7 +89,7 @@ func TestProtocolClientTuningValidationAndFormats(t *testing.T) {
 	if sb["idle_session_check_interval"] != "20s" || mh["idle-session-check-interval"] != 20 || sb["idle_session_timeout"] != "60s" || mh["idle-session-timeout"] != 60 || mh["min-idle-session"] != 2 {
 		t.Fatal("AnyTLS fields", sb, mh)
 	}
-	if ClientTuningCapable("0.23.15") || ClientTuningCapable("0.23") || !ClientTuningCapable("0.23.16") || !ClientTuningCapable("0.24.0") {
+	if ClientTuningCapable("0.23.16") || ClientTuningCapable("0.23") || !ClientTuningCapable("0.23.17") || !ClientTuningCapable("0.24.0") {
 		t.Fatal("Agent capability boundary")
 	}
 }
@@ -108,6 +105,7 @@ func TestNativeClientTuningConfigurations(t *testing.T) {
 		switch kind {
 		case "hysteria2":
 			s.HY2ClientMode = "brutal"
+			s.HY2ClientUpMbps = 40
 			s.HY2ClientDownMbps = 500
 			s.HY2BBRProfile = "conservative"
 		case "tuic":

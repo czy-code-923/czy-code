@@ -6,7 +6,7 @@ import (
 )
 
 // These settings describe a client of this inbound, not its server listener.
-// An empty HY2 mode preserves the pre-0.23.16 export behavior exactly.
+// An empty HY2 mode preserves the pre-0.23.17 export behavior exactly.
 func (s Spec) clientBandwidth() (int, int) {
 	switch s.HY2ClientMode {
 	case "bbr":
@@ -31,8 +31,8 @@ func (s Spec) validateClientTuning() error {
 	if s.HY2ClientMode != "brutal" && (s.HY2ClientUpMbps != 0 || s.HY2ClientDownMbps != 0) {
 		return errors.New("explicit HY2 client bandwidth requires brutal mode")
 	}
-	if s.HY2ClientMode == "brutal" && s.HY2ClientUpMbps == 0 && s.HY2ClientDownMbps == 0 {
-		return errors.New("HY2 brutal mode needs at least one positive client bandwidth; use bbr for automatic estimation")
+	if s.HY2ClientMode == "brutal" && (s.HY2ClientUpMbps == 0 || s.HY2ClientDownMbps == 0) {
+		return errors.New("portable HY2 brutal mode requires positive upload and download Mbps; use bbr for automatic estimation")
 	}
 	if s.HY2BBRProfile != "" && s.HY2BBRProfile != "standard" && s.HY2BBRProfile != "conservative" && s.HY2BBRProfile != "aggressive" {
 		return errors.New("HY2 BBR profile must be standard, conservative, or aggressive")
@@ -120,5 +120,5 @@ func ClientTuningCapable(version string) bool {
 	if _, err := fmt.Sscanf(version, "%d.%d.%d", &major, &minor, &patch); err != nil {
 		return false
 	}
-	return major > 0 || minor > 23 || minor == 23 && patch >= 16
+	return major > 0 || minor > 23 || minor == 23 && patch >= 17
 }

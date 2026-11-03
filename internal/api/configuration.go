@@ -310,7 +310,7 @@ func (s *Server) liveUpdate(w http.ResponseWriter, r *http.Request) error {
 		}
 		if spec.NeedsTunedClientAgent() && !live.ClientTuningCapable(parentVersion) {
 			rows.Close()
-			return problem{409, "upgrade dependent chain Agent to 0.23.16 for client tuning"}
+			return problem{409, "upgrade dependent chain Agent to 0.23.17 for client tuning"}
 		}
 		if spec.HopPorts != "" && !live.HoppingCapable(parentVersion) {
 			rows.Close()

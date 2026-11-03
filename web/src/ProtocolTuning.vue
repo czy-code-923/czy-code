@@ -10,7 +10,7 @@ function bandwidthMode(){if(props.form.hy2_client_mode!=='brutal'){props.form.hy
  <div class="fields">
   <label>客户端带宽模式<select v-model="form.hy2_client_mode" aria-label="HY2 客户端带宽模式" @change="bandwidthMode"><option value="">保留旧版 · 与服务端共用数值</option><option value="bbr">BBR 自动估计（新建默认）</option><option value="brutal">Brutal · 手动填写实测带宽</option></select></label>
   <label>客户端 BBR 配置<select v-model="form.hy2_bbr_profile" aria-label="HY2 客户端 BBR 配置"><option value="">内核默认 standard</option><option value="standard">standard</option><option value="conservative">conservative</option><option value="aggressive">aggressive</option></select></label>
-  <template v-if="form.hy2_client_mode==='brutal'"><label>客户端上传 Mbps<input v-model.number="form.hy2_client_up_mbps" type="number" min="0" max="100000" aria-label="HY2 客户端上传 Mbps"><small>客户端 → VPS；0 使用该方向自动估计。</small></label><label>客户端下载 Mbps<input v-model.number="form.hy2_client_down_mbps" type="number" min="0" max="100000" aria-label="HY2 客户端下载 Mbps"><small>VPS → 客户端；至少一个方向填写正值。</small></label></template>
+  <template v-if="form.hy2_client_mode==='brutal'"><label>客户端上传 Mbps<input v-model.number="form.hy2_client_up_mbps" type="number" required min="1" max="100000" aria-label="HY2 客户端上传 Mbps"><small>客户端 → VPS；填写正值。</small></label><label>客户端下载 Mbps<input v-model.number="form.hy2_client_down_mbps" type="number" required min="1" max="100000" aria-label="HY2 客户端下载 Mbps"><small>VPS → 客户端；两项都需填写正值。</small></label></template>
  </div>
  <p v-if="form.hy2_client_mode==='brutal'" class="form-note">按客户端到该 VPS 的实际可用带宽填写，移动网络建议先用自动模式。填低会限制速率，虚高可能增加丢包、延迟和流量消耗；两端不需要填写同一组数值。</p>
  <p v-if="!form.hy2_client_mode" class="form-note">此选项保留旧节点的下发行为，升级不会自动改动已有带宽。</p>

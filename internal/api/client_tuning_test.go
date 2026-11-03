@@ -18,7 +18,7 @@ func TestClientTuningChainAgentBoundary(t *testing.T) {
 	if requireTunedChainAgent(entry, "0.23.15") == nil {
 		t.Fatal("old chain Agent silently accepted unknown tuning")
 	}
-	if err := requireTunedChainAgent(entry, "0.23.16"); err != nil {
+	if err := requireTunedChainAgent(entry, "0.23.17"); err != nil {
 		t.Fatal(err)
 	}
 	if err := requireTunedChainAgent(next, "0.23.13"); err != nil {
