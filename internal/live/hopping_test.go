@@ -33,7 +33,7 @@ func TestHopValidationAndExports(t *testing.T) {
 		if sb["server_port"] != nil || sb["hop_interval"] != "25s" || mh["ports"] != s.HopPorts || mh["hop-interval"] != 25 {
 			t.Fatalf("wrong client fields: %#v %#v", sb, mh)
 		}
-		if got := sb["server_ports"].([]string); len(got) != 2 || got[0] != "30000:30100" {
+		if got := sb["server_ports"].([]string); len(got) != 2 || got[0] != "30000:30100" || got[1] != "30200:30200" {
 			t.Fatal(got)
 		}
 		u, e := url.Parse(uri)

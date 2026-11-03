@@ -75,6 +75,9 @@ def main():
         run(*arguments)
         engines[target] = directory
 
+    # Native parser validation is a release gate, including standalone hop ports.
+    run("go", "test", "-count=1", "-run", "TestNativeHoppingClientConfiguration", "./internal/live", env={**os.environ, "TEST_SING_BOX_BINARY": str(engines["linux-amd64"] / "sing-box")})
+
     agents = cache / "agents"
     agents.mkdir()
     manifest = {}

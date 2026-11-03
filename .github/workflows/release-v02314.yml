@@ -9,7 +9,7 @@ permissions:
   contents: write
 concurrency:
   group: starhub-release-02314
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
   existing:
     runs-on: ubuntu-latest

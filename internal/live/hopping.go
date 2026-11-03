@@ -135,11 +135,7 @@ func (s Spec) hoppingClient(sb, mh map[string]any, q url.Values) {
 	ranges, _ := HopRanges(s.HopPorts)
 	ports := make([]string, 0, len(ranges))
 	for _, r := range ranges {
-		if r[0] == r[1] {
-			ports = append(ports, strconv.Itoa(r[0]))
-		} else {
-			ports = append(ports, fmt.Sprintf("%d:%d", r[0], r[1]))
-		}
+		ports = append(ports, fmt.Sprintf("%d:%d", r[0], r[1]))
 	}
 	delete(sb, "server_port") // Mutually exclusive in current sing-box.
 	sb["server_ports"] = ports
