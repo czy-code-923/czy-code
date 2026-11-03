@@ -181,6 +181,9 @@ func (s Spec) renderProxy() (string, map[string][]byte, error) {
 // Imported certificates must be publicly trusted for URI clients. JSON clients
 // additionally receive the public certificate as an explicit trust anchor.
 func (s Spec) Client(tag string) (map[string]any, map[string]any, string, error) {
+	if err := s.validateClientTuning(); err != nil {
+		return nil, nil, "", err
+	}
 	if !Proxy(s.Kind) {
 		return nil, nil, "", errors.New("not a proxy endpoint")
 	}

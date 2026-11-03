@@ -1,5 +1,5 @@
 name: Publish verified Starhub 0.23.17
-# Verify portable two-direction HY2 negotiation and native protocol forwarding before publishing.
+# Validate client tuning at every export boundary and verify portable native forwarding before publishing.
 on:
   push:
     branches: [main]

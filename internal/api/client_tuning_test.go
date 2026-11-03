@@ -9,7 +9,7 @@ import (
 )
 
 func TestClientTuningChainAgentBoundary(t *testing.T) {
-	next := live.Spec{Kind: "hysteria2", ProtocolOptions: live.ProtocolOptions{HY2ClientMode: "brutal", HY2ClientDownMbps: 500}}
+	next := live.Spec{Kind: "hysteria2", ProtocolOptions: live.ProtocolOptions{HY2ClientMode: "brutal", HY2ClientUpMbps: 40, HY2ClientDownMbps: 500}}
 	entry := live.Spec{Kind: "trojan", Outbound: &next}
 	if err := requireTunedChainAgent(entry, "0.23.13"); err != nil {
 		t.Fatal("old Agents can use normalized bandwidth", err)

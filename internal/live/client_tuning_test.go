@@ -57,8 +57,10 @@ func TestHY2BandwidthDirectionsAndLegacyCompatibility(t *testing.T) {
 		})
 	}
 	s.HY2ClientMode = "brutal"
- s.HY2ClientUpMbps, s.HY2ClientDownMbps = 0, 350
- if _,_,_,err:=s.Client("one-direction");err==nil {t.Fatal("portable adapter accepted ambiguous one-direction Brutal")}
+	s.HY2ClientUpMbps, s.HY2ClientDownMbps = 0, 350
+	if _, _, _, err := s.Client("one-direction"); err == nil {
+		t.Fatal("portable adapter accepted ambiguous one-direction Brutal")
+	}
 
 }
 
