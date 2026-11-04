@@ -10,7 +10,7 @@ afterEach(()=>{for(const w of wrappers)w.unmount();wrappers=[];vi.useRealTimers(
 it('preserves quota bytes when switching GB/GiB and sends the host period configuration',async()=>{
  const stats={version:1,quota_bytes:1073741824,used_bytes:200,remaining_bytes:1073741624,mode:'both',reset_day:1,auto_reset:true,interfaces:[],fresh:true,interfaces_available:[]}
  const api=vi.fn(async(_p:string,m='GET')=>m==='GET'?stats:{saved:true});const w=mount(HostTraffic,{props:{host:{id:'h',name:'VPS'},api}});wrappers.push(w);await flushPromises()
- await w.get('[aria-label="主机流量额度"]').setValue(3);await w.find('.host-billing-fields select').setValue('GB');await w.get('[aria-label="主机计费方式"]').setValue('max');await w.find('form').trigger('submit');await flushPromises()
+ await w.get('[aria-label="主机流量额度"]').setValue(3);await w.find('.host-billing-fields select').setValue('GB');expect((w.get('[aria-label="主机流量额度"]').element as HTMLInputElement).checkValidity()).toBe(true);await w.get('[aria-label="主机计费方式"]').setValue('max');await w.find('form').trigger('submit');await flushPromises()
  expect(api).toHaveBeenCalledWith('hosts/h/traffic','PUT',expect.objectContaining({quota_bytes:3221225472,display_unit:'GB',mode:'max',version:1,reset_day:1}));expect(w.text()).toContain('套餐实时剩余')
 })
 it('shows each host in its saved unit without promoting GB or GiB to TB',async()=>{

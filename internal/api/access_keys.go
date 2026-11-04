@@ -146,7 +146,7 @@ func requiredScopes(r *http.Request) []string {
 		return []string{"subscriptions" + mode}
 	case "client-profiles", "client-policies", "client-catalog":
 		return []string{"profiles" + mode}
-	case "site":
+	case "site", "display-settings":
 		if len(a) == 1 {
 			return []string{"site" + mode}
 		}

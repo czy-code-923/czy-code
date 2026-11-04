@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "星枢 · VPS 多机管理 API",
-    "version": "0.23.18",
+    "version": "0.23.19",
     "description": "Self-workspace API for host agents, proxy protocols, user quotas and client subscriptions. Bearer administrator token or expiring scoped xs_ API key. No arbitrary shell; privileged gateway work and API key administration remain root-only."
   },
   "servers": [
@@ -5328,7 +5328,8 @@
             "description": "API key request limit"
           }
         },
-        "security": []
+        "security": [],
+        "description": "Public title, version and non-sensitive traffic_unit preference for initial UI rendering."
       }
     },
     "/api/v1/client-catalog": {
@@ -7619,6 +7620,72 @@
           }
         }
       }
+    },
+    "/api/v1/display-settings": {
+      "get": {
+        "summary": "Read traffic display preference",
+        "x-required-scopes": [
+          "site:read"
+        ],
+        "responses": {
+          "200": {
+            "description": "Persisted tenant preference",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrafficDisplaySettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid traffic unit or extra fields"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Missing site permission"
+          }
+        }
+      },
+      "put": {
+        "summary": "Save shared dashboard and user traffic display preference",
+        "x-required-scopes": [
+          "site:write"
+        ],
+        "responses": {
+          "200": {
+            "description": "Persisted tenant preference",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrafficDisplaySettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid traffic unit or extra fields"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Missing site permission"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrafficDisplaySettings"
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -9441,6 +9508,25 @@
           "version": {
             "type": "integer",
             "description": "Use current version on edit; legacy manual import accepts zero"
+          }
+        }
+      },
+      "TrafficDisplaySettings": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "traffic_unit"
+        ],
+        "properties": {
+          "traffic_unit": {
+            "type": "string",
+            "enum": [
+              "GB",
+              "GiB",
+              "auto"
+            ],
+            "default": "GB",
+            "description": "Display only. GB=10^9 bytes, GiB=2^30 bytes. auto scales decimal B/KB/MB/GB/TB/PB. Raw byte quotas and counters remain unchanged. Host allowance tables retain each host display_unit."
           }
         }
       }

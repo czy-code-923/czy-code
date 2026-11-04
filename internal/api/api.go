@@ -138,6 +138,8 @@ func (s *Server) agent(f func(http.ResponseWriter, *http.Request, string) error)
 }
 func (s *Server) Handler() http.Handler {
 	m := http.NewServeMux()
+	m.HandleFunc("GET /api/v1/display-settings", s.admin(s.displaySettings))
+	m.HandleFunc("PUT /api/v1/display-settings", s.admin(s.displaySettings))
 	m.HandleFunc("POST /api/v1/configuration/inspect", s.admin(s.inspectConfiguration))
 	m.HandleFunc("GET /api/v1/notifications/telegram", s.admin(s.notifications))
 	m.HandleFunc("GET /api/v1/panel-release", s.admin(s.panelRelease))

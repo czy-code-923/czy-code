@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import {ref,computed,watch,onUnmounted,onMounted,defineAsyncComponent} from 'vue'
+import {ref,computed,watch,onUnmounted,onMounted,defineAsyncComponent,provide} from 'vue'
 import Hosts from './Hosts.vue'
+import {trafficUnitKey,normalizeTrafficUnit,type TrafficUnit} from './trafficUnits'
+const trafficUnit=ref<TrafficUnit>('GB');provide(trafficUnitKey,trafficUnit)
 const Traffic=defineAsyncComponent(()=>import('./Traffic.vue'))
 const Topology=defineAsyncComponent(()=>import('./Topology.vue'))
 const Users=defineAsyncComponent(()=>import('./Access.vue'))
@@ -24,7 +26,7 @@ async function api(path:string,method='GET',body?:unknown){
  if(!res.ok){if(res.status===401&&connected.value)logout();throw new Error(data.error??'请求失败')};return data
 }
 function schedule(){clearTimeout(timer);if(connected.value)timer=setTimeout(()=>{if(document.visibilityState==='visible')void refresh();else schedule()},30000)}
-async function refresh(){const session=epoch;try{const data=await api('hosts');if(session!==epoch||!alive)return;hosts.value=data;error.value=''}catch(e){if(session===epoch)error.value=String(e)}finally{if(session===epoch)schedule()}}
+async function refresh(){const session=epoch;try{const data=await api('hosts');if(session!==epoch||!alive)return;hosts.value=data;void branding();error.value=''}catch(e){if(session===epoch)error.value=String(e)}finally{if(session===epoch)schedule()}}
 async function login(){if(busy.value)return;busy.value=true;error.value='';const session=epoch;try{const data=await api('hosts');if(session!==epoch||!alive)return;hosts.value=data;connected.value=true;schedule()}catch(e){if(session===epoch)error.value=String(e)}finally{if(session===epoch)busy.value=false}}
 function logout(){epoch++;abort.abort();abort=new AbortController();clearTimeout(timer);connected.value=false;token.value='';hosts.value=[];selectedUser.value='';selectedHost.value='';page.value='overview';busy.value=false}
 function configure(id:string){selectedHost.value=id;page.value='nodes'}
@@ -32,14 +34,14 @@ function usage(id:string){selectedUser.value=id;page.value='usage'}
 function share(id:string){selectedUser.value=id;page.value='subscriptions'}
 onUnmounted(()=>{alive=false;logout();media.removeEventListener('change',changed)})
 const siteTitle=ref('星枢')
-async function branding(){try{const r=await fetch('/api/v1/branding',{signal:AbortSignal.timeout(5000)});if(r.ok){const b=await r.json();siteTitle.value=b.title||'星枢';document.title=siteTitle.value+' · VPS 多机管理'}}catch{}}
+async function branding(){try{const r=await fetch('/api/v1/branding',{signal:AbortSignal.timeout(5000)});if(r.ok){const b=await r.json();siteTitle.value=b.title||'星枢';trafficUnit.value=normalizeTrafficUnit(b.traffic_unit);document.title=siteTitle.value+' · VPS 多机管理'}}catch{}}
 onMounted(()=>void branding())
 </script>
 <template>
 <div class="console-root" :data-theme="resolved">
  <form v-if="!connected" class="entry" @submit.prevent="login"><div class="entry-brand">◈ {{siteTitle}}<span>VPS 多机管理</span></div><h1>让每一台 VPS，各司其职。</h1><p>连接主机，配置协议，为用户分配权限并分享订阅。</p><label>管理员令牌<input v-model="token" type="password" autocomplete="off" required placeholder="输入管理员令牌"></label><p v-if="error" role="alert" class="error">{{error}}</p><button class="primary" :disabled="busy">{{busy?'连接中…':'进入控制台'}}</button></form>
  <div v-else class="console-layout">
- <aside class="console-sidebar"><a class="console-brand" href="#" @click.prevent="page='overview'"><b>◈</b> {{siteTitle}}<small>VPS 多机管理</small></a><button class="secondary console-home" :class="{active:page==='overview'}" @click="page='overview'">◉ 首页与用量</button><span class="nav-caption">管理工作流</span><nav aria-label="主管理导航"><button v-for="(p,i) in pages" :key="p.id" :class="{active:page===p.id}" @click="selectedUser='';page=p.id"><span class="step-number">0{{i+1}}</span><span>{{p.name}}<small>{{p.sub}}</small></span></button></nav><div class="sidebar-bottom"><button class="secondary" :class="{active:page==='settings'}" @click="page='settings'">⚙ 系统设置</button><p>主机 → 协议 → 权限 → 策略 → 订阅</p><small>星枢 0.23.18 · 统一控制面</small></div></aside>
+ <aside class="console-sidebar"><a class="console-brand" href="#" @click.prevent="page='overview'"><b>◈</b> {{siteTitle}}<small>VPS 多机管理</small></a><button class="secondary console-home" :class="{active:page==='overview'}" @click="page='overview'">◉ 首页与用量</button><span class="nav-caption">管理工作流</span><nav aria-label="主管理导航"><button v-for="(p,i) in pages" :key="p.id" :class="{active:page===p.id}" @click="selectedUser='';page=p.id"><span class="step-number">0{{i+1}}</span><span>{{p.name}}<small>{{p.sub}}</small></span></button></nav><div class="sidebar-bottom"><button class="secondary" :class="{active:page==='settings'}" @click="page='settings'">⚙ 系统设置</button><p>主机 → 协议 → 权限 → 策略 → 订阅</p><small>星枢 0.23.19 · 统一控制面</small></div></aside>
  <main class="console-main"><header class="console-header"><span>工作区 <b>/ {{current.name}}</b></span><div><label class="theme-picker">主题<select v-model="theme" aria-label="主题"><option value="dark">深色</option><option value="light">浅色</option><option value="system">跟随系统</option></select></label><button class="text-button" @click="logout">退出登录</button></div></header>
  <div class="console-content"><div class="console-title"><div><span class="eyebrow">STARHUB / {{page.toUpperCase()}}</span><h1>{{current.name}}</h1><p>{{current.sub}}</p></div><span class="control-domain">{{hostname}}</span></div><p v-if="error" class="error" role="alert">{{error}}</p>
  <Traffic v-if="page==='overview'||page==='usage'" :key="page+selectedUser" :api="api" :user-id="page==='usage'?selectedUser:undefined"/>

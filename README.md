@@ -1,6 +1,6 @@
-# 星枢 · VPS 多机管理 0.23.18
+# 星枢 · VPS 多机管理 0.23.19
 
-主机流量按编辑中选择的 GB / GiB 显示并持久保存；主机列表、流量详情与校准输入保持一致，计量和额度继续使用原始字节。[0.23.18 发布说明](docs/RELEASE-v02318.md)。
+首页与用户流量默认使用 GB，设置中可选择 GB / GiB / 自动换算；配额编辑明确选择输入单位，保留原始字节和已用流量。[0.23.19 发布说明](docs/RELEASE-v02319.md)。
 
 保留已有协议、用户权限、流量计量、客户端策略与订阅功能。更新使用正式发布包、校验、停写备份和失败回退；控制面升级与远端 Agent 升级分开处理。
 
@@ -17,18 +17,18 @@
 Linux（Debian 11+ / Ubuntu 22.04+、Fedora、Rocky / Alma / RHEL 8+ / CentOS Stream、openSUSE / SLES 的 systemd 系统；需 root 或 sudo）：
 
 ```bash
-sh -c 'set -eu; S=; if [ "$(id -u)" != 0 ]; then command -v sudo >/dev/null || { echo "Run as root"; exit 1; }; S=sudo; fi; if ! command -v curl >/dev/null; then if command -v apt-get >/dev/null; then $S apt-get update; $S apt-get install -y curl ca-certificates; elif command -v dnf >/dev/null; then $S dnf install -y curl ca-certificates; elif command -v zypper >/dev/null; then $S zypper --non-interactive install curl ca-certificates; elif command -v apk >/dev/null; then $S apk add --no-cache curl ca-certificates; else echo "Install curl first on this OS"; exit 1; fi; fi; F=$(mktemp); curl --proto "=https" --tlsv1.2 -fL https://github.com/czy-code-923/czy-code/releases/download/v0.23.18-distribution/install-starhub.sh -o "$F"; $S sh "$F" --public; rm -f "$F"'
+sh -c 'set -eu; S=; if [ "$(id -u)" != 0 ]; then command -v sudo >/dev/null || { echo "Run as root"; exit 1; }; S=sudo; fi; if ! command -v curl >/dev/null; then if command -v apt-get >/dev/null; then $S apt-get update; $S apt-get install -y curl ca-certificates; elif command -v dnf >/dev/null; then $S dnf install -y curl ca-certificates; elif command -v zypper >/dev/null; then $S zypper --non-interactive install curl ca-certificates; elif command -v apk >/dev/null; then $S apk add --no-cache curl ca-certificates; else echo "Install curl first on this OS"; exit 1; fi; fi; F=$(mktemp); curl --proto "=https" --tlsv1.2 -fL https://github.com/czy-code-923/czy-code/releases/download/v0.23.19-distribution/install-starhub.sh -o "$F"; $S sh "$F" --public; rm -f "$F"'
 ```
 
 Windows 10/11 **管理员 PowerShell**：自动寻找或安装 Python、WinGet、Docker Desktop / WSL 组件，启动并等待 Linux 引擎。首次启用 WSL 需要重启时会提示，重启后重跑同一命令；不会自动重启、切换已有 Windows 容器或跳过 Docker 首次许可 / 虚拟化要求。Windows Server 使用 Linux 虚拟机。
 
 ```powershell
-Invoke-WebRequest https://github.com/czy-code-923/czy-code/releases/download/v0.23.18-distribution/install-starhub.ps1 -OutFile "$env:TEMP/install-starhub.ps1"; & "$env:TEMP/install-starhub.ps1" -Public
+Invoke-WebRequest https://github.com/czy-code-923/czy-code/releases/download/v0.23.19-distribution/install-starhub.ps1 -OutFile "$env:TEMP/install-starhub.ps1"; & "$env:TEMP/install-starhub.ps1" -Public
 ```
 
 默认公开 IP:18080 的认证网页（HTTP）；安装后可在设置绑定域名和 HTTPS。内部 API、分享处理器及数据库仍只监听回环。若要仅本机访问，去掉 `--public` / `-Public`。Windows 默认当前用户登录任务；Linux 服务由 systemd 管理。Alpine / OpenRC 可自动准备依赖，但面板用包内 `quickstart.py --foreground` 配合自己的监督器。环境安装不会卸载旧 Docker、清理镜像/数据或放开数据库端口。
 
-[完整源码与四平台附件](https://github.com/czy-code-923/czy-code/releases/tag/v0.23.18-distribution) · [手动 / Compose / 离线安装](docs/INSTALL.md)
+[完整源码与四平台附件](https://github.com/czy-code-923/czy-code/releases/tag/v0.23.19-distribution) · [手动 / Compose / 离线安装](docs/INSTALL.md)
 
 ## 后台版本与自动更新
 
@@ -126,7 +126,7 @@ Nginx / 宝塔站点、Docker 本身及其他软件不会随面板卸载。更�
 - 防火墙版本编辑、回收站删除/恢复、本机受控移除和取消，保留独立回滚。
 - 原生配置识别草稿、客户端路由引用检查、可视化规则自动同步、嵌套组展开去重。
 - 空授权账号不再可能变为免认证；新增端口失败时保留完全未变的有效入站。补齐扩展协议的用户流量与访问日志解析。
-- 本版控制面与新安装 Agent 为 **0.23.18**；主机流量单位设置只需升级控制面，现有 0.23.17 Agent 可继续使用。
+- 本版控制面与新安装 Agent 为 **0.23.19**；主机流量单位设置只需升级控制面，现有 0.23.17 Agent 可继续使用。
 - [0.13 功能、配置、通知与兼容边界](docs/WORKFLOW-v013.md)。
 
 ## 0.12 新增

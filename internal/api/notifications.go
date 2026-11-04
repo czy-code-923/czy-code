@@ -275,15 +275,18 @@ func (s *Server) notificationSummary(ctx context.Context, command string) (strin
 		var used, quota, remaining, up, down int64
 		var users int
 		e := s.DB.QueryRow(ctx, `SELECT COALESCE(sum(used_bytes),0),COALESCE(sum(quota_bytes),0),COALESCE(sum(GREATEST(quota_bytes-used_bytes,0)) FILTER(WHERE quota_bytes>0),0),COALESCE(sum(upload_bytes),0),COALESCE(sum(download_bytes),0),count(*) FROM proxy_users WHERE tenant_id=$1`, tenant).Scan(&used, &quota, &remaining, &up, &down, &users)
-		return fmt.Sprintf("星枢 · 用户流量\n用户 %d\n本期计费已用 %.2f GiB（原始上传 %.2f / 下载 %.2f）\n有限额度合计 %.2f GiB\n有限额度剩余 %.2f GiB\n无限额度用户不扣减有限余额；共享密钥入口不计入个人账单", users, float64(used)/(1<<30), float64(up)/(1<<30), float64(down)/(1<<30), float64(quota)/(1<<30), float64(remaining)/(1<<30)), e
-	case "hosts", "users", "devices":
-		query := `SELECT h.name,CASE WHEN h.last_seen>now()-interval '90 seconds' THEN '在线' ELSE '离线/未接入' END||' · 套餐已用 '||round(COALESCE(t.used_bytes,0)::numeric/1073741824,2)::text||' GiB · 剩余 '||CASE WHEN COALESCE(t.quota_bytes,0)=0 THEN '不限额' ELSE round(GREATEST(t.quota_bytes-t.used_bytes,0)::numeric/1073741824,2)::text||' GiB' END||CASE WHEN t.last_sample_at>now()-interval '35 seconds' THEN ' · 最新采样' ELSE ' · 断报/待采样' END FROM hosts h LEFT JOIN host_traffic t ON(t.tenant_id,t.host_id)=(h.tenant_id,h.id) WHERE h.tenant_id=$1 AND h.deleted_at IS NULL ORDER BY h.name LIMIT 30`
-		if command == "users" {
-			query = `SELECT name,round(used_bytes::numeric/1073741824,2)::text||' GiB / '||CASE WHEN quota_bytes=0 THEN '不限额' ELSE round(quota_bytes::numeric/1073741824,2)::text||' GiB' END||' · 倍率 '||(multiplier_milli::numeric/1000)::text||'x · '||billing_mode FROM proxy_users WHERE tenant_id=$1 ORDER BY name LIMIT 30`
+		if e != nil {
+			return "", e
 		}
-		if command == "devices" {
-			query = `SELECT u.name,CASE WHEN u.device_limit_mode='compatible' OR ` + deviceLimitSQL + `=0 THEN '兼容访问记录 '||(SELECT count(*) FROM subscription_clients c WHERE c.tenant_id=u.tenant_id AND c.user_id=u.id AND c.enabled AND c.last_subscription_at>now()-interval '7 days')::text||'（最近7天，非物理设备数）' ELSE '严格设备 '||(SELECT count(*) FROM user_devices d WHERE d.tenant_id=u.tenant_id AND d.user_id=u.id AND d.enabled)::text END||' / 上限 '||CASE WHEN ` + deviceLimitSQL + `=0 THEN '不限' ELSE (` + deviceLimitSQL + `)::text END FROM proxy_users u WHERE u.tenant_id=$1 ORDER BY u.name LIMIT 30`
+		unit, e := s.trafficDisplayUnit(ctx)
+		if e != nil {
+			return "", e
 		}
+		return fmt.Sprintf("星枢 · 用户流量\n用户 %d\n本期计费已用 %s（原始上传 %s / 下载 %s）\n有限额度合计 %s\n有限额度剩余 %s\n无限额度用户不扣减有限余额；共享密钥入口不计入个人账单", users, trafficBytes(used, unit), trafficBytes(up, unit), trafficBytes(down, unit), trafficBytes(quota, unit), trafficBytes(remaining, unit)), nil
+	case "hosts", "users":
+		return s.trafficSummary(ctx, command)
+	case "devices":
+		query := `SELECT u.name,CASE WHEN u.device_limit_mode='compatible' OR ` + deviceLimitSQL + `=0 THEN '兼容访问记录 '||(SELECT count(*) FROM subscription_clients c WHERE c.tenant_id=u.tenant_id AND c.user_id=u.id AND c.enabled AND c.last_subscription_at>now()-interval '7 days')::text||'（最近7天，非物理设备数）' ELSE '严格设备 '||(SELECT count(*) FROM user_devices d WHERE d.tenant_id=u.tenant_id AND d.user_id=u.id AND d.enabled)::text END||' / 上限 '||CASE WHEN ` + deviceLimitSQL + `=0 THEN '不限' ELSE (` + deviceLimitSQL + `)::text END FROM proxy_users u WHERE u.tenant_id=$1 ORDER BY u.name LIMIT 30`
 
 		rows, e := s.DB.Query(ctx, query, tenant)
 		if e != nil {

@@ -304,7 +304,7 @@ func TestIntegration(t *testing.T) {
 		t.Fatal("enqueue race", code)
 	}
 	// Another tenant's rows cannot leak through self-scoped list endpoints.
-	db.Exec(ctx, "INSERT INTO tenants VALUES('foreign','Other tenant')")
+	db.Exec(ctx, "INSERT INTO tenants(id,name) VALUES('foreign','Other tenant')")
 	db.Exec(ctx, "INSERT INTO nodes(tenant_id,id,name,engine) VALUES('foreign','foreign-node','hidden','frp')")
 	for _, n := range list("nodes") {
 		if n["id"] == "foreign-node" {

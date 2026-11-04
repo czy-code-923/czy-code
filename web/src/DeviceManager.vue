@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {ref,onMounted,onUnmounted} from 'vue'
-import {hostBytes} from './hostBilling'
+import {useTrafficFormat} from './trafficUnits'
+const {bytes:hostBytes}=useTrafficFormat()
 const props=defineProps<{user:Record<string,any>,api:(p:string,m?:string,b?:any)=>Promise<any>}>(),emit=defineEmits<{close:[],changed:[]}>()
 const rows=ref<Record<string,any>[]>([]),nodes=ref<Record<string,any>[]>([]),clients=ref<Record<string,any>[]>([]),draft=ref<Record<string,any>|null>(null),busy=ref(false),error=ref(''),notice=ref(''),link=ref('')
 let alive=true,timer:ReturnType<typeof setTimeout>

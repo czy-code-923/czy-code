@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {ref,watch,onMounted,onUnmounted} from 'vue'
-import {hostBytes} from './hostBilling'
+import {useTrafficFormat} from './trafficUnits'
+const {bytes:hostBytes}=useTrafficFormat()
 const props=defineProps<{api:(p:string,m?:string,b?:any)=>Promise<any>,userId?:string,users?:Record<string,any>[],expanded:boolean}>(),emit=defineEmits<{'update:expanded':[boolean],'update:userId':[string]}>()
 const root=ref<HTMLElement|null>(null),rows=ref<Record<string,any>[]>([]),page=ref(1),pages=ref(1),total=ref(0),sort=ref('time'),order=ref('desc'),search=ref(''),busy=ref(false),error=ref(''),last=ref('')
 let alive=true,visible=true,sequence=0,timer:ReturnType<typeof setInterval>,observer:IntersectionObserver|undefined

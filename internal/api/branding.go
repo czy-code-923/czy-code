@@ -12,6 +12,10 @@ func (s *Server) branding(w http.ResponseWriter, r *http.Request) error {
 	if e != nil && e != pgx.ErrNoRows {
 		return e
 	}
-	send(w, 200, map[string]string{"title": title, "subtitle": "VPS 多机管理", "version": buildinfo.Version})
+	unit, e := s.trafficDisplayUnit(r.Context())
+	if e != nil {
+		return e
+	}
+	send(w, 200, map[string]string{"title": title, "subtitle": "VPS 多机管理", "version": buildinfo.Version, "traffic_unit": unit})
 	return nil
 }
