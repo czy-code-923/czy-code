@@ -27,20 +27,20 @@ type scopeInfo struct {
 }
 
 var apiScopes = []scopeInfo{
-	{"commerce:read", "��ѯ��ҵ�ɼƷѽڵ���", false}, {"commerce:write", "��ͨ�����Ѻ���ͣ��ҵ�û�Ȩ��", true},
-	{"devices:read", "�鿴�û��豸��ͻ���Ԫ����", true}, {"devices:write", "�Ǽǡ������������û��豸", true}, {"devices:links", "��ȡ�豸ר������ƾ��", true},
-	{"kernels:read", "�鿴�ٷ��ں˰汾�����״̬", false}, {"kernels:update", "��װ���л��ٷ��ں˰汾", true},
-	{"notifications:read", "�鿴֪ͨ��������", true}, {"notifications:write", "��֪ͨ����������Ȩ��ѯ", true},
-	{"hosts:uninstall", "ж��Զ�� Agent ��ɾ��������������", true}, {"hosts:read", "�鿴����", false}, {"hosts:write", "�޸���ɾ������", true}, {"hosts:enroll", "����������ƾ��", true},
-	{"nodes:read", "�鿴Э�����ں�����", false}, {"nodes:write", "�޸ġ���������ͣЭ��", true},
-	{"users:read", "�鿴�û�", false}, {"users:write", "�޸��û������", true}, {"groups:read", "�鿴�û���", false}, {"groups:write", "�޸��û���Ȩ", true},
-	{"usage:read", "�鿴����ͳ��", false}, {"usage:reset", "�����û�����", true}, {"access:read", "�鿴��Դ IP �����Ŀ��", true},
-	{"subscriptions:read", "�鿴�������������", false}, {"subscriptions:write", "�޸��볷������", true}, {"subscriptions:links", "��ȡ�������ӺͿͻ���ƾ��", true},
-	{"profiles:read", "�鿴�ͻ���ģ��", false}, {"profiles:write", "�޸Ŀͻ���ģ��", true},
-	{"site:read", "�鿴վ������", false}, {"site:write", "�޸�������HTTPS �������Դ", true},
-	{"certificates:read", "�鿴֤��״̬", false}, {"certificates:write", "����֤��", true}, {"reverse:read", "�鿴����", false}, {"reverse:write", "��������", true},
-	{"firewall:read", "�鿴����ǽ����", false}, {"firewall:write", "��������ǽ����", true}, {"audit:read", "�鿴���", true},
-	{"inventory:read", "�鿴�߼������汾", false}, {"inventory:write", "�޸ĸ߼����������", true}, {"tasks:read", "�鿴��������", false}, {"tasks:write", "���л�ȡ�����޲�������", true},
+	{"commerce:read", "查询商业可计费节点组", false}, {"commerce:write", "开通、续费和暂停商业用户权益", true},
+	{"devices:read", "查看用户设备与客户端元数据", true}, {"devices:write", "登记、撤销与限制用户设备", true}, {"devices:links", "获取设备专属订阅凭据", true},
+	{"kernels:read", "查看官方内核版本与更新状态", false}, {"kernels:update", "安装或切换官方内核版本", true},
+	{"notifications:read", "查看通知设置与结果", true}, {"notifications:write", "绑定通知机器人与授权查询", true},
+	{"hosts:uninstall", "卸载远端 Agent 并删除主机部署数据", true}, {"hosts:read", "查看主机", false}, {"hosts:write", "修改与删除主机", true}, {"hosts:enroll", "主机接入与凭据", true},
+	{"nodes:read", "查看协议与内核配置", false}, {"nodes:write", "修改、部署与启停协议", true},
+	{"users:read", "查看用户", false}, {"users:write", "修改用户及额度", true}, {"groups:read", "查看用户组", false}, {"groups:write", "修改用户授权", true},
+	{"usage:read", "查看流量统计", false}, {"usage:reset", "重置用户流量", true}, {"access:read", "查看来源 IP 与访问目标", true},
+	{"subscriptions:read", "查看订阅与用量诊断", false}, {"subscriptions:write", "修改与撤销订阅", true}, {"subscriptions:links", "获取订阅链接和客户端凭据", true},
+	{"profiles:read", "查看客户端模板", false}, {"profiles:write", "修改客户端模板", true},
+	{"site:read", "查看站点设置", false}, {"site:write", "修改域名、HTTPS 与跨域来源", true},
+	{"certificates:read", "查看证书状态", false}, {"certificates:write", "管理证书", true}, {"reverse:read", "查看反代", false}, {"reverse:write", "管理反代", true},
+	{"firewall:read", "查看防火墙策略", false}, {"firewall:write", "管理防火墙策略", true}, {"audit:read", "查看审计", true},
+	{"inventory:read", "查看高级库存与版本", false}, {"inventory:write", "修改高级库存与配置", true}, {"tasks:read", "查看部署任务", false}, {"tasks:write", "运行或取消受限部署任务", true},
 }
 var keyPattern = regexp.MustCompile(`^xs_[a-f0-9]{64}$`)
 

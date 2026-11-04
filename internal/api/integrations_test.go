@@ -92,12 +92,12 @@ func TestIntegrationPermissionsAndSubscriptions(t *testing.T) {
 			t.Fatal(e)
 		}
 	}
-	call("PUT", "site", map[string]any{"domain": "vps.example.com", "https": true, "title": "�������", "api_origins": []string{"https://panel.example.com"}}, 200)
+	call("PUT", "site", map[string]any{"domain": "vps.example.com", "https": true, "title": "星枢测试", "api_origins": []string{"https://panel.example.com"}}, 200)
 	request("OPTIONS", "proxy-users", nil, "", "https://panel.example.com", 204)
 	request("OPTIONS", "proxy-users", nil, "", "https://panel.example.com.evil.test", 403)
 	request("GET", "proxy-users", nil, "", "https://panel.example.com", 401)
 	call("PUT", "site", map[string]any{"domain": "vps.example.com", "https": true, "api_origins": []string{"https://*.example.com"}}, 400)
-	if object(call("GET", "branding", nil, 200))["title"] != "�������" {
+	if object(call("GET", "branding", nil, 200))["title"] != "星枢测试" {
 		t.Fatal("branding")
 	}
 	keyBody := map[string]any{"name": "read only", "scopes": []string{"users:read", "subscriptions:read"}, "expires_at": time.Now().Add(time.Hour), "rate_limit": 120}
@@ -164,7 +164,7 @@ func TestIntegrationPermissionsAndSubscriptions(t *testing.T) {
 	call("POST", "live/batch", batch, 409)
 	sid := items[0].(map[string]any)["id"].(string)
 	sql(`UPDATE live_services SET enabled=true,state='running',reported_version=version,reported_at=now() WHERE id=$1`, sid)
-	sub := object(call("POST", "subscriptions", map[string]any{"name": "��������", "service_ids": []string{sid}, "days": 30}, 201))
+	sub := object(call("POST", "subscriptions", map[string]any{"name": "共享测试", "service_ids": []string{sid}, "days": 30}, 201))
 	subid := sub["id"].(string)
 	sql(`INSERT INTO traffic_cursors(tenant_id,host_id,counter_id,subject_kind,subject_id,uplink,downlink) VALUES('self',$1,$2,'service',$3,1024,4096)`, hid, ID(), sid)
 	download := func(format, ua string) *httptest.ResponseRecorder {

@@ -1,5 +1,5 @@
 name: Publish verified Starhub 0.24.1
-# Verify persisted GB/GiB preferences and precise unit conversion before publishing.
+# Verify API key deletion, UTF-8 UI labels and existing workflows before publishing.
 on:
   push:
     branches: [main]
@@ -112,7 +112,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create v0.24.1-distribution .release-output/* --target "$(git rev-parse HEAD)" --prerelease --latest=false --title '���� 0.24.1 �� API ��Կ����ɾ���밲ȫ�ع�' --notes-file docs/RELEASE-v0241.md
+          gh release create v0.24.1-distribution .release-output/* --target "$(git rev-parse HEAD)" --prerelease --latest=false --title '星枢 0.24.1 · API 密钥彻底删除与安全回归' --notes-file docs/RELEASE-v0241.md
       - name: Verify fresh install, Agent onboarding and retirement
         run: |
           mkdir /tmp/starhub-distribution

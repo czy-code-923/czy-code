@@ -1,7 +1,7 @@
 {
   "openapi": "3.0.3",
   "info": {
-    "title": "���� �� VPS ������� API",
+    "title": "星枢 · VPS 多机管理 API",
     "version": "0.24.1",
     "description": "Self-workspace API for host agents, proxy protocols, user quotas and client subscriptions. Bearer administrator token or expiring scoped xs_ API key. No arbitrary shell; privileged gateway work and API key administration remain root-only."
   },
@@ -7295,10 +7295,10 @@
     },
     "/api/v1/gateway/nginx": {
       "get": {
-        "summary": "�鿴�����ϱ��� Nginx �汾",
+        "summary": "查看网关上报的 Nginx 版本",
         "responses": {
           "200": {
-            "description": "Nginx �汾����Դ"
+            "description": "Nginx 版本及来源"
           }
         },
         "x-required-scopes": [
@@ -7306,7 +7306,7 @@
         ]
       },
       "post": {
-        "summary": "�����ϱ� Nginx �汾������Ա��",
+        "summary": "网关上报 Nginx 版本（管理员）",
         "requestBody": {
           "required": true,
           "content": {
@@ -7335,7 +7335,7 @@
         },
         "responses": {
           "200": {
-            "description": "�Ѽ�¼"
+            "description": "已记录"
           }
         },
         "x-root-only": true
