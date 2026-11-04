@@ -1,165 +1,165 @@
-# 星枢 · VPS 多机管理 0.24.0
+# ���� �� VPS ������� 0.24.1
 
-增加购买面板商业接口：独立计费协议白名单、永久订单幂等开通/续费、稳定订阅及到期身份撤销。原有自用和共享节点订阅行为保持。[0.24.0 发布说明](docs/RELEASE-v0240.md)。
+API ��Կɾ��������ʧЧ�����������¼����ʷ�ѳ�����������ʱ����������������ҵ�Ʒѡ��������ڵ��붩�Ĺ��ܡ�[0.24.1 ����˵��](docs/RELEASE-v0241.md)��
 
-保留已有协议、用户权限、流量计量、客户端策略与订阅功能。更新使用正式发布包、校验、停写备份和失败回退；控制面升级与远端 Agent 升级分开处理。
+��������Э�顢�û�Ȩ�ޡ������������ͻ��˲����붩�Ĺ��ܡ�����ʹ����ʽ��������У�顢ͣд���ݺ�ʧ�ܻ��ˣ�������������Զ�� Agent �����ֿ�������
 
-已修正 Android NekoBox / sing-box / Hiddify 订阅适配与规则集出站引用；增加受权限保护的订阅正文、节点与二维码 API；加固安装令牌；增加可选 SS 2022 / Snell 独立身份计量、证书编辑删除、公网 HTTPS 反代及流量查看。[0.23 功能与兼容边界](docs/WORKFLOW-v023.md)。
+������ Android NekoBox / sing-box / Hiddify ������������򼯳�վ���ã�������Ȩ�ޱ����Ķ������ġ��ڵ����ά�� API���ӹ̰�װ���ƣ����ӿ�ѡ SS 2022 / Snell �������ݼ�����֤��༭ɾ�������� HTTPS �����������鿴��[0.23 ��������ݱ߽�](docs/WORKFLOW-v023.md)��
 
-订阅节点的 IPv4 / 域名入口保留后台原名，IPv6 使用「原名-v6」。例如 `snell_pro` / `snell_pro-v6`，不附加随机 ID；策略仍按稳定端点引用选择，改名不会改变授权。重名、与策略组或客户端保留名称冲突时明确提示修改，不生成无法导入的配置。[本版说明](docs/WORKFLOW-v021.md)。
+���Ľڵ�� IPv4 / ������ڱ�����̨ԭ����IPv6 ʹ�á�ԭ��-v6�������� `snell_pro` / `snell_pro-v6`����������� ID�������԰��ȶ��˵�����ѡ�񣬸�������ı���Ȩ����������������ͻ��˱������Ƴ�ͻʱ��ȷ��ʾ�޸ģ��������޷���������á�[����˵��](docs/WORKFLOW-v021.md)��
 
-主流程：**连接主机 → 配置内核与协议 → 用户 / 用户组权限 → 客户端策略 → 用户原订阅分享**。使用 Clash Verge / FlClash 的设备名额时选择兼容模式；该模式统计订阅访问，不证明真实物理设备。已有链接自动跟随用户组授权，无须重建用户。
+�����̣�**�������� �� �����ں���Э�� �� �û� / �û���Ȩ�� �� �ͻ��˲��� �� �û�ԭ���ķ���**��ʹ�� Clash Verge / FlClash ���豸����ʱѡ�����ģʽ����ģʽͳ�ƶ��ķ��ʣ���֤����ʵ�����豸�����������Զ������û�����Ȩ�������ؽ��û���
 
-## 一键部署新总管理端
+## һ���������ܹ�����
 
-脚本检测 Python >=3.9、HTTPS 下载工具与 Docker Linux 容器引擎，缺少时自动安装，已有可用环境直接复用。预编译包按架构选择并核验固定 SHA-256，不需要 Go / Node。已有安装、数据卷、服务或端口冲突会停止，不能用此命令覆盖升级旧面板。
+�ű���� Python >=3.9��HTTPS ���ع����� Docker Linux �������棬ȱ��ʱ�Զ���װ�����п��û���ֱ�Ӹ��á�Ԥ��������ܹ�ѡ�񲢺���̶� SHA-256������Ҫ Go / Node�����а�װ�����ݾ��������˿ڳ�ͻ��ֹͣ�������ô��������������塣
 
-Linux（Debian 11+ / Ubuntu 22.04+、Fedora、Rocky / Alma / RHEL 8+ / CentOS Stream、openSUSE / SLES 的 systemd 系统；需 root 或 sudo）：
+Linux��Debian 11+ / Ubuntu 22.04+��Fedora��Rocky / Alma / RHEL 8+ / CentOS Stream��openSUSE / SLES �� systemd ϵͳ���� root �� sudo����
 
 ```bash
-sh -c 'set -eu; S=; if [ "$(id -u)" != 0 ]; then command -v sudo >/dev/null || { echo "Run as root"; exit 1; }; S=sudo; fi; if ! command -v curl >/dev/null; then if command -v apt-get >/dev/null; then $S apt-get update; $S apt-get install -y curl ca-certificates; elif command -v dnf >/dev/null; then $S dnf install -y curl ca-certificates; elif command -v zypper >/dev/null; then $S zypper --non-interactive install curl ca-certificates; elif command -v apk >/dev/null; then $S apk add --no-cache curl ca-certificates; else echo "Install curl first on this OS"; exit 1; fi; fi; F=$(mktemp); curl --proto "=https" --tlsv1.2 -fL https://github.com/czy-code-923/czy-code/releases/download/v0.24.0-distribution/install-starhub.sh -o "$F"; $S sh "$F" --public; rm -f "$F"'
+sh -c 'set -eu; S=; if [ "$(id -u)" != 0 ]; then command -v sudo >/dev/null || { echo "Run as root"; exit 1; }; S=sudo; fi; if ! command -v curl >/dev/null; then if command -v apt-get >/dev/null; then $S apt-get update; $S apt-get install -y curl ca-certificates; elif command -v dnf >/dev/null; then $S dnf install -y curl ca-certificates; elif command -v zypper >/dev/null; then $S zypper --non-interactive install curl ca-certificates; elif command -v apk >/dev/null; then $S apk add --no-cache curl ca-certificates; else echo "Install curl first on this OS"; exit 1; fi; fi; F=$(mktemp); curl --proto "=https" --tlsv1.2 -fL https://github.com/czy-code-923/czy-code/releases/download/v0.24.1-distribution/install-starhub.sh -o "$F"; $S sh "$F" --public; rm -f "$F"'
 ```
 
-Windows 10/11 **管理员 PowerShell**：自动寻找或安装 Python、WinGet、Docker Desktop / WSL 组件，启动并等待 Linux 引擎。首次启用 WSL 需要重启时会提示，重启后重跑同一命令；不会自动重启、切换已有 Windows 容器或跳过 Docker 首次许可 / 虚拟化要求。Windows Server 使用 Linux 虚拟机。
+Windows 10/11 **����Ա PowerShell**���Զ�Ѱ�һ�װ Python��WinGet��Docker Desktop / WSL ������������ȴ� Linux ���档�״����� WSL ��Ҫ����ʱ����ʾ������������ͬһ��������Զ��������л����� Windows ���������� Docker �״����� / ���⻯Ҫ��Windows Server ʹ�� Linux �������
 
 ```powershell
-Invoke-WebRequest https://github.com/czy-code-923/czy-code/releases/download/v0.24.0-distribution/install-starhub.ps1 -OutFile "$env:TEMP/install-starhub.ps1"; & "$env:TEMP/install-starhub.ps1" -Public
+Invoke-WebRequest https://github.com/czy-code-923/czy-code/releases/download/v0.24.1-distribution/install-starhub.ps1 -OutFile "$env:TEMP/install-starhub.ps1"; & "$env:TEMP/install-starhub.ps1" -Public
 ```
 
-默认公开 IP:18080 的认证网页（HTTP）；安装后可在设置绑定域名和 HTTPS。内部 API、分享处理器及数据库仍只监听回环。若要仅本机访问，去掉 `--public` / `-Public`。Windows 默认当前用户登录任务；Linux 服务由 systemd 管理。Alpine / OpenRC 可自动准备依赖，但面板用包内 `quickstart.py --foreground` 配合自己的监督器。环境安装不会卸载旧 Docker、清理镜像/数据或放开数据库端口。
+Ĭ�Ϲ��� IP:18080 ����֤��ҳ��HTTP������װ��������ð������� HTTPS���ڲ� API�����������������ݿ���ֻ�����ػ�����Ҫ���������ʣ�ȥ�� `--public` / `-Public`��Windows Ĭ�ϵ�ǰ�û���¼����Linux ������ systemd ������Alpine / OpenRC ���Զ�׼��������������ð��� `quickstart.py --foreground` ����Լ��ļල����������װ����ж�ؾ� Docker����������/���ݻ�ſ����ݿ�˿ڡ�
 
-[完整源码与四平台附件](https://github.com/czy-code-923/czy-code/releases/tag/v0.24.0-distribution) · [手动 / Compose / 离线安装](docs/INSTALL.md)
+[����Դ������ƽ̨����](https://github.com/czy-code-923/czy-code/releases/tag/v0.24.1-distribution) �� [�ֶ� / Compose / ���߰�װ](docs/INSTALL.md)
 
-## 后台版本与自动更新
+## ��̨�汾���Զ�����
 
-进入「系统设置 → 后台版本」，检查 GitHub 最新正式版，确认后提交更新。支持的 Linux systemd 安装由独立本机助手处理，关闭网页不会取消任务。更新包校验失败保留原版本；应用后健康检查失败则恢复数据库和文件。更新期间服务可能短暂中断，备份保留在仅 root 可读的 `/var/lib/starhub-updater/`。Windows、Compose 或助手未就绪时页面明确提示手动升级。只允许主管理员操作，委派 API 密钥无更新权限。
+���롸ϵͳ���� �� ��̨�汾������� GitHub ������ʽ�棬ȷ�Ϻ��ύ���¡�֧�ֵ� Linux systemd ��װ�ɶ����������ִ������ر���ҳ����ȡ�����񡣸��°�У��ʧ�ܱ���ԭ�汾��Ӧ�ú󽡿����ʧ����ָ����ݿ���ļ��������ڼ������ܶ����жϣ����ݱ����ڽ� root �ɶ��� `/var/lib/starhub-updater/`��Windows��Compose ������δ����ʱҳ����ȷ��ʾ�ֶ�������ֻ����������Ա������ί�� API ��Կ�޸���Ȩ�ޡ�
 
-自动更新不切换宝塔 Nginx、代理内核或其他 VPS 的 Agent。已有 `/opt/harbor` 由本版升级包安装助手；其他受支持 Linux 安装的启用方式和兼容要求见 [发布说明](docs/RELEASE-v0238.md)。
+�Զ����²��л����� Nginx�������ں˻����� VPS �� Agent������ `/opt/harbor` �ɱ�����������װ���֣�������֧�� Linux ��װ�����÷�ʽ�ͼ���Ҫ��� [����˵��](docs/RELEASE-v0238.md)��
 
-## 查询面板地址与临时 IP 备用入口
+## ��ѯ����ַ����ʱ IP �������
 
-查询配置地址、原生监听地址、备用入口状态（不显示登录令牌）。新安装默认根目录为 `/opt/starhub-control`；当前管理 VPS 为 `/opt/harbor`，脚本可自动识别。
+��ѯ���õ�ַ��ԭ��������ַ���������״̬������ʾ��¼���ƣ����°�װĬ�ϸ�Ŀ¼Ϊ `/opt/starhub-control`����ǰ���� VPS Ϊ `/opt/harbor`���ű����Զ�ʶ��
 
 ```bash
 curl -fL https://raw.githubusercontent.com/czy-code-923/czy-code/main/scripts/panel-access.py -o /tmp/starhub-panel-access.py && sudo python3 /tmp/starhub-panel-access.py status
 ```
 
-当前管理 VPS 可直接查询：
+��ǰ���� VPS ��ֱ�Ӳ�ѯ��
 
 ```bash
 sudo python3 /opt/harbor/panel-access.py status
 ```
 
-域名故障时临时开启 **IP:18081，30 分钟自动关闭**，不更改域名或订阅设置。HTTP 未加密，可信网络才显式启用；平时关闭，公网 API / 数据库端口继续只在回环。若主机或云防火墙阻止 18081，需仅放行此网页端口；脚本不会改全局防火墙。
+��������ʱ��ʱ���� **IP:18081��30 �����Զ��ر�**�������������������á�HTTP δ���ܣ������������ʽ���ã�ƽʱ�رգ����� API / ���ݿ�˿ڼ���ֻ�ڻػ������������Ʒ���ǽ��ֹ 18081��������д���ҳ�˿ڣ��ű������ȫ�ַ���ǽ��
 
 ```bash
 sudo python3 /opt/harbor/panel-access.py enable-ip --allow-http --minutes 30
 ```
 
-手动关闭：
+�ֶ��رգ�
 
 ```bash
 sudo python3 /opt/harbor/panel-access.py disable-ip
 ```
 
-明确需要常开可加 `--persistent`，不推荐在不可信网络长期使用 HTTP。也可通过 SSH 加密转发现有回环网页，无需开放任何备用公网端口：
+��ȷ��Ҫ�����ɼ� `--persistent`�����Ƽ��ڲ��������糤��ʹ�� HTTP��Ҳ��ͨ�� SSH ����ת�����лػ���ҳ�����迪���κα��ù����˿ڣ�
 
 ```bash
 ssh -N -L 18080:127.0.0.1:5173 YOUR_USER@YOUR_VPS
-# 本机浏览器打开 http://127.0.0.1:18080
+# ����������� http://127.0.0.1:18080
 ```
 
-新安装把本地脚本路径换为 `/opt/starhub-control/panel-access.py`，转发目标换为查询返回的 `web_listener`。Windows 可运行 `python "$env:ProgramData/StarhubControl/panel-access.py" status`；临时运行加 `enable-ip --allow-http --foreground`，窗口必须保留，超时或 Ctrl+C 关闭。Compose 使用自己的端口映射与 SSH 转发，详情见 [安装文档](docs/INSTALL.md)。
+�°�װ�ѱ��ؽű�·����Ϊ `/opt/starhub-control/panel-access.py`��ת��Ŀ�껻Ϊ��ѯ���ص� `web_listener`��Windows ������ `python "$env:ProgramData/StarhubControl/panel-access.py" status`����ʱ���м� `enable-ip --allow-http --foreground`�����ڱ��뱣������ʱ�� Ctrl+C �رա�Compose ʹ���Լ��Ķ˿�ӳ���� SSH ת��������� [��װ�ĵ�](docs/INSTALL.md)��
 
-## Linux 一键卸载
+## Linux һ��ж��
 
-默认只卸载本项目运行组件，保留数据库、私有配置和备份。去掉 `--apply` 可以预览。彻底删除数据需自行备份后显式添加 `--purge-data`；远程 Agent 先在主机页逐台退役。
+Ĭ��ֻж�ر���Ŀ����������������ݿ⡢˽�����úͱ��ݡ�ȥ�� `--apply` ����Ԥ��������ɾ�����������б��ݺ���ʽ���� `--purge-data`��Զ�� Agent ��������ҳ��̨���ۡ�
 
 ```bash
 curl -fL https://raw.githubusercontent.com/czy-code-923/czy-code/main/scripts/uninstall.py -o /tmp/starhub-uninstall.py && sudo python3 /tmp/starhub-uninstall.py --apply
 ```
 
-已在当前管理 VPS 安装的本地卸载命令：
+���ڵ�ǰ���� VPS ��װ�ı���ж�����
 
 ```bash
 sudo python3 /opt/harbor/uninstall.py --apply
 ```
 
-## Linux 获取面板管理员登录令牌
+## Linux ��ȡ������Ա��¼����
 
-仅显示已有星枢面板 `ADMIN_TOKEN`，不会生成或重置；与宝塔账号无关。不要把输出粘贴到聊天、日志或 GitHub。
+����ʾ����������� `ADMIN_TOKEN`���������ɻ����ã��뱦���˺��޹ء���Ҫ�����ճ�������졢��־�� GitHub��
 
 ```bash
 curl -fL https://raw.githubusercontent.com/czy-code-923/czy-code/main/scripts/admin-token.py -o /tmp/starhub-admin-token.py && sudo python3 /tmp/starhub-admin-token.py
 ```
 
-当前管理 VPS 的本地命令：
+��ǰ���� VPS �ı������
 
 ```bash
 sudo python3 /opt/harbor/admin-token.py
 ```
 
-源码 / Compose 安装，在项目目录读取自己的私有配置：
+Դ�� / Compose ��װ������ĿĿ¼��ȡ�Լ���˽�����ã�
 
 ```bash
 python3 scripts/admin-token.py --env .env
 ```
 
-## Windows 一键卸载
+## Windows һ��ж��
 
 ```powershell
 Invoke-WebRequest https://raw.githubusercontent.com/czy-code-923/czy-code/main/scripts/uninstall.py -OutFile "$env:TEMP/starhub-uninstall.py"; python "$env:TEMP/starhub-uninstall.py" --apply
 ```
 
-## Windows 获取面板管理员登录令牌
+## Windows ��ȡ������Ա��¼����
 
 ```powershell
 Invoke-WebRequest https://raw.githubusercontent.com/czy-code-923/czy-code/main/scripts/admin-token.py -OutFile "$env:TEMP/starhub-admin-token.py"; python "$env:TEMP/starhub-admin-token.py"
 ```
 
-Nginx / 宝塔站点、Docker 本身及其他软件不会随面板卸载。更多私有配置路径、备份与恢复见 [安装文档](docs/INSTALL.md)。
+Nginx / ����վ�㡢Docker �����������������������ж�ء�����˽������·����������ָ��� [��װ�ĵ�](docs/INSTALL.md)��
 
-## 0.13 新增与修正
+## 0.13 ����������
 
-- 协议/传输/安全分层，按内核联动校验；新增 HTTP/SOCKS/Mixed/Hysteria v1/Naive 及 HTTPUpgrade/XHTTP/HTTP2/mKCP 适配，完整范围见工作流。
-- Telegram 加密绑定、只读命令授权、定时报告内容选择与事件提醒，默认关闭。
-- 防火墙版本编辑、回收站删除/恢复、本机受控移除和取消，保留独立回滚。
-- 原生配置识别草稿、客户端路由引用检查、可视化规则自动同步、嵌套组展开去重。
-- 空授权账号不再可能变为免认证；新增端口失败时保留完全未变的有效入站。补齐扩展协议的用户流量与访问日志解析。
-- 本版控制面与新安装 Agent 为 **0.24.0**；主机流量单位设置只需升级控制面，现有 0.23.17 Agent 可继续使用。
-- [0.13 功能、配置、通知与兼容边界](docs/WORKFLOW-v013.md)。
+- Э��/����/��ȫ�ֲ㣬���ں�����У�飻���� HTTP/SOCKS/Mixed/Hysteria v1/Naive �� HTTPUpgrade/XHTTP/HTTP2/mKCP ���䣬������Χ����������
+- Telegram ���ܰ󶨡�ֻ��������Ȩ����ʱ��������ѡ�����¼����ѣ�Ĭ�Ϲرա�
+- ����ǽ�汾�༭������վɾ��/�ָ��������ܿ��Ƴ���ȡ�������������ع���
+- ԭ������ʶ��ݸ塢�ͻ���·�����ü�顢���ӻ������Զ�ͬ����Ƕ����չ��ȥ�ء�
+- ����Ȩ�˺Ų��ٿ��ܱ�Ϊ����֤�������˿�ʧ��ʱ������ȫδ�����Ч��վ��������չЭ����û������������־������
+- ������������°�װ Agent Ϊ **0.24.1**������������λ����ֻ�����������棬���� 0.23.17 Agent �ɼ���ʹ�á�
+- [0.13 ���ܡ����á�֪ͨ����ݱ߽�](docs/WORKFLOW-v013.md)��
 
-## 0.12 新增
+## 0.12 ����
 
-- 区分节点发布地址与 VPS 出站类型；IPv4 / IPv6 多选，默认使用所选主机 IP，无 IPv6 时禁选；双地址复用同一个入站进程。
-- 用户组统一授权 SS / Snell 与独立用户协议。共享密钥按入口计量，无法伪装成按用户限额或独立撤销。
-- 用户 + 客户端分流策略，Mihomo YAML / 可视化编辑、稳定节点引用、按协议与 IP 类型动态匹配，自动转 sing-box / Xray。
-- Hiddify、NekoBox、v2rayNG、v2rayN、Clash Verge 等客户端选择；完整配置携带规则，URI 仅节点，显式筛选兼容协议。
-- 每月指定日重置（例如 5 日 → 下月 5 日），月末缺日取最后一天，后续保持原设定日。
-- 可选后台域名、IP + 端口、独立订阅域名；默认订阅入口按订阅域名 → 主站域名 → IP 回退。
-- Linux Agent 0.12 受控远程卸载：等待真实回执后清理控制端数据；不会卸载控制面、数据库或其他软件。
-- [本版工作流与限制](docs/WORKFLOW-v012.md)。
+- ���ֽڵ㷢����ַ�� VPS ��վ���ͣ�IPv4 / IPv6 ��ѡ��Ĭ��ʹ����ѡ���� IP���� IPv6 ʱ��ѡ��˫��ַ����ͬһ����վ���̡�
+- �û���ͳһ��Ȩ SS / Snell ������û�Э�顣������Կ����ڼ������޷�αװ�ɰ��û��޶�����������
+- �û� + �ͻ��˷������ԣ�Mihomo YAML / ���ӻ��༭���ȶ��ڵ����á���Э���� IP ���Ͷ�̬ƥ�䣬�Զ�ת sing-box / Xray��
+- Hiddify��NekoBox��v2rayNG��v2rayN��Clash Verge �ȿͻ���ѡ����������Я������URI ���ڵ㣬��ʽɸѡ����Э�顣
+- ÿ��ָ�������ã����� 5 �� �� ���� 5 �գ�����ĩȱ��ȡ���һ�죬��������ԭ�趨�ա�
+- ��ѡ��̨������IP + �˿ڡ���������������Ĭ�϶�����ڰ��������� �� ��վ���� �� IP ���ˡ�
+- Linux Agent 0.12 �ܿ�Զ��ж�أ��ȴ���ʵ��ִ���������ƶ����ݣ�����ж�ؿ����桢���ݿ������������
+- [���湤����������](docs/WORKFLOW-v012.md)��
 
-## 0.11 新增
+## 0.11 ����
 
-- 协议多选 / 全选兼容内核协议，同主机原子保存，端口自动分配，重试不重复创建。
-- 按设置日起每满一月重置，支持自定义周期起点；Clash/Mihomo 原生 YAML 与完整用量响应头。
-- VPS 协议参数 JSON 编辑，客户端 JSON/YAML 模板编辑、订阅绑定用户修改和用量诊断。
-- 星枢品牌与可修改站点名；按功能授权 API 密钥、有效期、限流、撤销及独立前端 CORS。
-- [API 与集成说明](docs/API-INTEGRATIONS.md) · [OpenAPI](docs/openapi.json)。出站策略与受控卸载需要升级 Agent 0.12；已有协议可继续运行。
+- Э���ѡ / ȫѡ�����ں�Э�飬ͬ����ԭ�ӱ��棬�˿��Զ����䣬���Բ��ظ�������
+- ����������ÿ��һ�����ã�֧���Զ���������㣻Clash/Mihomo ԭ�� YAML ������������Ӧͷ��
+- VPS Э����� JSON �༭���ͻ��� JSON/YAML ģ��༭�����İ��û��޸ĺ�������ϡ�
+- ����Ʒ������޸�վ��������������Ȩ API ��Կ����Ч�ڡ�����������������ǰ�� CORS��
+- [API �뼯��˵��](docs/API-INTEGRATIONS.md) �� [OpenAPI](docs/openapi.json)����վ�������ܿ�ж����Ҫ���� Agent 0.12������Э��ɼ������С�
 
-## 本版功能
+## ���湦��
 
-- 主机编辑、停用后删除、单次 15 分钟 Agent 接入命令；Agent 主动连出，无需开放目标设备管理端口。
-- 每台主机每种内核合并运行一个进程；VLESS、VMess、Trojan、Hysteria2、TUIC、AnyTLS、Snell、Shadowsocks 模板，含入站编辑、启停和确认停止后删除。
-- 独立用户身份、用户组、到期、流量额度、每日 / 每月 / 手动重置、额度耗尽撤销；共享密码入口按入口统计。
-- sing-box、Xray JSON、Mihomo、Shadowrocket 显式选择；客户端配置模板、链接重新复制、轮换和撤销。客户端能力不支持时明确拒绝导出。
-- IPv4 / IPv6、FRP TCP 穿透、至多 8 跳链式代理；域名 HTTPS、免费 ACME 证书、受限反代网关、防火墙预览和本地受限应用工具。
-- 明暗 / 系统主题、移动端布局、按需加载；连接元数据保留 7 天 / 20,000 条，不记录 HTTPS 页面内容。
+- �����༭��ͣ�ú�ɾ�������� 15 ���� Agent �������Agent �������������迪��Ŀ���豸�����˿ڡ�
+- ÿ̨����ÿ���ں˺ϲ�����һ�����̣�VLESS��VMess��Trojan��Hysteria2��TUIC��AnyTLS��Snell��Shadowsocks ģ�壬����վ�༭����ͣ��ȷ��ֹͣ��ɾ����
+- �����û����ݡ��û��顢���ڡ�������ȡ�ÿ�� / ÿ�� / �ֶ����á���Ⱥľ�����������������ڰ����ͳ�ơ�
+- sing-box��Xray JSON��Mihomo��Shadowrocket ��ʽѡ�񣻿ͻ�������ģ�塢�������¸��ơ��ֻ��ͳ������ͻ���������֧��ʱ��ȷ�ܾ�������
+- IPv4 / IPv6��FRP TCP ��͸������ 8 ����ʽ���������� HTTPS����� ACME ֤�顢���޷������ء�����ǽԤ���ͱ�������Ӧ�ù��ߡ�
+- ���� / ϵͳ���⡢�ƶ��˲��֡�������أ�����Ԫ���ݱ��� 7 �� / 20,000 ��������¼ HTTPS ҳ�����ݡ�
 
-## 本地启动
+## ��������
 
-需要 Docker Engine + Compose v2（Windows 使用 Docker Desktop Linux 容器模式）和 Python 3。
+��Ҫ Docker Engine + Compose v2��Windows ʹ�� Docker Desktop Linux ����ģʽ���� Python 3��
 
 ```bash
 bash scripts/install.sh compose
@@ -169,28 +169,28 @@ bash scripts/install.sh compose
 .\scripts\install.ps1 -Mode compose
 ```
 
-打开 http://127.0.0.1:5173，使用本机 `.env` 的 `ADMIN_TOKEN`。安装器生成缺失随机凭据并保留现有 `MASTER_KEY`。API、分享端、前端仅绑定回环；数据库不发布公网端口。远程管理经受限 HTTPS 网关或 SSH 转发，详见 [安装](docs/INSTALL.md)。
+�� http://127.0.0.1:5173��ʹ�ñ��� `.env` �� `ADMIN_TOKEN`����װ������ȱʧ���ƾ�ݲ��������� `MASTER_KEY`��API�������ˡ�ǰ�˽��󶨻ػ������ݿⲻ���������˿ڡ�Զ�̹��������� HTTPS ���ػ� SSH ת������� [��װ](docs/INSTALL.md)��
 
 ```bash
 ssh -N -L 5173:127.0.0.1:5173 YOUR_USER@YOUR_VPS
 ```
 
-## 手动构建与测试
+## �ֶ����������
 
-源码构建使用 Go **1.27.3+**、Node.js 22.12+、Python 3；原生控制面需要 PostgreSQL 17。构建完成后无需 Node 常驻。
+Դ�빹��ʹ�� Go **1.27.3+**��Node.js 22.12+��Python 3��ԭ����������Ҫ PostgreSQL 17��������ɺ����� Node ��פ��
 
 ```bash
 bash scripts/install.sh build
 python scripts/prepare.py
-# 在私有 .env 配置 DATABASE_URL 和 WEB_DIR（web/dist 绝对路径）
+# ��˽�� .env ���� DATABASE_URL �� WEB_DIR��web/dist ����·����
 bash scripts/run-native.sh control
 ```
 
-Windows 使用 `./scripts/install.ps1 -Mode build` 和 `./scripts/run-native.ps1 -Role control`。Linux / Windows amd64 / arm64 的四平台构建见 GitHub Build 工作流；目标机安装细节见 [INSTALL.md](docs/INSTALL.md)。
+Windows ʹ�� `./scripts/install.ps1 -Mode build` �� `./scripts/run-native.ps1 -Role control`��Linux / Windows amd64 / arm64 ����ƽ̨������ GitHub Build ��������Ŀ�����װϸ�ڼ� [INSTALL.md](docs/INSTALL.md)��
 
 ```bash
 go vet ./...
-# 集成测试只使用专用测试库，自动创建 / 清理隔离 schema
+# ���ɲ���ֻʹ��ר�ò��Կ⣬�Զ����� / �������� schema
 export TEST_DATABASE_URL='postgres://TEST_USER:TEST_PASSWORD@127.0.0.1:5432/harbor_test?sslmode=disable'
 go test -count=1 ./...
 python scripts/test_domain_sync.py
@@ -199,62 +199,62 @@ python scripts/test_agent_bootstrap.py
 cd web && npm ci && npm test && npm run build
 ```
 
-## 内核与一键接入包
+## �ں���һ�������
 
-安装器采用固定下载地址和 SHA-256 校验。本版使用官方 sing-box 1.14.4、Xray 26.10.21、FRP 0.71.1 发行文件。下载时核对官方资产 SHA-256，不再使用本项目定制后缀。主机卡片的“内核版本”可以查询最新稳定版、安装或切换指定版本；Agent 先检查当前配置，启动失败时回退。
+��װ�����ù̶����ص�ַ�� SHA-256 У�顣����ʹ�ùٷ� sing-box 1.14.4��Xray 26.10.21��FRP 0.71.1 �����ļ�������ʱ�˶Թٷ��ʲ� SHA-256������ʹ�ñ���Ŀ���ƺ�׺��������Ƭ�ġ��ں˰汾�����Բ�ѯ�����ȶ��桢��װ���л�ָ���汾��Agent �ȼ�鵱ǰ���ã�����ʧ��ʱ���ˡ�
 
 ```bash
 python scripts/fetch-engines.py
 python scripts/build-agent-releases.py --output agent-releases-v010
 ```
 
-fetch-engines.py 下载官方发行文件，无需 Go。使用 --sing-box-version / --xray-version / --frp-version 指定标签或 latest；脚本不会覆盖已有 engines/。Agent 包附带未修改的官方 sing-box 对应源码与许可。官方来源及摘要校验不等同于没有上游漏洞，升级后仍需关注官方安全公告。`AGENT_RELEASE_DIR` 指向新版本目录后，面板可生成目标 VPS 的接入命令，不覆盖已安装的 Agent。
+fetch-engines.py ���عٷ������ļ������� Go��ʹ�� --sing-box-version / --xray-version / --frp-version ָ����ǩ�� latest���ű����Ḳ������ engines/��Agent ������δ�޸ĵĹٷ� sing-box ��ӦԴ�������ɡ��ٷ���Դ��ժҪУ�鲻��ͬ��û������©���������������ע�ٷ���ȫ���档`AGENT_RELEASE_DIR` ָ���°汾Ŀ¼����������Ŀ�� VPS �Ľ�������������Ѱ�װ�� Agent��
 
-## 使用与边界
+## ʹ����߽�
 
-在系统设置修改域名 / HTTPS，网关实际状态另行回报。普通 TLS 需要自己域名对应的证书；**只有 REALITY 的目标与 SNI 可以选大厂候选站点**，仍需从目标 VPS 验证可达性。证书不能用任意大厂域名替代。VMess AEAD 本身不强制证书，是否需要证书取决于外层 TLS。
+��ϵͳ�����޸����� / HTTPS������ʵ��״̬���лر�����ͨ TLS ��Ҫ�Լ�������Ӧ��֤�飻**ֻ�� REALITY ��Ŀ���� SNI ����ѡ�󳧺�ѡվ��**�������Ŀ�� VPS ��֤�ɴ��ԡ�֤�鲻������������������VMess AEAD ������ǿ��֤�飬�Ƿ���Ҫ֤��ȡ������� TLS��
 
-流量额度用于 6 种具有独立用户认证的模板；Snell / 当前 Shadowsocks 模板使用共享密钥，只能按入口计量。统计约 10 秒上报，短时超额和异常退出时少量计量误差仍可能出现。流量从升级后开始，历史无法补算。详见 [计量](docs/TRAFFIC-v010.md)。
+����������� 6 �־��ж����û���֤��ģ�壻Snell / ��ǰ Shadowsocks ģ��ʹ�ù�����Կ��ֻ�ܰ���ڼ�����ͳ��Լ 10 ���ϱ�����ʱ������쳣�˳�ʱ������������Կ��ܳ��֡�������������ʼ����ʷ�޷����㡣��� [����](docs/TRAFFIC-v010.md)��
 
-无公网 IPv4 设备可主动连接可达中继；IPv6-only 入口要求客户端具备 IPv6 可达性。系统仍是单管理员个人平台，尚无商业多租户隔离、MFA / OIDC、支付、生产恢复演练或完整负载测试。安全扫描不等于不存在漏洞，见 [安全检查](docs/SECURITY-v010.md)。
+�޹��� IPv4 �豸���������ӿɴ��м̣�IPv6-only ���Ҫ��ͻ��˾߱� IPv6 �ɴ��ԡ�ϵͳ���ǵ�����Ա����ƽ̨��������ҵ���⻧���롢MFA / OIDC��֧���������ָ��������������ز��ԡ���ȫɨ�費���ڲ�����©������ [��ȫ���](docs/SECURITY-v010.md)��
 
-订阅 URL 撤销不会收回已下载的代理凭据；需要撤销用户、轮换用户凭据或停用对应入口。数据库和 `MASTER_KEY` 必须分别备份，密钥不能提交 GitHub。
+���� URL ���������ջ������صĴ���ƾ�ݣ���Ҫ�����û����ֻ��û�ƾ�ݻ�ͣ�ö�Ӧ��ڡ����ݿ�� `MASTER_KEY` ����ֱ𱸷ݣ���Կ�����ύ GitHub��
 
-## 文档
+## �ĵ�
 
-- [本版功能与待办](docs/FEATURES.md)
-- [计量、配额与访问记录](docs/TRAFFIC-v010.md)
-- [协议 / CRUD 工作流](docs/WORKFLOW-v09.md)
-- [安全检查与内核构建](docs/SECURITY-v010.md)
-- [主机接入](docs/AGENT-CONNECT.md) · [域名 / NAT / IPv6](docs/PUBLISH.md)
-- [防火墙](docs/FIREWALL.md) · [OpenAPI](docs/openapi.json)
-- [后续路线](docs/ROADMAP.md)
+- [���湦�������](docs/FEATURES.md)
+- [�������������ʼ�¼](docs/TRAFFIC-v010.md)
+- [Э�� / CRUD ������](docs/WORKFLOW-v09.md)
+- [��ȫ������ں˹���](docs/SECURITY-v010.md)
+- [��������](docs/AGENT-CONNECT.md) �� [���� / NAT / IPv6](docs/PUBLISH.md)
+- [����ǽ](docs/FIREWALL.md) �� [OpenAPI](docs/openapi.json)
+- [����·��](docs/ROADMAP.md)
 
 
-## 卸载与管理员令牌
+## ж�������Ա����
 
-Linux / Windows 通用命令见本文前部，更多布局见 [安装文档](docs/INSTALL.md)。令牌是星枢面板的 ADMIN_TOKEN。
+Linux / Windows ͨ�����������ǰ�������಼�ּ� [��װ�ĵ�](docs/INSTALL.md)���������������� ADMIN_TOKEN��
 
-## 控制端换域名与 Agent 地址修复
+## ���ƶ˻������� Agent ��ַ�޸�
 
-「系统设置 → 站点与域名」可单独设置最多 4 个 Agent HTTPS 控制地址（按优先级）。地址必须事先拥有有效证书，并反代至同一个管理 API；该输入框不自动创建第三个 Nginx 网关。留空跟随控制台域名，订阅域名单独维护。
+��ϵͳ���� �� վ�����������ɵ���������� 4 �� Agent HTTPS ���Ƶ�ַ�������ȼ�������ַ��������ӵ����Ч֤�飬��������ͬһ������ API����������Զ����������� Nginx ���ء����ո������̨������������������ά����
 
-先保持旧域名可达，设置并验证新地址。Agent **0.23.17+** 从已鉴权心跳获取地址，通过绑定目标域名和随机挑战的 HMAC 证明后切换；不跟随 HTTP 重定向、不绕过 TLS、不向未经验证的目标发送令牌。已验证地址保存在私有状态目录，重启后可恢复。变更时请保留旧入口，等全部主机的“控制地址”回报更新后再关闭。
+�ȱ��־������ɴ���ò���֤�µ�ַ��Agent **0.23.17+** ���Ѽ�Ȩ������ȡ��ַ��ͨ����Ŀ�������������ս�� HMAC ֤�����л��������� HTTP �ض��򡢲��ƹ� TLS������δ����֤��Ŀ�귢�����ơ�����֤��ַ������˽��״̬Ŀ¼��������ɻָ������ʱ�뱣������ڣ���ȫ�������ġ����Ƶ�ַ���ر����º��ٹرա�
 
-若原地址已失效，进入「连接主机 → 连接 / 恢复 → 生成控制端地址修复命令」，在原 VPS SSH 执行。保留 HOST_ID / AGENT_TOKEN、内核、协议配置和流量账本，无需删除主机或重新注册。“生成 Agent 升级命令”会校验本控制端版本对应的 GitHub 正式发行包，仅更新标准 Linux `/opt/harbor-agent` 安装的 Agent；失败恢复旧二进制，现有内核不切换。总管理机的旧布局 Agent 由面板升级流程维护。两种操作均可能短暂中断本机托管代理。
+��ԭ��ַ��ʧЧ�����롸�������� �� ���� / �ָ� �� ���ɿ��ƶ˵�ַ�޸��������ԭ VPS SSH ִ�С����� HOST_ID / AGENT_TOKEN���ںˡ�Э�����ú������˱�������ɾ������������ע�ᡣ������ Agent ���������У�鱾���ƶ˰汾��Ӧ�� GitHub ��ʽ���а��������±�׼ Linux `/opt/harbor-agent` ��װ�� Agent��ʧ�ָܻ��ɶ����ƣ������ں˲��л����ܹ������ľɲ��� Agent �������������ά�������ֲ��������ܶ����жϱ����йܴ�����
 
-## 数据库内存
+## ���ݿ��ڴ�
 
-内存上限不是预占内存。新安装和 Compose 默认 512 MiB，Compose 用 `POSTGRES_MEMORY_LIMIT`，新安装用 `quickstart.py --db-memory-mb 512` 调整。旧 Linux 安装的更新助手仅扩大过小上限：物理内存 ≥1.5 GiB 时为 512 MiB，≥768 MiB 时为 384 MiB，否则为 256 MiB；保持原有更大或不限额设置，不重启数据库、不清理数据、不自动调高连接数。设置 → 后台版本可查看最近回报的限制与主机内存。
+�ڴ����޲���Ԥռ�ڴ档�°�װ�� Compose Ĭ�� 512 MiB��Compose �� `POSTGRES_MEMORY_LIMIT`���°�װ�� `quickstart.py --db-memory-mb 512` �������� Linux ��װ�ĸ������ֽ������С���ޣ������ڴ� ��1.5 GiB ʱΪ 512 MiB����768 MiB ʱΪ 384 MiB������Ϊ 256 MiB������ԭ�и�����޶����ã����������ݿ⡢���������ݡ����Զ����������������� �� ��̨�汾�ɲ鿴����ر��������������ڴ档
 
-需要更大容量时，在 SSH 执行（只允许扩大上限）：
+��Ҫ��������ʱ���� SSH ִ�У�ֻ�����������ޣ���
 
 ```bash
 sudo python3 /opt/harbor/scripts/panel-updater.py --env /etc/harbor/control.env --database-memory-mb 768
 ```
 
-新安装使用 `/opt/starhub-control/scripts/panel-updater.py --env /opt/starhub-control/control.env`。几十台 VPS / 上百用户不是单靠内存额度就能保证的容量：持续观察峰值、OOM、响应延迟、磁盘、计量断报与备份；默认应用连接池 4 条并复用连接，VPS 数不等于数据库连接数。
+�°�װʹ�� `/opt/starhub-control/scripts/panel-updater.py --env /opt/starhub-control/control.env`����ʮ̨ VPS / �ϰ��û����ǵ����ڴ��Ⱦ��ܱ�֤�������������۲��ֵ��OOM����Ӧ�ӳ١����̡������ϱ��뱸�ݣ�Ĭ��Ӧ�����ӳ� 4 �����������ӣ�VPS �����������ݿ���������
 
-端口跳跃：Hysteria / HY2 的可选设置、Linux 受限助手和客户端格式说明见 [PORT-HOPPING.md](docs/PORT-HOPPING.md)。现有节点默认关闭，远端主机需要先执行面板提供的助手安装 / 更新命令。
+�˿���Ծ��Hysteria / HY2 �Ŀ�ѡ���á�Linux �������ֺͿͻ��˸�ʽ˵���� [PORT-HOPPING.md](docs/PORT-HOPPING.md)�����нڵ�Ĭ�Ϲرգ�Զ��������Ҫ��ִ������ṩ�����ְ�װ / �������
 
-HY2 服务端带宽与客户端带宽可分别设置；TUIC / AnyTLS 专属客户端参数也支持完整订阅同步。用法、单位、方向、协议范围及兼容限制见 [协议参数与性能设置](docs/PROTOCOL-PERFORMANCE.md)。
+HY2 ����˴�����ͻ��˴����ɷֱ����ã�TUIC / AnyTLS ר���ͻ��˲���Ҳ֧����������ͬ�����÷�����λ������Э�鷶Χ���������Ƽ� [Э���������������](docs/PROTOCOL-PERFORMANCE.md)��
