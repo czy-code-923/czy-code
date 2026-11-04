@@ -15,9 +15,9 @@ func TestPanelUpdateQueueRootAndLocalWorker(t *testing.T) {
 	s := testControlDB(t)
 	h := api018{t, s}
 	s.panelReleaseClient = &http.Client{Transport: notificationTransport(func(r *http.Request) (*http.Response, error) {
-		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"tag_name":"v0.24.0-distribution","draft":false,"prerelease":false}`))}, nil
+		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"tag_name":"v99.0.0-distribution","draft":false,"prerelease":false}`))}, nil
 	})}
-	body := map[string]any{"version": "0.24.0", "current": buildinfo.Version}
+	body := map[string]any{"version": "99.0.0", "current": buildinfo.Version}
 	h.call("POST", "panel-updates", body, 409, nil)
 	worker := func(action string, body any, want int, forwarded bool) []byte {
 		t.Helper()
@@ -41,12 +41,12 @@ func TestPanelUpdateQueueRootAndLocalWorker(t *testing.T) {
 	if got := obj018(h.call("GET", "panel-release", nil, 200, nil)); got["automatic_update"] != true {
 		t.Fatal("helper readiness missing")
 	}
-	h.call("POST", "panel-updates", map[string]string{"version": "0.24.0", "current": "0.1.0"}, 409, nil)
+	h.call("POST", "panel-updates", map[string]string{"version": "99.0.0", "current": "0.1.0"}, 409, nil)
 	job := obj018(h.call("POST", "panel-updates", body, 202, nil))
 	id := job["id"].(string)
 	h.call("POST", "panel-updates", body, 409, nil)
 	claim := obj018(worker("claim", map[string]any{}, 200, false))["job"].(map[string]any)
-	if claim["id"] != id || claim["target_version"] != "0.24.0" {
+	if claim["id"] != id || claim["target_version"] != "99.0.0" {
 		t.Fatal("incorrect queued version")
 	}
 	if got := obj018(worker("claim", map[string]any{}, 200, false)); got["job"] != nil {

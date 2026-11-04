@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "星枢 · VPS 多机管理 API",
-    "version": "0.23.19",
+    "version": "0.24.0",
     "description": "Self-workspace API for host agents, proxy protocols, user quotas and client subscriptions. Bearer administrator token or expiring scoped xs_ API key. No arbitrary shell; privileged gateway work and API key administration remain root-only."
   },
   "servers": [
@@ -7681,6 +7681,151 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/TrafficDisplaySettings"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/commerce/groups": {
+      "get": {
+        "summary": "List commercial group and protocol candidates",
+        "operationId": "commerce_get_groups",
+        "x-required-scopes": [
+          "commerce:read"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "409": {
+            "description": "Readiness, capacity, identity or order conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/commerce/validate": {
+      "post": {
+        "summary": "Validate independent credentials, live metering and ready deployments",
+        "operationId": "commerce_post_validate",
+        "x-required-scopes": [
+          "commerce:read"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "409": {
+            "description": "Readiness, capacity, identity or order conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/commerce/entitlements": {
+      "post": {
+        "summary": "Idempotently grant or renew commercial user and stable subscription",
+        "operationId": "commerce_post_entitlements",
+        "x-required-scopes": [
+          "commerce:write"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "409": {
+            "description": "Readiness, capacity, identity or order conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/commerce/accounts/{id}/state": {
+      "put": {
+        "summary": "Enable or disable a commercial account and its proxy credentials",
+        "operationId": "commerce_put_state",
+        "x-required-scopes": [
+          "commerce:write"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "409": {
+            "description": "Readiness, capacity, identity or order conflict"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
               }
             }
           }

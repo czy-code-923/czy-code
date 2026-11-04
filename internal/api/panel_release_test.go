@@ -13,9 +13,9 @@ func TestPanelReleaseCheckUsesOnlyValidatedOfficialRelease(t *testing.T) {
 		body   string
 		status int
 	}{
-		{`{"tag_name":"v0.24.0-distribution","draft":false,"prerelease":false}`, 200},
-		{`{"tag_name":"v0.24.0-distribution","prerelease":true}`, 502},
-		{`{"tag_name":"v0.24.0-distribution/../../evil"}`, 502},
+		{`{"tag_name":"v99.0.0-distribution","draft":false,"prerelease":false}`, 200},
+		{`{"tag_name":"v99.0.0-distribution","prerelease":true}`, 502},
+		{`{"tag_name":"v99.0.0-distribution/../../evil"}`, 502},
 	} {
 		s := &Server{AdminToken: strings.Repeat("a", 32), panelReleaseClient: &http.Client{Transport: notificationTransport(func(r *http.Request) (*http.Response, error) {
 			if r.URL.String() != "https://api.github.com/repos/czy-code-923/czy-code/releases/latest" {
@@ -34,7 +34,7 @@ func TestPanelReleaseCheckUsesOnlyValidatedOfficialRelease(t *testing.T) {
 			t.Fatal(w.Body.String())
 		}
 	}
-	if panelNewer("v0.23.5-distribution", "0.23.6") || panelNewer("v0.23.6-distribution", "0.23.6") || !panelNewer("v0.24.0-distribution", "0.23.6") {
+	if panelNewer("v0.23.5-distribution", "0.23.6") || panelNewer("v0.23.6-distribution", "0.23.6") || !panelNewer("v99.0.0-distribution", "0.23.6") {
 		t.Fatal("incorrect version comparison")
 	}
 }

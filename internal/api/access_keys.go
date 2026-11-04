@@ -27,6 +27,7 @@ type scopeInfo struct {
 }
 
 var apiScopes = []scopeInfo{
+	{"commerce:read", "查询商业可计费节点组", false}, {"commerce:write", "开通、续费和暂停商业用户权益", true},
 	{"devices:read", "查看用户设备与客户端元数据", true}, {"devices:write", "登记、撤销与限制用户设备", true}, {"devices:links", "获取设备专属订阅凭据", true},
 	{"kernels:read", "查看官方内核版本与更新状态", false}, {"kernels:update", "安装或切换官方内核版本", true},
 	{"notifications:read", "查看通知设置与结果", true}, {"notifications:write", "绑定通知机器人与授权查询", true},
@@ -62,6 +63,11 @@ func requiredScopes(r *http.Request) []string {
 		mode = ":write"
 	}
 	switch a[0] {
+	case "commerce":
+		if len(a) > 1 && a[1] == "validate" {
+			return []string{"commerce:read"}
+		}
+		return []string{"commerce" + mode}
 	case "configuration":
 		return []string{"nodes:write"}
 	case "notifications":
@@ -228,7 +234,7 @@ func (s *Server) apiSession(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 func (s *Server) apiCapabilities(w http.ResponseWriter, r *http.Request) error {
-	send(w, 200, map[string]any{"version": buildinfo.Version, "scopes": apiScopes, "openapi": "/api/v1/openapi", "features": []string{"os_host_traffic", "host_quota_calibration", "user_billing_modes", "user_traffic_multiplier", "device_credential_slots", "compatible_subscription_observations", "canonical_user_subscription", "access_metadata_pagination", "policy_workspace", "client_configuration_import", "shadowrocket_rules", "protocol_layers", "telegram_notifications", "configuration_inspect", "firewall_versions", "protocol_batch", "rolling_monthly", "client_json_templates", "subscription_usage", "scoped_api_keys", "client_policies", "dual_stack_endpoints", "host_retirement", "independent_share_domain"}})
+	send(w, 200, map[string]any{"version": buildinfo.Version, "scopes": apiScopes, "openapi": "/api/v1/openapi", "features": []string{"commerce_v1", "os_host_traffic", "host_quota_calibration", "user_billing_modes", "user_traffic_multiplier", "device_credential_slots", "compatible_subscription_observations", "canonical_user_subscription", "access_metadata_pagination", "policy_workspace", "client_configuration_import", "shadowrocket_rules", "protocol_layers", "telegram_notifications", "configuration_inspect", "firewall_versions", "protocol_batch", "rolling_monthly", "client_json_templates", "subscription_usage", "scoped_api_keys", "client_policies", "dual_stack_endpoints", "host_retirement", "independent_share_domain"}})
 	return nil
 }
 func (s *Server) keys(w http.ResponseWriter, r *http.Request) error {

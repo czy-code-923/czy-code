@@ -79,6 +79,8 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 	}
 	var id, user, profileID, name, device string
 	var independent bool
+	var commercialOnly bool
+	var commercialProtocols []string
 	var deviceLimit int
 	var deviceMode string
 	deviceAll := true
@@ -104,8 +106,15 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 	if user != "" {
 		var sealed []byte
 		var expires time.Time
-		if e = s.DB.QueryRow(r.Context(), `SELECT sealed,expires_at,quota_bytes,billed_upload_bytes,billed_download_bytes,`+deviceLimitSQL+`,device_limit_mode FROM proxy_users u WHERE tenant_id=$1 AND id=$2 AND enabled AND expires_at>now() `, tenant, user).Scan(&sealed, &expires, &quota, &upload, &download, &deviceLimit, &deviceMode); e != nil {
+		var rawProtocols []byte
+		if e = s.DB.QueryRow(r.Context(), `SELECT sealed,expires_at,quota_bytes,billed_upload_bytes,billed_download_bytes,`+deviceLimitSQL+`,device_limit_mode,commercial_only,commercial_protocols FROM proxy_users u WHERE tenant_id=$1 AND id=$2 AND enabled AND expires_at>now() `, tenant, user).Scan(&sealed, &expires, &quota, &upload, &download, &deviceLimit, &deviceMode, &commercialOnly, &rawProtocols); e != nil {
 			return problem{404, "subscription unavailable"}
+		}
+		if e = json.Unmarshal(rawProtocols, &commercialProtocols); e != nil {
+			return e
+		}
+		if commercialOnly && !independent {
+			return problem{403, "商业用户必须使用独立身份订阅"}
 		}
 		if device == "" && r.Context().Value(subscriptionInspectionKey{}) != true {
 			if deviceMode == "compatible" || deviceLimit == 0 {
@@ -251,6 +260,10 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 		var spec live.Spec
 		if e = json.Unmarshal(raw, &spec); e != nil {
 			return e
+		}
+		if commercialOnly && (!spec.ManagedUsers || !slices.Contains(commercialProtocols, spec.Kind)) {
+			excluded++
+			continue
 		}
 		if device != "" && ((!spec.ManagedUsers && !sharedGroupProtocol(spec)) || !deviceAll && !slices.Contains(deviceServices, service)) {
 			excluded++

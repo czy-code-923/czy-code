@@ -1,0 +1,130 @@
+name: Publish verified Starhub 0.24.0
+# Verify persisted GB/GiB preferences and precise unit conversion before publishing.
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/release-v0240.yml]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: starhub-release-0240
+  cancel-in-progress: true
+jobs:
+  existing:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      published: ${{ steps.release.outputs.published }}
+    steps:
+      - name: Preserve an existing release and its installation checksums
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh api repos/${{ github.repository }}/releases/tags/v0.24.0-distribution >/tmp/existing-release.json 2>/tmp/release-lookup-error; then
+            echo 'published=true' >> "$GITHUB_OUTPUT"
+            echo 'This version already exists. Keeping its tag, assets and installation checksums unchanged.'
+          elif grep -q 'HTTP 404' /tmp/release-lookup-error; then
+            echo 'published=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'Release lookup failed; refusing to rebuild without a reliable result.' >&2
+            exit 1
+          fi
+  publish:
+    needs: existing
+    if: needs.existing.outputs.published != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: harbor
+          POSTGRES_PASSWORD: ci-test-password
+          POSTGRES_DB: harbor_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U harbor -d harbor_test"
+          --health-interval 3s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.3'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Verify backend and frontend before publishing
+        env:
+          TEST_DATABASE_URL: postgres://harbor:ci-test-password@127.0.0.1:5432/harbor_test?sslmode=disable
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y nginx
+          python3 scripts/test_nginx_gateway.py
+          python3 scripts/test_panel_updater.py
+          python3 scripts/test_agent_repair.py
+          python3 scripts/test_prepare.py
+          python3 scripts/test_gateway_config.py
+          python3 scripts/test_managed_gateway.py
+          python3 scripts/test_domain_sync.py
+          python3 scripts/test_acme_relay.py
+          python3 scripts/test_uninstall.py
+          python3 scripts/test_panel_access.py
+          python3 scripts/test_bootstrap_installers.py
+          go vet ./...
+          go test -race -count=1 ./...
+          cd web
+          npm ci
+          npm test
+          npm run build
+      - name: Verify bounded port hopping on IPv4 and IPv6
+        run: |
+          python3 scripts/test_port_hopping.py
+          sudo apt-get update -qq
+          sudo apt-get install -y nftables iproute2
+          sudo unshare --net python3 scripts/test_port_hopping_native.py
+      - name: Build four platforms and pin all artifacts
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TEST_DATABASE_URL: postgres://harbor:ci-test-password@127.0.0.1:5432/harbor_test?sslmode=disable
+          TEST_MIHOMO_BINARY: /tmp/starhub-mihomo
+        run: |
+          python3 - <<'PY'
+          import urllib.request,hashlib,gzip,pathlib
+          url='https://github.com/MetaCubeX/mihomo/releases/download/v1.19.33/mihomo-linux-amd64-compatible-v1.19.33.gz'
+          data=urllib.request.urlopen(urllib.request.Request(url,headers={'User-Agent':'Starhub-Protocol-Test'}),timeout=60).read()
+          assert hashlib.sha256(data).hexdigest()=='386508bfb1c72c43b6a0eda73708ecdce82546581b0ebcb16366c53757c622b6'
+          binary=pathlib.Path('/tmp/starhub-mihomo');binary.write_bytes(gzip.decompress(data));binary.chmod(0o700)
+          PY
+          python3 scripts/package-release.py
+      - name: Commit generated installation checksums
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add scripts/quickstart-distribution.json scripts/distribution-checksums.json
+          git diff --cached --quiet || git commit -m 'Pin verified Starhub 0.24.0 release package checksums'
+          git push origin HEAD:main
+      - name: Publish release candidate and exact source tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create v0.24.0-distribution .release-output/* --target "$(git rev-parse HEAD)" --prerelease --latest=false --title '星枢 0.24.0 · 商业计费接口与购买面板接入' --notes-file docs/RELEASE-v0240.md
+      - name: Verify fresh install, Agent onboarding and retirement
+        run: |
+          mkdir /tmp/starhub-distribution
+          unzip -q .release-output/harbor-0.24.0-linux-amd64.zip -d /tmp/starhub-distribution
+          STARHUB_TEST_GO="$(command -v go)" sudo --preserve-env=GITHUB_ACTIONS,RUNNER_ENVIRONMENT,STARHUB_TEST_GO python3 scripts/test_quickstart_e2e.py /tmp/starhub-distribution "$GITHUB_WORKSPACE/.release-output/install-starhub.sh"
+      - name: Promote the verified release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit v0.24.0-distribution --prerelease=false --latest
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-0240-manifest
+          path: .release-cache/manifest.json
+
