@@ -1,0 +1,41 @@
+name: Promote tested Starhub 0.24.1
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/promote-v0241.yml]
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify original installation test and preserve existing assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api repos/${{ github.repository }}/actions/runs/41807907272/jobs > /tmp/verified-jobs.json
+          python3 - <<'PY'
+          import json
+          jobs=json.load(open('/tmp/verified-jobs.json'))['jobs']
+          job=next(j for j in jobs if j['name']=='publish')
+          assert any(s['name']=='Verify fresh install, Agent onboarding and retirement' and s['conclusion']=='success' for s in job['steps'])
+          assert all(s['conclusion']=='success' for s in job['steps'] if s['number']<next(s['number'] for s in job['steps'] if s['name']=='Promote the verified release'))
+          PY
+          gh api repos/${{ github.repository }}/releases/tags/v0.24.1-distribution > /tmp/verified-release.json
+          python3 - <<'PY'
+          import json
+          r=json.load(open('/tmp/verified-release.json'))
+          assert r['draft'] is False and len(r['assets'])>=10
+          assert all(a.get('digest','').startswith('sha256:') for a in r['assets'])
+          PY
+          id=$(python3 -c "import json;print(json.load(open('/tmp/verified-release.json'))['id'])")
+          for attempt in 1 2 3; do
+            if gh api --method PATCH "repos/${{ github.repository }}/releases/$id" -F prerelease=false -f make_latest=true >/tmp/promoted-release.json; then
+              python3 -c "import json;r=json.load(open('/tmp/promoted-release.json'));assert not r['prerelease'] and r['tag_name']=='v0.24.1-distribution'"
+              exit 0
+            fi
+            sleep 5
+          done
+          exit 1
