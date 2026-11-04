@@ -24,3 +24,12 @@ it('displays the detected Nginx version and shared owner',async()=>{
  expect(w.text()).toContain('1.30.4');expect(w.text()).toContain('宝塔管理')
  w.unmount()
 })
+it('prefills a website proxy from a ready certificate without issuing another certificate',async()=>{
+ const api=vi.fn(async(p:string,m='GET')=>m!=='GET'?{id:'proxy'}:p==='certificates'?[{id:'ready-cert',domain:'buy.example.test',provider:'http-01',email:'owner@example.test',state:'ready',version:1}]:p==='gateway/nginx'?{version:'fixture'}:[])
+ const w=mount(GatewayManager,{props:{api,view:'certificates'}});await flushPromises()
+ await w.findAll('button').find(b=>b.text()==='配置网站反代')!.trigger('click');expect(w.emitted('navigate')?.[0]).toEqual(['reverse'])
+ await w.setProps({view:'reverse'});expect((w.findAll('input')[0].element as HTMLInputElement).value).toBe('buy.example.test')
+ await w.findAll('input')[1].setValue('http://127.0.0.1:18088');await w.get('input[type=checkbox]').setValue(true);await w.get('form').trigger('submit');await flushPromises()
+ expect(api).toHaveBeenCalledWith('reverse-proxies','POST',expect.objectContaining({domain:'buy.example.test',certificate_id:'ready-cert',upstream:'http://127.0.0.1:18088',enabled:true}))
+ expect(api.mock.calls.some(([p,m])=>p==='certificates'&&m==='POST')).toBe(false);w.unmount()
+})
