@@ -129,7 +129,28 @@ func (s *Server) inspectSubscription(w http.ResponseWriter, r *http.Request) err
 	preview.SetPathValue("token", string(token))
 	preview.Header.Set("User-Agent", r.Header.Get("User-Agent"))
 	recorder := httptest.NewRecorder()
-	if e = s.serveSubscription(recorder, preview); e != nil {
+	e = s.serveSubscription(recorder, preview)
+	// An automatic URL is consumed later by the real client. The panel's Go
+	// HTTP client is not that client and must not veto a usable full profile.
+	probeClient := ""
+	auto := (query.Get("client") == "" || query.Get("client") == "auto") && query.Get("format") == ""
+	var compatibility problem
+	if r.PathValue("view") == "check" && auto && errors.As(e, &compatibility) && compatibility.status == 422 {
+		for _, candidate := range []string{"mihomo", "sing-box-latest", "xray", "naive-proxy"} {
+			probe := preview.Clone(preview.Context())
+			address := *preview.URL
+			q := address.Query()
+			q.Set("client", candidate)
+			address.RawQuery = q.Encode()
+			probe.URL = &address
+			trial := httptest.NewRecorder()
+			if trialErr := s.serveSubscription(trial, probe); trialErr == nil {
+				recorder, e, probeClient = trial, nil, candidate
+				break
+			}
+		}
+	}
+	if e != nil {
 		if r.PathValue("view") == "check" {
 			var p problem
 			if !errors.As(e, &p) {
@@ -158,6 +179,9 @@ func (s *Server) inspectSubscription(w http.ResponseWriter, r *http.Request) err
 			reason, stage = "用户流量额度已用尽，当前输出为拒绝连接配置", "quota"
 		} else if hwidRequired {
 			reason = "订阅链接可分享；客户端必须回传有效 x-hwid，首次导入自动登记设备，超过设备上限会明确拒绝。不支持 HWID 的普通 Clash/Mihomo 无法在设备限制开启时导入"
+		}
+		if probeClient != "" {
+			reason = "自动订阅链接可分享，已验证 " + probeClient + " 配置；导入时由实际客户端识别格式，不代表所有客户端均支持此协议"
 		}
 		send(w, 200, map[string]any{"ready": ready, "stage": stage, "status": 200, "reason": reason, "hwid_required": hwidRequired, "max_devices": maxDevices, "content_type": recorder.Header().Get("Content-Type"), "included_nodes": recorder.Header().Get("X-Starhub-Included-Nodes"), "client": recorder.Header().Get("X-Starhub-Client"), "excluded_nodes": recorder.Header().Get("X-Starhub-Excluded-Nodes"), "warnings": recorder.Header().Get("X-Starhub-Policy-Warnings"), "client_tuning_notice": recorder.Header().Get("X-Starhub-Client-Tuning")})
 		return nil
