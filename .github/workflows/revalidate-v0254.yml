@@ -1,0 +1,57 @@
+name: Revalidate immutable Starhub 0.25.4 candidate
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/revalidate-v0254.yml]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: starhub-revalidate-0254
+  cancel-in-progress: false
+jobs:
+  verify-installed-candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v0.25.4-distribution
+      - uses: actions/setup-go@v5
+        with: {go-version: '1.27.3'}
+      - name: Verify immutable candidate assets and extract
+        run: |
+          python3 - <<'PY'
+          import urllib.request,hashlib,pathlib,zipfile
+          root=pathlib.Path('/tmp/starhub-revalidate');root.mkdir()
+          digests={'harbor-0.25.4-linux-amd64.zip':'a588d398d610e2edb1cac71dc9d1a62e0ae2a0afd8de8a3dfdd1ce5cd0d96ee0','install-starhub.sh':'45334ea322f9733b234208e3c15d5f3345dcef94bcde57b3e5a3245156f7e8b6'}
+          for name,digest in digests.items():
+              data=urllib.request.urlopen(urllib.request.Request('https://github.com/czy-code-923/czy-code/releases/download/v0.25.4-distribution/'+name,headers={'User-Agent':'Starhub-verified-revalidation'}),timeout=120).read()
+              assert hashlib.sha256(data).hexdigest()==digest,'Candidate changed: '+name
+              (root/name).write_bytes(data)
+          with zipfile.ZipFile(root/'harbor-0.25.4-linux-amd64.zip') as archive:archive.extractall(root/'distribution')
+          PY
+      - name: Revalidate actual install, update, traffic, subscription and retirement
+        run: |
+          # The first attempt failed only on upstream release metadata HTTP 502.
+          # Only that pre-transaction request may retry; every assertion still runs.
+          cat > /tmp/starhub-revalidate/run.py <<'PY'
+          import urllib.request,urllib.error,time,runpy,sys
+          original=urllib.request.urlopen
+          def bounded_retry(request,*args,**kwargs):
+              address=getattr(request,'full_url','')
+              eligible=address.startswith('http://127.0.0.1:18080/api/v1/hosts/') and address.endswith('/engine-updates') and getattr(request,'data',None) is not None
+              for attempt in range(3):
+                  try:return original(request,*args,**kwargs)
+                  except urllib.error.HTTPError as error:
+                      if not eligible or error.code!=502 or attempt==2:raise
+                      error.close();print('Retrying transient upstream engine metadata HTTP 502',flush=True);time.sleep(3)
+          urllib.request.urlopen=bounded_retry
+          sys.argv=['scripts/test_quickstart_e2e.py','/tmp/starhub-revalidate/distribution','/tmp/starhub-revalidate/install-starhub.sh']
+          runpy.run_path('scripts/test_quickstart_e2e.py',run_name='__main__')
+          PY
+          STARHUB_TEST_GO="$(command -v go)" sudo --preserve-env=GITHUB_ACTIONS,RUNNER_ENVIRONMENT,STARHUB_TEST_GO python3 /tmp/starhub-revalidate/run.py
+      - name: Promote only the unchanged fully verified candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit v0.25.4-distribution --prerelease=false --latest
