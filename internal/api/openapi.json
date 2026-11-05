@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "星枢 · VPS 多机管理 API",
-    "version": "0.25.1",
+    "version": "0.25.2",
     "description": "Self-workspace API for host agents, proxy protocols, user quotas and client subscriptions. Bearer administrator token or expiring scoped xs_ API key. No arbitrary shell; privileged gateway work and API key administration remain root-only."
   },
   "servers": [
@@ -7961,6 +7961,81 @@
           },
           "409": {
             "description": "Deleted/disabled identity, revoked subscription, or reused order ID with different fields"
+          }
+        }
+      }
+    },
+    "/api/v1/commerce/accounts/{id}/policy": {
+      "put": {
+        "summary": "Synchronize commercial plan groups and protocols; preserve quota, expiry and credentials",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "external_id",
+                  "user_id",
+                  "subscription_id",
+                  "source_id",
+                  "revision",
+                  "group_ids",
+                  "protocols"
+                ],
+                "properties": {
+                  "external_id": {
+                    "type": "string"
+                  },
+                  "user_id": {
+                    "type": "string"
+                  },
+                  "subscription_id": {
+                    "type": "string"
+                  },
+                  "source_id": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "group_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "protocols": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Applied or idempotent replay"
+          },
+          "404": {
+            "description": "Missing identity"
+          },
+          "409": {
+            "description": "Stale revision, revoked link or invalid selection"
           }
         }
       }

@@ -145,6 +145,7 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("POST /api/v1/commerce/migrate-orders", s.admin(s.commerceMigrateOrders))
 	m.HandleFunc("GET /api/v1/commerce/capacity", s.admin(s.commerceCapacity))
 	m.HandleFunc("PUT /api/v1/commerce/accounts/{id}/state", s.admin(s.commerceState))
+	m.HandleFunc("PUT /api/v1/commerce/accounts/{id}/policy", s.admin(s.commercePolicy))
 	m.HandleFunc("GET /api/v1/display-settings", s.admin(s.displaySettings))
 	m.HandleFunc("PUT /api/v1/display-settings", s.admin(s.displaySettings))
 	m.HandleFunc("POST /api/v1/configuration/inspect", s.admin(s.inspectConfiguration))
