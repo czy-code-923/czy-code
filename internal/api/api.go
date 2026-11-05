@@ -141,6 +141,8 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("GET /api/v1/commerce/groups", s.admin(s.commerceGroups))
 	m.HandleFunc("POST /api/v1/commerce/validate", s.admin(s.commerceValidate))
 	m.HandleFunc("POST /api/v1/commerce/entitlements", s.admin(s.commerceGrant))
+	m.HandleFunc("POST /api/v1/commerce/migrate-orders", s.admin(s.commerceMigrateOrders))
+	m.HandleFunc("GET /api/v1/commerce/capacity", s.admin(s.commerceCapacity))
 	m.HandleFunc("PUT /api/v1/commerce/accounts/{id}/state", s.admin(s.commerceState))
 	m.HandleFunc("GET /api/v1/display-settings", s.admin(s.displaySettings))
 	m.HandleFunc("PUT /api/v1/display-settings", s.admin(s.displaySettings))

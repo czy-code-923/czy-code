@@ -1,0 +1,1 @@
+CREATE TABLE commerce_order_migrations(tenant_id text NOT NULL,legacy_external_id text NOT NULL,request_hash text NOT NULL,response jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(tenant_id,legacy_external_id));

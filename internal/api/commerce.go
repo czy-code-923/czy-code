@@ -117,27 +117,40 @@ func calendarMonths(t time.Time, n int, day int) time.Time {
 	last := time.Date(start.Year(), start.Month()+1, 0, 0, 0, 0, 0, billingLocation).Day()
 	return time.Date(start.Year(), start.Month(), min(day, last), t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), billingLocation)
 }
-func (s *Server) commerceGrant(w http.ResponseWriter, r *http.Request) error {
-	var b struct {
-		External   string   `json:"external_id"`
-		Order      string   `json:"order_id"`
-		Name       string   `json:"name"`
-		Months     int      `json:"months"`
-		Quota      int64    `json:"quota_bytes"`
-		Groups     []string `json:"group_ids"`
-		Protocols  []string `json:"protocols"`
-		Max        int      `json:"max_devices"`
-		Billing    string   `json:"billing_mode"`
-		Multiplier int      `json:"multiplier_milli"`
-	}
-	if e := decode(w, r, &b); e != nil {
-		return e
-	}
+
+type commerceGrantRequest struct {
+	External      string     `json:"external_id"`
+	Order         string     `json:"order_id"`
+	Name          string     `json:"name"`
+	Months        int        `json:"months"`
+	Quota         int64      `json:"quota_bytes"`
+	Groups        []string   `json:"group_ids"`
+	Protocols     []string   `json:"protocols"`
+	Max           int        `json:"max_devices"`
+	Billing       string     `json:"billing_mode"`
+	Multiplier    int        `json:"multiplier_milli"`
+	SeedExpiry    time.Time  `json:"-"`
+	SeedUsed      int64      `json:"-"`
+	SeedResetDay  int        `json:"-"`
+	SeedNextReset *time.Time `json:"-"`
+}
+
+func validCommerceGrant(b commerceGrantRequest) error {
 	if !strings.HasPrefix(b.External, "portal:") || !manifest.ValidID(strings.TrimPrefix(b.External, "portal:")) || !manifest.ValidID(b.Order) || strings.TrimSpace(b.Name) == "" || len([]rune(b.Name)) > 100 || b.Months < 1 || b.Months > 12 || b.Quota < 1 || b.Quota > 9000000000000000 || b.Max < 0 || b.Max > 20 || !billing.ValidMode(b.Billing) || b.Multiplier < 1 || b.Multiplier > 100000 {
 		return bad("invalid commercial entitlement")
 	}
 	selection := commerceSelection{b.Groups, b.Protocols}
 	if e := validCommerceSelection(selection); e != nil {
+		return e
+	}
+	return nil
+}
+func (s *Server) commerceGrant(w http.ResponseWriter, r *http.Request) error {
+	var b commerceGrantRequest
+	if e := decode(w, r, &b); e != nil {
+		return e
+	}
+	if e := validCommerceGrant(b); e != nil {
 		return e
 	}
 	tx, e := s.DB.Begin(r.Context())
@@ -148,26 +161,40 @@ func (s *Server) commerceGrant(w http.ResponseWriter, r *http.Request) error {
 	if e = graphLock(r, tx); e != nil {
 		return e
 	}
+	response, e := s.commerceGrantTx(r, tx, b)
+	if e != nil {
+		return e
+	}
+	if e = tx.Commit(r.Context()); e != nil {
+		return e
+	}
+	send(w, 200, response)
+	return nil
+}
+func (s *Server) commerceGrantTx(r *http.Request, tx pgx.Tx, b commerceGrantRequest) (json.RawMessage, error) {
+	var e error
+	selection := commerceSelection{b.Groups, b.Protocols}
 	requestHash := Hash(string(mustJSON(b)))
 	var oldHash string
 	var previous json.RawMessage
 	e = tx.QueryRow(r.Context(), "SELECT request_hash,response FROM commerce_entitlements WHERE tenant_id=$1 AND order_id=$2", tenant, b.Order).Scan(&oldHash, &previous)
 	if e == nil {
 		if oldHash != requestHash {
-			return problem{409, "order ID was used with different entitlement fields"}
+			return nil, problem{409, "order ID was used with different entitlement fields"}
 		}
-		send(w, 200, previous)
-		return nil
+		return previous, nil
 	}
 	if e != pgx.ErrNoRows {
-		return e
+		return nil, e
 	}
-	reason, e := s.commerceNodes(r.Context(), tx, selection)
-	if e != nil {
-		return e
-	}
-	if reason != "" {
-		return problem{409, reason}
+	if b.SeedExpiry.IsZero() {
+		reason, e := s.commerceNodes(r.Context(), tx, selection)
+		if e != nil {
+			return nil, e
+		}
+		if reason != "" {
+			return nil, problem{409, reason}
+		}
 	}
 	var id string
 	var expires time.Time
@@ -181,61 +208,72 @@ func (s *Server) commerceGrant(w http.ResponseWriter, r *http.Request) error {
 		anchorDay = now.In(billingLocation).Day()
 	}
 	if e != nil && !fresh {
-		return e
+		return nil, e
 	}
 	if !fresh && !commercial {
-		return problem{409, "external ID belongs to a non-commercial user"}
+		return nil, problem{409, "external ID belongs to a non-commercial user"}
 	}
 	if fresh {
 		var count int
 		if e = tx.QueryRow(r.Context(), "SELECT count(*) FROM proxy_users WHERE tenant_id=$1", tenant).Scan(&count); e != nil {
-			return e
+			return nil, e
 		}
 		if count >= 500 {
-			return problem{409, "control-plane user capacity reached"}
+			return nil, problem{409, "control-plane user capacity reached"}
 		}
 		id = ID()
 		expires = now
 		raw, _ := json.Marshal(live.Account{Name: id, UUID: live.UUID(), Password: live.Secret()})
 		sealed, e := live.Seal(s.MasterKey, raw)
 		if e != nil {
-			return e
+			return nil, e
 		}
 		if _, e = tx.Exec(r.Context(), `INSERT INTO proxy_users(tenant_id,id,name,enabled,expires_at,sealed,external_id,commercial_only,legacy_credentials,reset_strategy,reset_day) VALUES($1,$2,$3,true,$4,$5,$6,true,false,'rolling_monthly',$7)`, tenant, id, b.Name, expires, sealed, b.External, now.In(billingLocation).Day()); e != nil {
-			return e
+			return nil, e
 		}
 	}
 	if expires.Before(now) {
 		expires = now
 	}
 	expires = calendarMonths(expires, b.Months, anchorDay)
+	if !b.SeedExpiry.IsZero() {
+		if !fresh {
+			return nil, problem{409, "migration identity already exists"}
+		}
+		expires = b.SeedExpiry
+	}
 	if expires.After(now.AddDate(10, 0, 0)) {
-		return bad("maximum commercial entitlement horizon is ten years")
+		return nil, bad("maximum commercial entitlement horizon is ten years")
 	}
 	if restartCycle && !fresh {
 		if _, e = tx.Exec(r.Context(), "UPDATE proxy_users SET reset_day=$3 WHERE tenant_id=$1 AND id=$2", tenant, id, anchorDay); e != nil {
-			return e
+			return nil, e
 		}
 	}
 	if _, e = tx.Exec(r.Context(), `UPDATE proxy_users SET name=$3,enabled=true,expires_at=$4,quota_bytes=$5,commercial_only=true,commercial_protocols=$6,max_devices=$7,device_limit_mode='compatible',billing_mode=$8,multiplier_milli=$9,version=version+1 WHERE tenant_id=$1 AND id=$2`, tenant, id, b.Name, expires, b.Quota, mustJSON(b.Protocols), b.Max, b.Billing, b.Multiplier); e != nil {
-		return e
+		return nil, e
 	}
 	if _, e = tx.Exec(r.Context(), "UPDATE live_services SET version=version+1,state='pending' WHERE tenant_id=$1 AND managed_users AND id IN(SELECT gs.service_id FROM user_group_services gs JOIN user_group_members gm USING(tenant_id,group_id) WHERE gm.tenant_id=$1 AND gm.user_id=$2)", tenant, id); e != nil {
-		return e
+		return nil, e
 	}
 	if _, e = tx.Exec(r.Context(), "DELETE FROM user_group_members WHERE tenant_id=$1 AND user_id=$2", tenant, id); e != nil {
-		return e
+		return nil, e
 	}
 	for _, group := range b.Groups {
 		if _, e = tx.Exec(r.Context(), "INSERT INTO user_group_members(tenant_id,group_id,user_id) VALUES($1,$2,$3)", tenant, group, id); e != nil {
-			return e
+			return nil, e
 		}
 	}
 	if _, e = tx.Exec(r.Context(), "UPDATE user_groups SET version=version+1 WHERE tenant_id=$1 AND id=ANY($2)", tenant, b.Groups); e != nil {
-		return e
+		return nil, e
 	}
 	if e = configureCycle(r.Context(), tx, id, nil, restartCycle); e != nil {
-		return e
+		return nil, e
+	}
+	if !b.SeedExpiry.IsZero() {
+		if _, e = tx.Exec(r.Context(), "UPDATE proxy_users SET used_bytes=$3,billed_download_bytes=$3,reset_day=$4,next_reset_at=$5 WHERE tenant_id=$1 AND id=$2", tenant, id, b.SeedUsed, b.SeedResetDay, b.SeedNextReset); e != nil {
+			return nil, e
+		}
 	}
 	var subscription string
 	var tokenSealed []byte
@@ -245,42 +283,39 @@ func (s *Server) commerceGrant(w http.ResponseWriter, r *http.Request) error {
 		token := ID() + ID()
 		tokenSealed, e = live.Seal(s.MasterKey, []byte(token))
 		if e != nil {
-			return e
+			return nil, e
 		}
 		if _, e = tx.Exec(r.Context(), `INSERT INTO subscriptions(tenant_id,id,name,token_hash,sealed_token,user_id,expires_at,independent_identity) VALUES($1,$2,$3,$4,$5,$6,$7,true)`, tenant, subscription, b.Name+"的订阅", Hash(token), tokenSealed, id, expires); e != nil {
-			return e
+			return nil, e
 		}
 		if _, _, e = s.ensureSubscriptionIdentity(r.Context(), tx, subscription, id, ""); e != nil {
-			return e
+			return nil, e
 		}
 	} else if e != nil {
-		return e
+		return nil, e
 	}
 	if _, e = tx.Exec(r.Context(), "UPDATE subscriptions SET expires_at=$3,version=version+1 WHERE tenant_id=$1 AND id=$2", tenant, subscription, expires); e != nil {
-		return e
+		return nil, e
 	}
 	if e = bumpDeviceUser(r.Context(), tx, id); e != nil {
-		return e
+		return nil, e
 	}
 	if e = checkDevicePolicies(r.Context(), tx); e != nil {
-		return e
+		return nil, e
 	}
 	if e = s.checkMeterHosts(r, tx, id, ""); e != nil {
-		return e
+		return nil, e
 	}
 	response := map[string]any{"user_id": id, "subscription_id": subscription, "operation_id": b.Order, "expires_at": expires}
 	if _, e = tx.Exec(r.Context(), "INSERT INTO commerce_entitlements(tenant_id,order_id,external_id,request_hash,response) VALUES($1,$2,$3,$4,$5)", tenant, b.Order, b.External, requestHash, mustJSON(response)); e != nil {
-		return e
+		return nil, e
 	}
 	if e = audit(r.Context(), tx, "integration", "commerce.grant", b.Order); e != nil {
-		return e
+		return nil, e
 	}
-	if e = tx.Commit(r.Context()); e != nil {
-		return e
-	}
-	send(w, 200, response)
-	return nil
+	return mustJSON(response), nil
 }
+
 func (s *Server) commerceState(w http.ResponseWriter, r *http.Request) error {
 	var b struct {
 		External string `json:"external_id"`
