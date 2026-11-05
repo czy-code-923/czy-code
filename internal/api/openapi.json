@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "星枢 · VPS 多机管理 API",
-    "version": "0.25.0",
+    "version": "0.25.1",
     "description": "Self-workspace API for host agents, proxy protocols, user quotas and client subscriptions. Bearer administrator token or expiring scoped xs_ API key. No arbitrary shell; privileged gateway work and API key administration remain root-only."
   },
   "servers": [
@@ -1237,6 +1237,16 @@
         "operationId": "enqueueSimulationDeployment",
         "summary": "Enqueue simulation or explicitly requested native config staging",
         "responses": {
+          "200": {
+            "description": "Idempotent replay",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Created"
+                }
+              }
+            }
+          },
           "202": {
             "description": "Success",
             "content": {
@@ -1293,16 +1303,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "200": {
-            "description": "Idempotent replay",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Created"
                 }
               }
             }
@@ -1526,6 +1526,9 @@
               }
             }
           },
+          "204": {
+            "description": "No task available"
+          },
           "400": {
             "description": "Invalid JSON, fields or validation",
             "content": {
@@ -1575,9 +1578,6 @@
                 }
               }
             }
-          },
-          "204": {
-            "description": "No task available"
           }
         },
         "security": [
@@ -1725,6 +1725,16 @@
         "operationId": "enqueueKnownGoodRollback",
         "summary": "Stage/simulate a previously successful different version; does not roll back a running service.",
         "responses": {
+          "200": {
+            "description": "Idempotent replay",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Created"
+                }
+              }
+            }
+          },
           "202": {
             "description": "Success",
             "content": {
@@ -1781,16 +1791,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "200": {
-            "description": "Idempotent replay",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Created"
                 }
               }
             }
@@ -5659,6 +5659,9 @@
           "200": {
             "description": "Success"
           },
+          "201": {
+            "description": "New immutable policy version created"
+          },
           "400": {
             "description": "Invalid configuration"
           },
@@ -5670,9 +5673,6 @@
           },
           "409": {
             "description": "Stale version or conflict"
-          },
-          "201": {
-            "description": "New immutable policy version created"
           }
         },
         "requestBody": {
@@ -6336,6 +6336,9 @@
           }
         ],
         "responses": {
+          "202": {
+            "description": "Pinned official version queued. Poll GET on the same path for downloading/validating/succeeded/failed."
+          },
           "400": {
             "description": "Invalid fields"
           },
@@ -6344,9 +6347,6 @@
           },
           "403": {
             "description": "Missing scope"
-          },
-          "202": {
-            "description": "Pinned official version queued. Poll GET on the same path for downloading/validating/succeeded/failed."
           },
           "409": {
             "description": "Host offline, retiring, old Agent or another update is active"
@@ -7907,6 +7907,60 @@
           },
           "409": {
             "description": "Readiness, capacity, identity or order conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/commerce/renewals": {
+      "post": {
+        "operationId": "commerce_renew_subscription",
+        "summary": "Idempotent time-only renewal for an existing commercial identity and stable subscription. Never recreates deleted users or revoked links; preserves quota, usage, credentials, permissions and reset schedule.",
+        "x-required-scopes": [
+          "commerce:write"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "external_id",
+                  "order_id",
+                  "user_id",
+                  "subscription_id",
+                  "months"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "external_id": {
+                    "type": "string"
+                  },
+                  "order_id": {
+                    "type": "string"
+                  },
+                  "user_id": {
+                    "type": "string"
+                  },
+                  "subscription_id": {
+                    "type": "string"
+                  },
+                  "months": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 12
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Existing user/subscription IDs, operation_id and extended expires_at; replay returns the same result"
+          },
+          "409": {
+            "description": "Deleted/disabled identity, revoked subscription, or reused order ID with different fields"
           }
         }
       }
