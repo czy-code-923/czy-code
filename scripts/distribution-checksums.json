@@ -1,9 +1,9 @@
 {
-  "version": "0.24.2",
+  "version": "0.25.0",
   "sha256": {
-    "linux-amd64": "c9ba0ee0b83ba1bcf47ac460b3967e15fb05ff203bf545332bdb062ffed3e21d",
-    "linux-arm64": "08eebb36a20a2cc281a91213be5b18b807accf74e72791a7a371772bb4137af6",
-    "windows-amd64": "dbf57a47fd39280cda6fe6062f5126852a8ace868bf86bd08111975bbc7d448a",
-    "windows-arm64": "d763c99befcbad369f0441ebea531d22ae7c123a6a819ba4ab980ded3a8fa69c"
+    "linux-amd64": "8ef3f2c1cf2f9db7cadd95c4bc04187f7145e901430f6916901173a333c5ebbc",
+    "linux-arm64": "529253d35045fd903235b6bb9248c0d4c20354f05a3f84c81e8a7a522b016822",
+    "windows-amd64": "86289ea2fb04e80d403ed15f2c7065394843cdd2d3bf5aefcfa13cdb8f5bc1fa",
+    "windows-arm64": "907560e4f4ffc6f4ef8c88f65b815f1f695f34534281761a4d1551103530e8b1"
   }
 }
