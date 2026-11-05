@@ -99,6 +99,9 @@ func (s *Server) commercePolicy(w http.ResponseWriter, r *http.Request) error {
 	if e = bumpDeviceUser(r.Context(), tx, id); e != nil {
 		return e
 	}
+	if _, e = tx.Exec(r.Context(), `UPDATE user_groups SET version=version+1 WHERE tenant_id=$1 AND (id=ANY($2) OR id IN(SELECT group_id FROM user_group_members WHERE tenant_id=$1 AND user_id=$3))`, tenant, b.Groups, id); e != nil {
+		return e
+	}
 	if _, e = tx.Exec(r.Context(), "DELETE FROM user_group_members WHERE tenant_id=$1 AND user_id=$2", tenant, id); e != nil {
 		return e
 	}

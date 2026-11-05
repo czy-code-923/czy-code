@@ -24,9 +24,18 @@ func TestCommercePolicyMovesGroupsPreservesBillingAndStableSubscription(t *testi
 	}
 	node := f.addNode("policy-new-node", 26029)
 	group := obj018(f.h.call("POST", "user-groups", map[string]any{"name": "replacement", "user_ids": []string{}, "service_ids": []string{node}}, 200, nil))["id"].(string)
+	var oldGroupVersion, newGroupVersion int
+	f.h.s.DB.QueryRow(ctx, "SELECT version FROM user_groups WHERE id=$1", f.group).Scan(&oldGroupVersion)
+	f.h.s.DB.QueryRow(ctx, "SELECT version FROM user_groups WHERE id=$1", group).Scan(&newGroupVersion)
 	body := commercePolicyRequest{External: external, User: user, Subscription: sub, Source: ID(), Revision: 2, Groups: []string{group}, Protocols: []string{"vmess"}}
 	path := "commerce/accounts/" + external[len("portal:"):] + "/policy"
 	f.h.call("PUT", path, body, 200, nil)
+	var oldGroupAfter, newGroupAfter int
+	f.h.s.DB.QueryRow(ctx, "SELECT version FROM user_groups WHERE id=$1", f.group).Scan(&oldGroupAfter)
+	f.h.s.DB.QueryRow(ctx, "SELECT version FROM user_groups WHERE id=$1", group).Scan(&newGroupAfter)
+	if oldGroupAfter != oldGroupVersion+1 || newGroupAfter != newGroupVersion+1 {
+		t.Fatal("group edits can overwrite synchronized membership")
+	}
 	var after []byte
 	f.h.s.DB.QueryRow(ctx, query, user).Scan(&after)
 	if string(before) != string(after) {
