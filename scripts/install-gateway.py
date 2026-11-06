@@ -124,6 +124,9 @@ def install_gateway(env,source,install_deps=False,enable_acme=False):
     for directory in (Path('/etc/harbor'),Path('/var/lib/starhub-gateway'),Path('/var/lib/starhub-gateway/logs'),Path('/var/www/harbor-acme')):
         if directory.exists():helper.trusted(directory,True)
         else:directory.mkdir(parents=True,mode=0o755 if 'www' in directory.parts else 0o700)
+        # quickstart deliberately uses umask 077 for credentials. ACME's public
+        # webroot must still be traversable by the unprivileged Nginx worker.
+        if directory==Path('/var/www/harbor-acme'):directory.chmod(0o755)
     touched=[scripts/name for name in FILES if name!='panel-updater.py']+[config]+targets
     before={}
     for path in touched:
