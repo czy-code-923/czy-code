@@ -24,6 +24,17 @@ def verify():
     if out.exists():raise ValueError('Unexpected existing management vhost in disposable test')
     unrelated=out.parent/'starhub-ci-unrelated.conf';unrelated_body=b'# unrelated test app\nserver { listen 127.0.0.1:18082; server_name unrelated.example.invalid; return 200 "preserved"; }\n';unrelated.write_bytes(unrelated_body)
     fake=root/'gateway-ci-certbot'
+    ca=root/'gateway-ci-ca.pem';ca_key=root/'gateway-ci-ca.key';trust=Path('/usr/local/share/ca-certificates/starhub-gateway-ci.crt')
+    if trust.exists():raise ValueError('Unexpected existing test trust anchor')
+    subprocess.run(['/usr/bin/openssl','req','-x509','-newkey','rsa:2048','-nodes','-days','2','-subj','/CN=Starhub disposable CI CA','-addext','basicConstraints=critical,CA:TRUE','-addext','keyUsage=critical,keyCertSign,cRLSign','-keyout',str(ca_key),'-out',str(ca)],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+    ca_key.chmod(0o600);shutil.copyfile(ca,trust);trust.chmod(0o644)
+    subprocess.run(['update-ca-certificates'],check=True,stdout=subprocess.DEVNULL)
+    # Exercise the real chain validation, never weaken production verification.
+    subprocess.run(['systemctl','restart','starhub-control.service'],check=True)
+    for attempt in range(30):
+        try:api('session');break
+        except OSError:time.sleep(1)
+    else:raise ValueError('Control restart timed out')
     fake.write_text('''#!/usr/bin/python3
 import http.client,os,pathlib,subprocess,sys
 a=sys.argv[1:]
@@ -39,7 +50,11 @@ else:
  web=pathlib.Path(a[a.index('-w')+1])/'.well-known/acme-challenge/starhub-ci';web.parent.mkdir(parents=True,exist_ok=True);web.write_text('local-challenge');web.chmod(0o644)
  c=http.client.HTTPConnection('127.0.0.1',80,timeout=10);c.request('GET','/.well-known/acme-challenge/starhub-ci',headers={'Host':domain});r=c.getresponse();assert r.status==200 and r.read()==b'local-challenge';c.close();web.unlink()
 directory=pathlib.Path('/etc/letsencrypt/live')/domain;directory.mkdir(parents=True,exist_ok=True)
-subprocess.run(['/usr/bin/openssl','req','-x509','-newkey','rsa:2048','-nodes','-days','2','-subj','/CN='+domain,'-addext','subjectAltName=DNS:'+domain,'-keyout',str(directory/'privkey.pem'),'-out',str(directory/'fullchain.pem')],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+root=pathlib.Path('/opt/starhub-control');csr=root/'gateway-ci-leaf.csr';ext=root/'gateway-ci-leaf.ext'
+ext.write_text('subjectAltName=DNS:'+domain+'\\nbasicConstraints=critical,CA:FALSE\\nkeyUsage=critical,digitalSignature,keyEncipherment\\nextendedKeyUsage=serverAuth\\n')
+subprocess.run(['/usr/bin/openssl','req','-new','-newkey','rsa:2048','-nodes','-subj','/CN='+domain,'-keyout',str(directory/'privkey.pem'),'-out',str(csr)],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+subprocess.run(['/usr/bin/openssl','x509','-req','-days','2','-in',str(csr),'-CA',str(root/'gateway-ci-ca.pem'),'-CAkey',str(root/'gateway-ci-ca.key'),'-CAcreateserial','-extfile',str(ext),'-out',str(directory/'fullchain.pem')],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+with (directory/'fullchain.pem').open('ab') as f:f.write((root/'gateway-ci-ca.pem').read_bytes())
 (directory/'privkey.pem').chmod(0o600)
 ''');fake.chmod(0o755)
     original_site=api('site');fields=('domain','https','title','ip_origin','share_domain','share_https','api_origins','agent_origins')
@@ -70,6 +85,7 @@ subprocess.run(['/usr/bin/openssl','req','-x509','-newkey','rsa:2048','-nodes','
     finally:
         api('site',site_body,'PUT');config_file.write_bytes(original_config)
         unrelated.unlink(missing_ok=True);fake.unlink(missing_ok=True)
+        trust.unlink(missing_ok=True);subprocess.run(['update-ca-certificates'],check=True,stdout=subprocess.DEVNULL)
         if out.exists() and out.read_bytes().startswith(b'# harbor-managed-v1:'):out.unlink()
         state.unlink(missing_ok=True);lock.unlink(missing_ok=True)
         subprocess.run([config['nginx'],'-t'],check=True);subprocess.run([config['nginx'],'-s','reload'],check=True)
