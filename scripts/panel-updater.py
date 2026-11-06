@@ -278,7 +278,7 @@ def main():
     try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
     except BlockingIOError:return
     try:install['database_resources']=database_headroom(install)
-    except Exception:install['database_resources']={'error':'�޷������������ݿ��ڴ����ƣ����� SSH ��� Docker'}
+    except Exception:install['database_resources']={'error':'无法检查或扩大数据库内存限制，请在 SSH 检查 Docker'}
     Updater(install,state).once()
 
 if __name__=='__main__':

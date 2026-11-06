@@ -1,39 +1,39 @@
-�Զ�׼��������һ����ڼ� [README](../README.md)���������ṩ�ֶ� / ԭ�� / ���߷�ʽ���Զ�������Ϊ�� Windows �����߽�� [0.21 ˵��](WORKFLOW-v021.md)��
+自动准备环境的一键入口见 [README](../README.md)；以下仍提供手动 / 原生 / 离线方式。自动依赖行为和 Windows 重启边界见 [0.21 说明](WORKFLOW-v021.md)。
 
-# ��װ�벿��
+# 安装与部署
 
-**�������ܹ������������� VPS������ʹ�� [���һ��������](AGENT-CONNECT.md)��** ���ĵĿ��ƶ˰�װ���ֶ� Agent �����������½��ܹ����˻�߼�������
+**给现有总管理端添加其他 VPS：优先使用 [面板一键连接向导](AGENT-CONNECT.md)。** 下文的控制端安装和手动 Agent 配置适用于新建总管理端或高级场景。
 
-## Ԥ�������ܹ�����һ����װ
+## 预编译新总管理端一键安装
 
-README �� Linux / Windows �������� GitHub �̶��汾��װ��ڣ����ƽ̨�� SHA-256������ scripts/quickstart.py����Ҫ Python 3 ���Ѿ����õ� Docker��Docker Desktop Ҫʹ�� Linux ��������������ر� Windows ִ�в��ԣ�����֯��������ʱʹ����������ǩ�����ֶ���ʽ��
+README 的 Linux / Windows 命令下载 GitHub 固定版本安装入口，检查平台包 SHA-256，调用 scripts/quickstart.py。需要 Python 3 和已经可用的 Docker；Docker Desktop 要使用 Linux 容器。不会替你关闭 Windows 执行策略；被组织策略拦截时使用已允许的签名或手动方式。
 
-Ĭ�ϰ�װ�� Linux /opt/starhub-control �� Windows ProgramData/StarhubControl���ܾ����ǡ�Ĭ�Ͻ��ػ����ʣ�--public ��ȷ���� IP:18080 ����֤��ҳ��HTTP ƾ�ݻ����Ĵ��䡣���� --origin ָ���ⲿ��ڣ������Զ����칫�� IP ������ DNS/TLS����װ�����ϵͳ���ñ�����վ / ��������������0.25.5 �� Linux systemd һ����װ�Ჹ�� Nginx��Certbot / Cloudflare DNS ������ܿ��������֣��ɰ��Ѱ�װ��尴 [�����޸�](GATEWAY.md) ��װ���������������ݿ⡣Windows �ͷ� systemd ��װ��Ҫ�������� Linux ���ء�Windows ʹ�õ�ǰ�û���¼�����˳���¼�󲻱�֤���У�Linux �� systemd �� --foreground ���� OpenRC ���Լ��ļල����
+默认安装到 Linux /opt/starhub-control 或 Windows ProgramData/StarhubControl，拒绝覆盖。默认仅回环访问，--public 明确开放 IP:18080 的认证网页；HTTP 凭据会明文传输。可用 --origin 指定外部入口，不会自动创造公网 IP 或配置 DNS/TLS。安装后可在系统设置保存主站 / 独立订阅域名；0.25.5 起 Linux systemd 一键安装会补齐 Nginx、Certbot / Cloudflare DNS 插件与受控网关助手；旧版已安装面板按 [网关修复](GATEWAY.md) 补装，保留配置与数据库。Windows 和非 systemd 安装需要独立配置 Linux 网关。Windows 使用当前用户登录任务，退出登录后不保证运行；Linux 非 systemd 用 --foreground 接入 OpenRC 或自己的监督器。
 
-������ԭ�����У����ݿⵥ������Լ���ڴ棬�ڲ��˿�ȫ���ػ������� Agent ����������أ����һ������ Linux VPS ����Ŀ�����װ���ݿ⡣���߰�װ��Ԥ��׼�������ư��� Agent �ַ�����quickstart.py ���Զ�ģʽ��Ҫ���أ���ȫ�����밴����ԭ���ֶ���ʽ���� AGENT_RELEASE_DIR��
+控制面原生运行，数据库单个容器约束内存，内部端口全部回环。完整 Agent 包会核验下载，面板一键接入 Linux VPS 无需目标机安装数据库。离线安装可预先准备二进制包及 Agent 分发包；quickstart.py 的自动模式需要下载，完全离线请按下面原生手动方式设置 AGENT_RELEASE_DIR。
 
-Debian/Ubuntu �� Python ���ɷ��а�ֿⰲװ��apt install python3 curl��Fedora/Rocky/Alma �� dnf install python3 curl��openSUSE �� zypper install python3 curl��Alpine �� apk add python3 curl bash������ǰ̨/OpenRC��Docker �������ٷ���Ӧ���а氲װ���������������л�����
+Debian/Ubuntu 的 Python 可由发行版仓库安装：apt install python3 curl；Fedora/Rocky/Alma 用 dnf install python3 curl；openSUSE 用 zypper install python3 curl；Alpine 用 apk add python3 curl bash，采用前台/OpenRC。Docker 依赖按官方对应发行版安装，不覆盖现有运行环境。
 
-## ֧��ϵͳ�뷽ʽ
+## 支持系统与方式
 
-|��ʽ|ϵͳ|ǰ��|
+|方式|系统|前提|
 |---|---|---|
-|Compose|Ubuntu/Debian��Rocky/Alma/Fedora��openSUSE��Alpine|���йٷ�Docker Engine��Compose v2��Python3��bash��Alpine��װbash|
-|Compose|Windows 10/11����֧��Desktopϵͳ|Docker Desktopʹ��Linux������Windows Serverʹ����֧�ֵ�Linux VM|
-|Դ��ԭ��|Linux/Windows amd64��arm64|Go1.27.3+��Node22.12+�����������л���PostgreSQL17|
-|Ԥ����ԭ��|Linux/Windows amd64��arm64|�ֶ�GitHub Build����������������PostgreSQL��Agent����Ҫ|
-|��פAgent|systemd Linux / Windows����|��ͨ�û�systemd���� / ��ǰ�û���¼�ƻ�����|
+|Compose|Ubuntu/Debian、Rocky/Alma/Fedora、openSUSE、Alpine|已有官方Docker Engine、Compose v2、Python3、bash；Alpine另装bash|
+|Compose|Windows 10/11等受支持Desktop系统|Docker Desktop使用Linux容器；Windows Server使用受支持的Linux VM|
+|源码原生|Linux/Windows amd64、arm64|Go1.27.3+、Node22.12+；控制面运行还需PostgreSQL17|
+|预编译原生|Linux/Windows amd64、arm64|手动GitHub Build工作流；控制面需PostgreSQL，Agent不需要|
+|常驻Agent|systemd Linux / Windows桌面|普通用户systemd服务 / 当前用户登录计划任务|
 
-�ű�����Ĭ����ϵͳDocker�����ݿ�򸲸����з���Docker��װ�ο� <https://docs.docker.com/engine/install/>��
+脚本不静默升级系统Docker、数据库或覆盖已有服务。Docker安装参考 <https://docs.docker.com/engine/install/>。
 
-## Composeһ�����ֶ�
+## Compose一键和手动
 
 ```bash
 bash scripts/install.sh compose
-# PowerShell�� ./scripts/install.ps1 -Mode compose
+# PowerShell： ./scripts/install.ps1 -Mode compose
 ```
 
-�ֶ��ȼ����
+手动等价命令：
 
 ```bash
 python scripts/prepare.py
@@ -42,21 +42,21 @@ docker compose build
 docker compose up -d --wait
 ```
 
-��Ҫ�ȸ��ƺ��չؼ��ֶε�.env.example��prepare����ȱʧֵ���ܾ����п����롣����.env��MASTER_KEY��PG��������ǰ `python scripts/backup.py harbor-before-upgrade.dump`�����а�ȫ����.env����Ҫ���� `docker compose down -v`���ָ���ȫ�¸�����������ο�OPERATIONS.md��
+不要先复制含空关键字段的.env.example；prepare生成缺失值但拒绝已有空密码。保留.env、MASTER_KEY和PG卷。升级前 `python scripts/backup.py harbor-before-upgrade.dump`，另行安全备份.env；不要运行 `docker compose down -v`。恢复在全新隔离库演练，参考OPERATIONS.md。
 
-���ߣ�ͬƽ̨������������`docker compose config --images` ��ѯ����ʹ��docker save/loadǨ�ƣ��� `docker compose up --no-build -d --wait`��Դ�롢˽��.env�����ݿ����ݷֱ�Ǩ�ƣ�����GitHub�ϴ�ƾ�ݡ�
+离线：同平台联网机构建，`docker compose config --images` 查询镜像，使用docker save/load迁移，再 `docker compose up --no-build -d --wait`。源码、私有.env和数据库数据分别迁移；不向GitHub上传凭据。
 
-## ԭ������������
+## 原生构建与运行
 
 ```bash
 bash scripts/install.sh build
-# PowerShell�� ./scripts/install.ps1 -Mode build
+# PowerShell： ./scripts/install.ps1 -Mode build
 python scripts/prepare.py
 ```
 
-**Ԥ��������� build ���裬ֱ������ `python scripts/prepare.py`��ʹ�� `bin/` ���渽�� `web/dist`��Compose ������������Դ����������ư����� Compose ���������ġ�**
+**预编译包跳过 build 步骤，直接运行 `python scripts/prepare.py`；使用 `bin/` 和随附的 `web/dist`。Compose 必须下载完整源码包，二进制包不含 Compose 构建上下文。**
 
-Ϊ����PostgreSQL��������harbor�û������ݿ⣬��������룬�������ػ�����˽��.env���ӣ�
+为本机PostgreSQL创建独立harbor用户和数据库，用随机密码，仅监听回环。给私有.env添加：
 
 ```dotenv
 DATABASE_URL=postgres://harbor:YOUR_PASSWORD@127.0.0.1:5432/harbor?sslmode=disable
@@ -66,50 +66,50 @@ SHARE_ADDR=127.0.0.1:8091
 GOMEMLIMIT=128MiB
 ```
 
-Windows WEB_DIRʾ�� `D:/Harbor/web/dist`��Զ�����ݿ�Ҫ��֤TLS��disableֻ��ͬ���ػ���Ȼ��
+Windows WEB_DIR示例 `D:/Harbor/web/dist`。远程数据库要验证TLS，disable只限同机回环。然后：
 
 ```bash
 bash scripts/run-native.sh control
-# PowerShell�� ./scripts/run-native.ps1 -Role control
+# PowerShell： ./scripts/run-native.ps1 -Role control
 ```
 
-�������Զ�Ǩ�ƣ��ṩ�ػ�8080 API��5173 UI������WEB_DIR�󣩼�8091���Ĵ�������ԭ�� UI Ĭ�ϻػ� 5173����ͨ�� WEB_ADDR ��ȷָ�� IP:�˿ڣ�UI ���������� 8080 �� /s/ �� 8091��PUBLIC_ORIGIN �����״ΰ�װ��ʼ��վ����ڡ�ԭ��UI�̶�����������8080����˴˷�ʽ����Ĭ��API�˿ڡ���������Node��פ����дϵͳ����ʹ��ר����ͨ�û���EnvironmentFile��Restart=on-failure��NoNewPrivileges=true��ExecStartָ��harbor-control������������������������
+控制面自动迁移，提供回环8080 API、5173 UI（设置WEB_DIR后）及8091订阅处理器。原生 UI 默认回环 5173，可通过 WEB_ADDR 明确指定 IP:端口，UI 代理到本机 8080 和 /s/ 的 8091。PUBLIC_ORIGIN 仅在首次安装初始化站点入口。原生UI固定代理到本机8080，因此此方式保留默认API端口。生产无需Node常驻；若写系统服务，使用专用普通用户、EnvironmentFile、Restart=on-failure、NoNewPrivileges=true，ExecStart指向harbor-control。开发服务器不用于生产。
 
-����Դ������ǰ׼��Go/npm���棬��Ǩ�ƶ�Ӧƽ̨�Ķ����ƺ�web/dist��GitHub�����������ԭ�����У�����������Compose���������ġ�
+离线源码需提前准备Go/npm缓存，或迁移对应平台的二进制和web/dist。GitHub构建产物仅供原生运行，不包含完整Compose构建上下文。
 
-## Agent��Linux / Windows
+## Agent：Linux / Windows
 
-ÿ̨�豸ʹ�ö�������Ŀ¼�����ؽű��˶Թٷ� sing-box / Xray / FRP ���ʲ� SHA-256��ֻ��ȡ�����������ƣ���ִ���Զ��幹��������ѹ�����ļ�·�������� --sing-box-version / --xray-version / --frp-version ָ���汾�� latest�������ȶ��棩������ҳ����ں˰汾��ť��ͨ�� Agent ����ԭ�������汾�л���
+每台设备使用独立引擎目录。下载脚本核对官方 sing-box / Xray / FRP 的资产 SHA-256，只提取白名单二进制，不执行自定义构建、不解压任意文件路径。可用 --sing-box-version / --xray-version / --frp-version 指定版本或 latest（最新稳定版）。主机页面的内核版本按钮可通过 Agent 进行原生检查与版本切换。
 
 ```bash
 python scripts/fetch-engines.py
-# ��ѡ --os linux --arch arm64��Ϊ��һƽ̨׼�����߰�
+# 可选 --os linux --arch arm64，为另一平台准备离线包
 python scripts/enroll-agent.py --control https://vps.example.com --name device-a --provider self --address YOUR_INVENTORY_ADDRESS --live
 ```
 
-�����������Ա���ƣ�����Ա���Ʋ����档�ű��Ǽ�����������һ����ƾ�ݺ�����·��/ժҪ��.agent.env�����и��ļ���ܾ����ǡ�LinuxĿ¼0700��ƾ��0600��Windows����������Ŀ��״̬Ŀ¼��NTFS ACL�����˼�����Ա�����Ź���Ŀ¼������Ǩ������ʱ����receipt.json���˶Լܹ���
+隐藏输入管理员令牌，管理员令牌不保存。脚本登记主机、保存一次性凭据和引擎路径/摘要到.agent.env；已有该文件则拒绝覆盖。Linux目录0700、凭据0600；Windows限制整个项目和状态目录的NTFS ACL到本人及管理员，不放共享目录。离线迁移引擎时保留receipt.json并核对架构。
 
 ```bash
 bash scripts/run-native.sh agent
-# PowerShell�� ./scripts/run-native.ps1 -Role agent
+# PowerShell： ./scripts/run-native.ps1 -Role agent
 ```
 
-Linux��פ��`sudo bash scripts/install-agent-linux.sh`���ܾ����Ǿɷ������渴�Ƶ�rootֻ��/opt/harbor/engines��״̬/var/lib/harbor/live����ͨharbor�û�д�롣�鿴 `journalctl -u harbor-agent`��Alpine/OpenRC��ʹ��ǰ̨����ɹ���Ա�����а������ػ�����
+Linux常驻：`sudo bash scripts/install-agent-linux.sh`。拒绝覆盖旧服务；引擎复制到root只读/opt/harbor/engines，状态/var/lib/harbor/live由普通harbor用户写入。查看 `journalctl -u harbor-agent`。Alpine/OpenRC可使用前台命令，由管理员按发行版配置守护服务。
 
-Windows��פ��`./scripts/install-agent-windows.ps1` ������ǰ��ͨ�û���HarborAgent��¼�ƻ����񣬲���Ȩ�����ƹ�ִ�в��ԡ��û�δ��¼���˳��󲻱�֤��פ����ð��Windowsϵͳ�����޸�ƾ�ݺ�����������ҵ������ֹ�ű�ʱ������֯������ǩ����ʽ��Windows����ǽ�����ɹ���Ա��ʵ�ʶ˿����ã��ű����Զ����С�
+Windows常驻：`./scripts/install-agent-windows.ps1` 创建当前普通用户的HarborAgent登录计划任务，不提权、不绕过执行策略。用户未登录或退出后不保证常驻，不冒充Windows系统服务。修改凭据后重启任务；企业策略阻止脚本时采用组织允许的签名方式。Windows防火墙规则由管理员按实际端口配置，脚本不自动放行。
 
-ֻ��ENABLE_LIVE=1��Э����ʵ���񡣽���ʧ���˱����ԣ�������ʧ��90��ֹͣ�ܹܽ��̡�Linux�����������źš�Windows Kill-on-close JobObject���������ӽ��̡���Ҫ���Agent����ͬһ״̬Ŀ¼��
+只有ENABLE_LIVE=1才协调真实服务。进程失败退避重试，控制面失联90秒停止受管进程。Linux父进程死亡信号、Windows Kill-on-close JobObject负责清理子进程。不要多个Agent共用同一状态目录。
 
-## ����nginx / ������������
+## 已有nginx / 宝塔域名网关
 
-�µ�һ����װ������岹װ����ʹ�� [���ذ�װ���޸�](GATEWAY.md)���������Ѿ����в����ͬ����ʱ���ֶ���ά˵������Ҫͬʱ�����������֡�
+新的一键安装及旧面板补装优先使用 [网关安装与修复](GATEWAY.md)。下面是已经自行部署旧同步器时的手动运维说明；不要同时启用两套助手。
 
-��Ҫ��װ�ڶ���nginx����ռ����80/443���ȼ�� `nginx -T`��ȷ��û������ͬ��server_name�����߲���ɾ����վ�㡣
+不要安装第二个nginx或抢占宝塔80/443。先检查 `nginx -T`，确认没有其他同名server_name；工具不会删除旧站点。
 
-1. DNS Aָ��VPS��IPv6�ÿɴ�AAAA��HTTP-01��֤Ҫ����80�ɴ����A/AAAA��ȷ����ͨShadowsocks/FRP TCP��ַʹ��DNS-only��IP��������ͨHTTP CDN��
-2. �ڡ����������������������HTTPS�����ͨ��SSHת��������
-3. ��װ���а�certbot�����domain-sync.py����ͬ�����빹����harbor-gateway�ŵ�rootֻ��/opt/harbor��˽��/etc/harbor/control.envֻ��ADMIN_TOKEN��Ȩ��0600��
-4. �������е�YOUR_ADMIN_IP�滻Ϊʵ�ʹ���Ա��Դ������ʹ��/0��
+1. DNS A指向VPS；IPv6用可达AAAA。HTTP-01验证要求公网80可达，所有A/AAAA正确。普通Shadowsocks/FRP TCP地址使用DNS-only或IP，不走普通HTTP CDN。
+2. 在「域名与分享」保存域名及HTTPS，最初通过SSH转发管理。
+3. 安装发行版certbot；审查domain-sync.py，将同步器与构建的harbor-gateway放到root只读/opt/harbor。私有/etc/harbor/control.env只需ADMIN_TOKEN，权限0600。
+4. 把命令中的YOUR_ADMIN_IP替换为实际管理员来源，不能使用/0。
 
 ```bash
 sudo python3 /opt/harbor/domain-sync.py \
@@ -121,78 +121,78 @@ sudo python3 /opt/harbor/domain-sync.py \
  --issue --apply
 ```
 
-��ͨnginxʹ��/usr/sbin/nginx��/etc/nginx/conf.d/harbor.conf���״�����ļ����벻���ڣ����������Harbor��ǡ�������֤Ȩ�ޡ�֤������/��Ч�ڡ���ѡnginx���ã��ɹ������أ�ʧ�ָܻ�ԭ�ļ���ACME������ֻ�ṩchallenge������503�������ݹ�������ƾ�ݡ�
+普通nginx使用/usr/sbin/nginx与/etc/nginx/conf.d/harbor.conf。首次输出文件必须不存在，后续必须带Harbor标记。工具验证权限、证书域名/有效期、候选nginx配置，成功后重载，失败恢复原文件。ACME引导期只提供challenge，其余503，不短暂公开明文凭据。
 
---issue��ʽ����certbot���롢���ڼ���ACME�����ʹ�ô˲���ʱ֤������ǰλ��/etc/letsencrypt/live/DOMAIN��API����ͨAgent����õ�rootȨ�ޡ�
+--issue显式允许certbot申请、续期及其ACME条款；不使用此参数时证书需提前位于/etc/letsencrypt/live/DOMAIN。API与普通Agent不会得到root权限。
 
-�޸�scripts/harbor-domain-sync.service��·���͹���ԱCIDR������service/timer��/etc/systemd/system���� `systemctl daemon-reload` �� `systemctl enable --now harbor-domain-sync.timer`��ÿ����ͬ�����������Ĭ�Ͼܾ�����HTTP������ȷ��Ҫ��忪��HTTP����������������--allow-http��֤������12Сʱ��δ�仯�����أ�ͬһʧ�������˱�30���ӡ�
+修改scripts/harbor-domain-sync.service的路径和管理员CIDR，复制service/timer到/etc/systemd/system，再 `systemctl daemon-reload` 和 `systemctl enable --now harbor-domain-sync.timer`。每分钟同步面板域名。默认拒绝降级HTTP；若明确需要面板开关HTTP，给服务命令额外加--allow-http。证书检查间隔12小时，未变化不重载，同一失败设置退避30分钟。
 
-����/s/��Agentר�ýӿھ����ط��ʣ�����·���ܹ���ԱCIDR���ơ�����ԱIP�䶯��ͨ��SSHת���ָ������ػر���Ч��ʾ���ؼ��/���سɹ�������ʾ�����˿ڡ��ư�ȫ������֤��
+订阅/s/与Agent专用接口经网关访问，其他路径受管理员CIDR限制。管理员IP变动可通过SSH转发恢复。网关回报生效表示本地检查/重载成功，不表示公网端口、云安全组已验证。
 
-## ֹͣ��ָ�
+## 停止与恢复
 
-- Compose stop/down����PG������Ҫ��-v��
-- Linux Agent��systemctl stop harbor-agent��WindowsֹͣHarborAgent�����ǰ̨Agent���������ܹ����档
-- ����ʧ�ܼ��journalctl��DNS��֤���nginx -t���޸����ɾ��������vhost��.state.json����˱ܣ���ɾ������վ�㡣
-- �ָ�����ͬʱ�߱����ݿ���ԭMASTER_KEY����������Կ���ܽ��ܾɷ���
+- Compose stop/down保留PG卷；不要加-v。
+- Linux Agent：systemctl stop harbor-agent；Windows停止HarborAgent任务或前台Agent，会清理受管引擎。
+- 域名失败检查journalctl、DNS、证书和nginx -t。修复后可删除该自有vhost的.state.json解除退避，不删除其他站点。
+- 恢复必须同时具备数据库与原MASTER_KEY；生成新密钥不能解密旧服务。
 
 
-## ��ȡ������Ա��¼����
+## 获取面板管理员登录令牌
 
-ֻ���Լ��ı��� / SSH �ն˲鿴��̨�������е� `ADMIN_TOKEN`�������Ǳ������ƣ��������ɻ�����ƾ�ݡ���������Ƶ������¼ҳ����Ҫ�ϴ��� GitHub����־�����졣
+只在自己的本机 / SSH 终端查看这台星枢已有的 `ADMIN_TOKEN`，它不是宝塔令牌，不会生成或重置凭据。将输出复制到星枢登录页，不要上传到 GitHub、日志或聊天。
 
-��ǰ��ʾ������ `root@������:~#`���Ѿ����� root Ȩ�ޣ�ֱ����������� `python3` ����ɣ�**����Ҫ��װ��ʹ�� `sudo`**����ͨ�û�������ǰ�� `sudo`��ϵͳû�� `sudo` ʱ������ `su -` �л� root�������� root ���
+当前提示符若是 `root@主机名:~#`，已经具有 root 权限，直接运行下面的 `python3` 命令即可，**不需要安装或使用 `sudo`**。普通用户在命令前加 `sudo`；系统没有 `sudo` 时，先用 `su -` 切换 root，再运行 root 命令。
 
-һ����װ Linux��Ĭ��Ŀ¼ `/opt/starhub-control`����
+一键新装 Linux（默认目录 `/opt/starhub-control`）：
 
 ```bash
 python3 /opt/starhub-control/admin-token.py --env /opt/starhub-control/control.env
 ```
 
-�Ѿ����ع��ű��� `/tmp/starhub-admin-token.py`��
+已经下载过脚本到 `/tmp/starhub-admin-token.py`：
 
 ```bash
 python3 /tmp/starhub-admin-token.py --env /opt/starhub-control/control.env
 ```
 
-�� `/opt/harbor` ���𲼾֣�
+旧 `/opt/harbor` 部署布局：
 
 ```bash
 python3 /opt/harbor/admin-token.py --env /etc/harbor/control.env
 ```
 
-Դ�� / Compose / �Զ��尲װ���滻Ϊʵ�ʾ���·������
+源码 / Compose / 自定义安装（替换为实际绝对路径）：
 
 ```bash
 python3 /ABSOLUTE/PROJECT/scripts/admin-token.py --env /ABSOLUTE/PRIVATE/.env
 ```
 
-`python3 scripts/admin-token.py --env .env` ֻ�������Ѿ�����Դ����ĿĿ¼��������� `/root` ִ��ʱ����� `/root/scripts/admin-token.py`����˱� `can't open file`����ʹ������ľ���·�������޸���һ����װ�� `--prefix`���ű��� `control.env` ��λ��ʵ�ʰ�װĿ¼�¡�
+`python3 scripts/admin-token.py --env .env` 只适用于已经进入源码项目目录的情况。在 `/root` 执行时会查找 `/root/scripts/admin-token.py`，因此报 `can't open file`；请使用上面的绝对路径。若修改了一键安装的 `--prefix`，脚本和 `control.env` 都位于实际安装目录下。
 
-������ؽű������ڣ���ʹ�� [README ��ͨ����������](../README.md#linux-��ȡ������Ա��¼����)�������Զ��ж��Ƿ���Ҫ `sudo`����ʶ��Ĭ���¾ɲ��֡��Զ��廷���ļ���ͬʱ���ڶ����װ����ʱ���� `--env` ��ȷָ��Ŀ�ꣻ��Ҫ�����������ơ�
+如果本地脚本不存在，可使用 [README 的通用下载命令](../README.md#linux-获取面板管理员登录令牌)，它会自动判断是否需要 `sudo`，并识别默认新旧布局。自定义环境文件或同时存在多个安装配置时，用 `--env` 明确指定目标；不要重新生成令牌。
 
-Windows PowerShell����ǰ�û�һ����װ����
+Windows PowerShell（当前用户一键安装）：
 
 ```powershell
 Get-Content -LiteralPath "$env:ProgramData\StarhubControl\control.env" | Where-Object { $_.StartsWith('ADMIN_TOKEN=') } | ForEach-Object { $_.Substring(12) }
 ```
 
-## ж������������
+## 卸载面板运行组件
 
-һ��ж��������������**Ĭ�ϱ������ݿ����˽�����ú����б���**����������Ŀ�ű������غ����ȥ�� --apply �鿴�ƻ���root �û�ȥ�������е� sudo��
+一键卸载面板运行组件，**默认保留数据库卷、私有配置和所有备份**。下面是项目脚本，下载后可先去掉 --apply 查看计划；root 用户去掉命令中的 sudo：
 
 ```bash
 curl -fL https://raw.githubusercontent.com/czy-code-923/czy-code/main/scripts/uninstall.py -o /tmp/starhub-uninstall.py && sudo python3 /tmp/starhub-uninstall.py --apply
 ```
 
-Windows����Ҫ Python 3��ֻж����ѡ��װĿ¼�Ͷ�Ӧ�ĵ�ǰ�û����񣩣�
+Windows（需要 Python 3；只卸载所选安装目录和对应的当前用户任务）：
 
 ```powershell
 Invoke-WebRequest https://raw.githubusercontent.com/czy-code-923/czy-code/main/scripts/uninstall.py -OutFile "$env:TEMP\starhub-uninstall.py"; python "$env:TEMP\starhub-uninstall.py" --apply
 ```
 
-`--purge-data` ��**���ɻָ���ɾ������Ŀ���ݿ����˽������**����������ȷ�ϱ��ݣ�Ĭ�ϲ�ִ�С����������ݻ���ֹ��װ�ű����ǣ��ָ����߰�װ�ĵ��ı��ݻָ����̡������������������ڱ����е����رգ�Nginx��������վ��Let's Encrypt��Docker��ϵͳ����ǽ������ VPS �ϵ� Agent ���ᱻɾ�����ȴ������̨����Զ�� Agent����ж���ܹ����ˡ�
+`--purge-data` 会**不可恢复地删除该项目数据库卷和私有配置**，必须自行确认备份；默认不执行。保留的数据会阻止新装脚本覆盖，恢复请走安装文档的备份恢复流程。宝塔已有域名反代在宝塔中单独关闭；Nginx、其他网站、Let's Encrypt、Docker、系统防火墙和其他 VPS 上的 Agent 不会被删除。先从面板逐台退役远程 Agent，再卸载总管理端。
 
-[���� / ��װ������Э�����](PROTOCOLS-v019.md) �� [����ж�ؽű�](../scripts/uninstall.py)
+[网络 / 封装语义与协议核验](PROTOCOLS-v019.md) · [完整卸载脚本](../scripts/uninstall.py)
 
-��ǰ������ͻ�������˵���� [0.20 ������](WORKFLOW-v020.md)��Linux / Windows ͨ�ð�װ��ж�ء���������������� [README](../README.md) ǰ����
+当前订阅与客户端限制说明见 [0.20 工作流](WORKFLOW-v020.md)。Linux / Windows 通用安装、卸载、面板令牌命令置于 [README](../README.md) 前部。

@@ -1,5 +1,5 @@
 name: Publish verified Starhub 0.25.5
-# Verify policy synchronization and group edit concurrency before publishing.
+# Verify fresh gateway bootstrap and native TLS before publishing.
 on:
   push:
     branches: [main]
@@ -116,7 +116,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create v0.25.5-distribution .release-output/* --target "$(git rev-parse HEAD)" --prerelease --latest=false --title '���� 0.25.5 �� ������֤�������Զ���װ�޸�' --notes-file docs/RELEASE-v0255.md
+          gh release create v0.25.5-distribution .release-output/* --target "$(git rev-parse HEAD)" --prerelease --latest=false --title '星枢 0.25.5 · 网关与证书助手自动安装修复' --notes-file docs/RELEASE-v0255.md
       - name: Verify fresh install, Agent onboarding and retirement
         run: |
           mkdir /tmp/starhub-distribution

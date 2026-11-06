@@ -97,7 +97,7 @@ def plan(root,layout,purge,windows=False):
 def owned_windows_task(root):
     p=subprocess.run(['schtasks','/Query','/TN','StarhubControl','/XML'],capture_output=True,text=True)
     if p.returncode:
-        if 'cannot find' in p.stderr.lower() or '�Ҳ���' in p.stderr:return False
+        if 'cannot find' in p.stderr.lower() or '找不到' in p.stderr:return False
         raise RuntimeError('Cannot inspect the Windows task; nothing was removed')
     task=ET.fromstring(p.stdout)
     arguments=[e.text or '' for e in task.iter() if e.tag.rsplit('}',1)[-1]=='Arguments']
