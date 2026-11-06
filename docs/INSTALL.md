@@ -155,6 +155,8 @@ python3 /opt/starhub-control/panel-access.py disable-ip --env /opt/starhub-contr
 
 一键安装普通网页默认为 18080；上述恢复网页默认另用 18081。`disable-ip` 只停止临时恢复服务，不关闭普通 18080 或域名入口。普通用户先 `su -` 或使用已配置的 sudo。完整的新旧布局、自动 root / sudo 下载查询、SSH / Windows 和报错处理见 [面板访问命令](PANEL-ACCESS.md)。
 
+有可用域名后，如需永久关闭普通 IP:18080，可将原生网页改为回环监听，保留 Nginx 域名回源。使用 [永久关闭普通网页公网监听](PANEL-ACCESS.md#永久关闭普通网页公网监听) 中的命令，其中包含 HTTPS 预检查、配置备份、监听验证和恢复步骤。
+
 ## 获取面板管理员登录令牌
 
 只在自己的本机 / SSH 终端查看这台星枢已有的 `ADMIN_TOKEN`，它不是宝塔令牌，不会生成或重置凭据。将输出复制到星枢登录页，不要上传到 GitHub、日志或聊天。
@@ -244,4 +246,3 @@ Invoke-WebRequest https://raw.githubusercontent.com/czy-code-923/czy-code/main/s
 [网络 / 封装语义与协议核验](PROTOCOLS-v019.md) · [完整卸载脚本](../scripts/uninstall.py)
 
 当前订阅与客户端限制说明见 [0.20 工作流](WORKFLOW-v020.md)。Linux / Windows 通用安装、卸载、面板令牌命令置于 [README](../README.md) 前部。
-

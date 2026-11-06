@@ -69,6 +69,40 @@ ssh -N -L 18082:127.0.0.1:18080 YOUR_USER@YOUR_VPS
 
 上面的转发目标对应新装默认端口；自定义端口或旧部署请按实际监听配置调整。旧布局完整命令、脚本缺失时的自动 root / sudo 下载查询、自定义目录、Windows 与常见报错见 [面板访问命令](docs/PANEL-ACCESS.md)。Compose 使用自己的端口映射和 SSH 转发，见 [安装文档](docs/INSTALL.md)。
 
+### 永久关闭公网面板端口，保留域名访问
+
+适用于一键新装 Linux systemd 的默认目录与端口。先确认域名能正常登录，将下面的 `YOUR_PANEL_DOMAIN` 替换为自己的面板域名（不含 `https://`、路径和端口）。脚本先检查本机 Nginx 的 HTTPS 域名入口；检查失败停止修改。执行时会短暂重启控制端。
+
+```bash
+(
+  set -eu
+  cfg=/opt/starhub-control/control.env
+  panel_domain='YOUR_PANEL_DOMAIN'
+  test -f "$cfg"
+  grep -q '^WEB_ADDR=' "$cfg"
+
+  curl --noproxy '*' \
+    --resolve "$panel_domain:443:127.0.0.1" \
+    --connect-timeout 5 --max-time 15 \
+    -fsS "https://$panel_domain/api/v1/branding" -o /dev/null
+
+  backup="$cfg.before-ip-close.$(date -u +%Y%m%dT%H%M%SZ)"
+  cp -p "$cfg" "$backup"
+  printf '配置备份：%s\n' "$backup"
+  sed -i 's/^WEB_ADDR=.*/WEB_ADDR=127.0.0.1:18080/' "$cfg"
+  systemctl restart starhub-control.service
+  python3 /opt/starhub-control/panel-access.py disable-ip --env "$cfg"
+)
+```
+
+普通网页会改为 `127.0.0.1:18080`，域名网关继续本机回源；临时恢复服务同时关闭。配置重启后仍生效，正常后台更新保留该配置。检查：
+
+```bash
+ss -lntp | grep -E ':18080|:18081'
+```
+
+预期只看到 `127.0.0.1:18080`，没有 `0.0.0.0:18080`、`[::]:18080` 或本项目的 18081 监听。自定义端口需按实际安装调整。关闭管理端口不能隐藏源站 IP；域名入口的 80/443 和源站防护是独立配置。恢复步骤与说明见 [永久关闭普通网页公网监听](docs/PANEL-ACCESS.md#永久关闭普通网页公网监听)。
+
 ## Linux 一键卸载
 
 默认只卸载本项目运行组件，保留数据库、私有配置和备份。去掉 `--apply` 可以预览。彻底删除数据需自行备份后显式添加 `--purge-data`；远程 Agent 先在主机页逐台退役。以下命令使用 root，不需要 sudo。
@@ -306,4 +340,3 @@ python3 /opt/starhub-control/scripts/panel-updater.py --env /opt/starhub-control
 端口跳跃：Hysteria / HY2 的可选设置、Linux 受限助手和客户端格式说明见 [PORT-HOPPING.md](docs/PORT-HOPPING.md)。现有节点默认关闭，远端主机需要先执行面板提供的助手安装 / 更新命令。
 
 HY2 服务端带宽与客户端带宽可分别设置；TUIC / AnyTLS 专属客户端参数也支持完整订阅同步。用法、单位、方向、协议范围及兼容限制见 [协议参数与性能设置](docs/PROTOCOL-PERFORMANCE.md)。
-

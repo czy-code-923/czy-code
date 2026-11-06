@@ -87,6 +87,74 @@ python3 /opt/harbor/panel-access.py disable-ip --env /etc/harbor/control.env
 
 `panel_url` 显示已配置的首选入口，`web_listener` 显示原生监听，`recovery.url` 只在恢复服务启用时给出。地址查询不证明公网 DNS、证书、端口或云防火墙已可用。
 
+## 永久关闭普通网页公网监听
+
+这与 `disable-ip` 不同：把普通网页的 `WEB_ADDR` 改成回环监听，外部不能再直接连接 18080；Nginx 在同机通过 `127.0.0.1:18080` 回源，域名继续可用。配置在重启后保留，正常后台更新不会重写 `control.env`。
+
+以下命令只针对一键新装 Linux systemd 的默认 `/opt/starhub-control` 与 18080 端口。自定义前缀、端口或独立旧前端需按实际安装调整；Compose 应调整自身端口发布，不能照抄这一命令。
+
+先确认已绑定的域名可以正常登录；将 `YOUR_PANEL_DOMAIN` 换为自己的面板域名，不含协议、路径和端口。以 root 执行：
+
+```bash
+(
+  set -eu
+  cfg=/opt/starhub-control/control.env
+  panel_domain='YOUR_PANEL_DOMAIN'
+  test -f "$cfg"
+  grep -q '^WEB_ADDR=' "$cfg"
+
+  curl --noproxy '*' \
+    --resolve "$panel_domain:443:127.0.0.1" \
+    --connect-timeout 5 --max-time 15 \
+    -fsS "https://$panel_domain/api/v1/branding" -o /dev/null
+
+  backup="$cfg.before-ip-close.$(date -u +%Y%m%dT%H%M%SZ)"
+  cp -p "$cfg" "$backup"
+  printf '配置备份：%s\n' "$backup"
+  sed -i 's/^WEB_ADDR=.*/WEB_ADDR=127.0.0.1:18080/' "$cfg"
+  systemctl restart starhub-control.service
+  python3 /opt/starhub-control/panel-access.py disable-ip --env "$cfg"
+)
+```
+
+此命令会：
+
+- 先通过本机 Nginx 检查指定 HTTPS 域名的面板接口；证书校验或请求失败就停止，不修改现有入口。
+- 创建带 UTC 时间的配置备份，保留私有文件权限，只输出备份路径。
+- 将普通网页改为仅 IPv4 回环 `127.0.0.1:18080`，关闭该网页端口的 IPv4 / IPv6 公网监听。
+- 重启控制端，并停止本项目临时恢复服务。域名网关配置保持原样；控制端重启期间网页 / API 会短暂中断。
+
+检查实际监听：
+
+```bash
+ss -lntp | grep -E ':18080|:18081'
+```
+
+预期普通网页只监听 `127.0.0.1:18080`，没有 `0.0.0.0:18080` / `[::]:18080`；本项目的临时恢复监听已经停止。其他软件若使用相同端口，应按进程核对。
+
+检查域名接口，然后在浏览器确认仍可登录（替换域名）：
+
+```bash
+curl --noproxy '*' --resolve YOUR_PANEL_DOMAIN:443:127.0.0.1 -fsS https://YOUR_PANEL_DOMAIN/api/v1/branding
+```
+
+### 恢复本次操作前的普通网页监听
+
+把 `PASTE_BACKUP_PATH` 替换为本次命令输出的实际备份文件路径。不要上传配置文件，其中有管理员令牌和密钥。
+
+```bash
+cp -p 'PASTE_BACKUP_PATH' /opt/starhub-control/control.env &&
+systemctl restart starhub-control.service
+```
+
+这会恢复备份中的普通网页监听范围；临时恢复服务仍通过 `enable-ip` 单独开启。
+
+### 关闭端口与隐藏 IP 的边界
+
+绑定域名本身不能隐藏 IP；DNS 直连记录仍会暴露源站地址。以上命令关闭的是管理网页的直连端口，域名所用的 80/443 仍承接访问。
+
+需要进一步限制绕过 Cloudflare 访问源站时，应使用 Cloudflare 代理，并为源站网页端口单独设置仅接受可信回源的策略；其他直接解析到同一 IP 的 DNS 记录也需要核对。见 [Cloudflare 源站保护说明](https://developers.cloudflare.com/fundamentals/security/protect-your-origin-server/)。这与普通网页的回环监听是两项独立设置。
+
 ## SSH 转发和其他安装方式
 
 在自己的电脑执行。新装默认原生端口为 18080：
@@ -117,4 +185,3 @@ Windows / 自行监督的进程可在查询命令中把 `status` 换为 `enable-
 | `Address already in use` | 备用端口被占用；指定其他未占用的 `--port`，不要停止未知服务。 |
 
 安装、卸载及管理员令牌命令见 [README](../README.md)。域名与证书依赖修复见 [网关文档](GATEWAY.md)。
-
