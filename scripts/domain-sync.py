@@ -53,7 +53,10 @@ def main(subscription=False):
     parser.add_argument('--apply',action='store_true')
     parser.add_argument('--allow-http',action='store_true',help='Explicitly allow plaintext subscription endpoint')
     parser.add_argument('--public-management',action='store_true',help='Allow any source to reach HTTPS management; admin token remains required')
+    parser.add_argument('--role',choices=('both','management','subscription'),default='both')
+    parser.add_argument('--web-port',type=int,default=5173,help='Actual native web listener; legacy defaults to 5173')
     args=parser.parse_args()
+    if not 1024<=args.web_port<=65535 or args.web_port in (8080,8091,5432,15432):raise ValueError('Invalid native web listener port')
     if os.geteuid()!=0: raise ValueError('Gateway reconciler requires Linux root')
     values={}
     for line in Path(args.env).read_text().splitlines():
@@ -106,9 +109,14 @@ def main(subscription=False):
     if subscription: argv+=['--share-only']
     if ip_port:argv+=['--listen-port',str(ip_port)]
     if https: argv+=['--cert',str(cert),'--key',str(key)]
+    def rendered():
+        data=run(argv)
+        data=data.replace(b'proxy_pass http://127.0.0.1:5173;',('proxy_pass http://127.0.0.1:'+str(args.web_port)+';').encode())
+        # The API still applies its own per-route bounds; allow valid policy imports.
+        return data.replace(b'client_max_body_size 64k;',b'client_max_body_size 2m;')
     if not args.apply:
         print('Dry run. Domain:',domain,'HTTPS:',https,'managed vhost:',output)
-        if not https or cert.exists(): print(run(argv).decode())
+        if not https or cert.exists(): print(rendered().decode())
         return
     if output.with_suffix(output.suffix+'.state.json').is_symlink(): raise ValueError('Unsafe state symlink')
     lock_path=output.with_suffix(output.suffix+'.lock')
@@ -121,7 +129,8 @@ def main(subscription=False):
         try: previous=json.loads(state_path.read_text())
         except (ValueError,OSError): pass
     signature={'domain':domain,'https':https,'ip_port':ip_port,'subscription':subscription}
-    if previous.get('signature')==signature and previous.get('failed') and time.time()-previous.get('time',0)<1800:
+    newer_certificate=https and cert.exists() and cert.stat().st_mtime>previous.get('time',0)
+    if previous.get('signature')==signature and previous.get('failed') and time.time()-previous.get('time',0)<1800 and not newer_certificate:
         raise ValueError('Previous gateway update failed; 30-minute retry backoff. Remove the managed state JSON to retry after repair.')
     if original is not None and not original.startswith(b'# harbor-managed-v1:'):
         raise ValueError('Existing vhost is not owned by Harbor; refusing overwrite')
@@ -147,7 +156,7 @@ def main(subscription=False):
                 write(challenge);reload_nginx()
             renewal_check=time.time()
             run([certbot,'certonly','--non-interactive','--agree-tos','--register-unsafely-without-email','--webroot','-w',str(webroot),'-d',domain,'--keep-until-expiring'])
-        candidate=run(argv)
+        candidate=rendered()
         if args.public_management:
             import re
             candidate=re.sub(rb'(?m)^\s*allow [^;\n]+;\s*$',b'',candidate)
@@ -182,7 +191,10 @@ def reconcile_both():
     # vhost from being reconciled. Still fail the service if either role failed.
     import traceback
     failures=[]
-    for subscription in (False,True):
+    selector=argparse.ArgumentParser(add_help=False);selector.add_argument('--role',default='both')
+    chosen,_=selector.parse_known_args()
+    roles=(False,) if chosen.role=='management' else (True,) if chosen.role=='subscription' else (False,True)
+    for subscription in roles:
         try:
             main(subscription=subscription)
         except Exception as exc:

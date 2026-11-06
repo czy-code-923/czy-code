@@ -104,6 +104,9 @@ def main():
                 if r.status==200:
                     if os.name!='nt' and not args.foreground:
                         run(sys.executable,str(root/'scripts/install-panel-updater.py'),'--env',str(private))
+                        import importlib.util
+                        spec=importlib.util.spec_from_file_location('gateway_bootstrap',source/'scripts/install-gateway.py');gateway=importlib.util.module_from_spec(spec);spec.loader.exec_module(gateway)
+                        gateway.install_gateway(private,source/'scripts',install_deps=True,enable_acme=True)
                     print('Ready: '+origin+' (API and PostgreSQL remain loopback-only)');return
         except OSError:time.sleep(1)
     raise RuntimeError('Web health check timed out; inspect service/task. Data and credentials retained.')

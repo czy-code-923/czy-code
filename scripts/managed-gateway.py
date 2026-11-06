@@ -97,7 +97,7 @@ def main():
   try:
    domain=sync.domain_name(job['domain']);path=out/('harbor-route-'+domain+'.conf')
    webroot=Path('/var/www/harbor-acme');webroot.mkdir(parents=True,exist_ok=True,mode=0o755)
-   if job['provider']=='http-01' and domain!=main_domain and not path.exists():
+   if job['provider']=='http-01' and domain not in reserved and not path.exists():
     ensure_domain_available(out,domain,path);atomic_vhost(path,render(domain),nginx)
    argv=[certbot,'certonly','--non-interactive','--agree-tos','--email',job['email'],'--cert-name',domain,'-d',domain,'--keep-until-expiring']
    if job['provider']=='http-01':sync.run(argv+['--webroot','-w',str(webroot)])

@@ -1,8 +1,8 @@
 {
   "openapi": "3.0.3",
   "info": {
-    "title": "星枢 · VPS 多机管理 API",
-    "version": "0.25.4",
+    "title": "���� �� VPS ������� API",
+    "version": "0.25.5",
     "description": "Self-workspace API for host agents, proxy protocols, user quotas and client subscriptions. Bearer administrator token or expiring scoped xs_ API key. No arbitrary shell; privileged gateway work and API key administration remain root-only."
   },
   "servers": [
@@ -7295,18 +7295,19 @@
     },
     "/api/v1/gateway/nginx": {
       "get": {
-        "summary": "查看网关上报的 Nginx 版本",
+        "summary": "�鿴�����ϱ��� Nginx �汾",
         "responses": {
           "200": {
-            "description": "Nginx 版本及来源"
+            "description": "Nginx �汾����Դ"
           }
         },
         "x-required-scopes": [
           "reverse:read"
-        ]
+        ],
+        "description": "Nginx version and owner, server-computed heartbeat freshness (3 minutes), nullable certbot_available and cloudflare_available observations. Null means an older helper has not reported capabilities."
       },
       "post": {
-        "summary": "网关上报 Nginx 版本（管理员）",
+        "summary": "�����ϱ� Nginx �汾������Ա��",
         "requestBody": {
           "required": true,
           "content": {
@@ -7327,6 +7328,14 @@
                       "baota",
                       "system"
                     ]
+                  },
+                  "certbot_available": {
+                    "type": "boolean",
+                    "nullable": true
+                  },
+                  "cloudflare_available": {
+                    "type": "boolean",
+                    "nullable": true
                   }
                 }
               }
@@ -7335,10 +7344,11 @@
         },
         "responses": {
           "200": {
-            "description": "已记录"
+            "description": "�Ѽ�¼"
           }
         },
-        "x-root-only": true
+        "x-root-only": true,
+        "description": "Root helper heartbeat. Optional nullable capability fields preserve prior observations when omitted by older helpers."
       }
     },
     "/api/v1/subscriptions/{id}/independent-identity": {

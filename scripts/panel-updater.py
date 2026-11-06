@@ -111,7 +111,7 @@ def download(asset,path):
     if total!=asset['size'] or 'sha256:'+digest.hexdigest()!=asset['digest']:raise ValueError('Distribution checksum mismatch')
 
 def extract(archive,stage):
-    allowed_scripts={'panel-updater.py','install-panel-updater.py','admin-token.py','panel-access.py','uninstall.py','managed-gateway.py','gateway-config.py','domain-sync.py'}
+    allowed_scripts={'panel-updater.py','install-panel-updater.py','admin-token.py','panel-access.py','uninstall.py','managed-gateway.py','gateway-config.py','domain-sync.py','gateway-worker.py','install-gateway.py'}
     with zipfile.ZipFile(archive) as z:
         if len(z.infolist())>5000 or sum(f.file_size for f in z.infolist())>700<<20:raise ValueError('Distribution size bounds exceeded')
         seen=set()
@@ -205,7 +205,7 @@ class Updater:
                 if source.is_file():mappings.append((source,web/source.relative_to(stage/'web/dist')))
             # Preserve old hashed frontend assets for browser tabs during update.
             for source in sorted((stage/'scripts').iterdir()):
-                target=root/'scripts'/source.name if source.name in ('panel-updater.py','install-panel-updater.py','managed-gateway.py','gateway-config.py','domain-sync.py') else root/source.name
+                target=root/'scripts'/source.name if source.name in ('panel-updater.py','install-panel-updater.py','managed-gateway.py','gateway-config.py','domain-sync.py','gateway-worker.py','install-gateway.py') else root/source.name
                 mappings.append((source,target))
             backup=directory/'files';backup.mkdir(mode=0o700)
             for index,(source,target) in enumerate(mappings):
@@ -214,6 +214,10 @@ class Updater:
                 if target.exists():shutil.copy2(target,entry['backup'])
                 self.job['files'].append(entry)
             self.job['units']=[self.i['service']]
+            if active('starhub-gateway.timer'):
+                unit=trusted(Path('/etc/systemd/system/starhub-gateway.service'))
+                if not unit.read_text().startswith('# starhub-owned-gateway-v1\n') or str(root/'scripts/gateway-worker.py') not in unit.read_text():raise ValueError('Gateway unit ownership mismatch')
+                self.job['units'][:0]=['starhub-gateway.timer','starhub-gateway.service']
             if self.i['layout']=='legacy' and active('harbor-agent.service'):self.job['units'].insert(0,'harbor-agent.service')
             self.save()
             # Stop writes before snapshot; restart original services if backup fails.
@@ -274,7 +278,7 @@ def main():
     try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
     except BlockingIOError:return
     try:install['database_resources']=database_headroom(install)
-    except Exception:install['database_resources']={'error':'无法检查或扩大数据库内存限制，请在 SSH 检查 Docker'}
+    except Exception:install['database_resources']={'error':'�޷������������ݿ��ڴ����ƣ����� SSH ��� Docker'}
     Updater(install,state).once()
 
 if __name__=='__main__':

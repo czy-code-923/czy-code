@@ -33,6 +33,7 @@ jobs:
       - run: python3 scripts/test_prepare.py
       - run: python3 scripts/test_gateway_config.py
       - run: python3 scripts/test_managed_gateway.py
+      - run: python3 scripts/test_gateway_bootstrap.py
       - run: python3 scripts/test_agent_bootstrap.py
       - run: python3 scripts/test_engine_installer.py
       - run: python3 scripts/test_uninstall.py

@@ -37,6 +37,7 @@ def main():
     assert api('agent/releases/linux-amd64')['size']>1000000
     print('Fresh one-command control installation and no-domain IP access: PASS',flush=True)
     wait(lambda:api('panel-updates')['helper_ready'],'Independent updater heartbeat',45)
+    wait(lambda:api('gateway/nginx').get('fresh') and api('gateway/nginx').get('cloudflare_available'),'Gateway and DNS certificate helper heartbeat',60)
     subprocess.run([sys.executable,str(Path(__file__).with_name('test_panel_update_e2e.py')),str(distribution)],check=True,timeout=600)
     access=root/'panel-access.py'
     status=json.loads(subprocess.check_output([sys.executable,str(access),'status'],text=True))

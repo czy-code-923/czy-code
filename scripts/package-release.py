@@ -16,7 +16,7 @@ import urllib.request
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.25.4"
+VERSION = "0.25.5"
 PREVIOUS = "0.23.8"
 REPOSITORY = "czy-code-923/czy-code"
 BASE = f"https://github.com/{REPOSITORY}/releases/download/v{VERSION}-distribution/"
@@ -114,7 +114,7 @@ def main():
         # Previous updater already contains transactional gateway backup and rollback.
         compile(apply, "apply.py", "exec")
         archive.writestr("apply.py", apply)
-        for name in ("uninstall.py", "admin-token.py", "panel-access.py", "managed-gateway.py", "gateway-config.py", "domain-sync.py", "panel-updater.py", "install-panel-updater.py"):
+        for name in ("uninstall.py", "admin-token.py", "panel-access.py", "managed-gateway.py", "gateway-config.py", "domain-sync.py", "panel-updater.py", "install-panel-updater.py", "install-gateway.py", "gateway-worker.py"):
             archive.write(ROOT / "scripts" / name, name)
         archive.write(api_tests, "api-tests")
         for name in ("harbor-control", "harbor-agent", "harbor-firewall", "harbor-agent-cleanup", "harbor-gateway"):

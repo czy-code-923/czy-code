@@ -39,6 +39,7 @@ def owned_units(root,layout):
     names=['starhub-control.service'] if layout=='quickstart' else ['harbor-control.service','harbor-agent.service','harbor-domain-sync.service','harbor-domain-sync.timer','harbor-managed-gateway.service','harbor-managed-gateway.timer','harbor-backup.service','harbor-backup.timer']
     names += ['starhub-panel-rescue.service']
     names += ['starhub-panel-updater.service','starhub-panel-updater.timer']
+    names += ['starhub-gateway.service','starhub-gateway.timer']
     found=[]
     for name in names:
         path=Path('/etc/systemd/system')/name
@@ -96,7 +97,7 @@ def plan(root,layout,purge,windows=False):
 def owned_windows_task(root):
     p=subprocess.run(['schtasks','/Query','/TN','StarhubControl','/XML'],capture_output=True,text=True)
     if p.returncode:
-        if 'cannot find' in p.stderr.lower() or '找不到' in p.stderr:return False
+        if 'cannot find' in p.stderr.lower() or '�Ҳ���' in p.stderr:return False
         raise RuntimeError('Cannot inspect the Windows task; nothing was removed')
     task=ET.fromstring(p.stdout)
     arguments=[e.text or '' for e in task.iter() if e.tag.rsplit('}',1)[-1]=='Arguments']
