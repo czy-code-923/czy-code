@@ -1,5 +1,5 @@
 name: Publish verified Starhub 0.25.5
-# Verify hardened fresh gateway bootstrap and native TLS before publishing.
+# Verify hardened gateway bootstrap on an isolated root-owned Linux fixture.
 on:
   push:
     branches: [main]

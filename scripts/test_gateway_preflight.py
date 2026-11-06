@@ -5,6 +5,10 @@ from pathlib import Path
 def main():
     if sys.platform!='linux' or os.geteuid()!=0 or os.environ.get('GITHUB_ACTIONS')!='true' or os.environ.get('RUNNER_ENVIRONMENT')!='github-hosted':raise ValueError('Disposable GitHub-hosted root VM required')
     if any(Path(p).exists() for p in ('/opt/starhub-control','/opt/harbor','/etc/harbor')):raise ValueError('Existing installation refused')
+    # GitHub's disposable image makes /opt writable by the runner. Privileged
+    # production helpers correctly reject that parent; normalize only this VM's
+    # fixture. Never relax the installer or change a user's shared /opt.
+    os.chown('/opt',0,0);Path('/opt').chmod(0o755)
     source=Path(__file__).resolve().parents[1]
     with tempfile.TemporaryDirectory(prefix='starhub-gateway-preflight-',dir='/var/tmp') as d:
         dist=Path(d);(dist/'bin').mkdir();(dist/'web').mkdir()
