@@ -28,6 +28,9 @@ def main():
         m.nft(m.nft_path(),['-f','-'],'table inet untouched { comment "test-sentinel"; }\n')
         rules=[{'id':'f'*32,'listen':'::','port':24000,'ports':'30000-30003,30100'}]
         m.reconcile(host,rules)
+        # Reapply must recognize our table even on nft 1.0.6, whose JSON
+        # listing omits the table comment that its text listing preserves.
+        m.reconcile(host,rules)
         client='import socket,sys;s=socket.socket(socket.AF_INET6 if ":" in sys.argv[1] else socket.AF_INET,socket.SOCK_DGRAM);s.settimeout(2);s.sendto(b"hop-ok",(sys.argv[1],int(sys.argv[2])));assert s.recv(100)==b"hop-ok"'
         for address in ('10.203.0.1','fd12:203::1'):
             for port in ('30001','30100'):run('ip','netns','exec',ns,sys.executable,'-c',client,address,port)
@@ -41,7 +44,12 @@ def main():
         stopped=subprocess.run(['ip','netns','exec',ns,sys.executable,'-c',client,'10.203.0.1','30002'],capture_output=True,timeout=5);assert stopped.returncode!=0
         # Main listener remains usable after hop redirects expire.
         for address in ('10.203.0.1','fd12:203::1'):run('ip','netns','exec',ns,sys.executable,'-c',client,address,'24000')
-        print('Native IPv4/IPv6 UDP hop forwarding, lease cleanup and foreign-table preservation passed')
+        m.nft(m.nft_path(),['-f','-'],'table inet '+table+' { comment "foreign"; }\n')
+        try:m.reconcile(host,[])
+        except ValueError as error:assert 'not owned' in str(error)
+        else:raise AssertionError('Foreign same-name table was removed')
+        assert 'foreign' in m.nft(m.nft_path(),['list','table','inet',table])
+        print('Native IPv4/IPv6 UDP hop forwarding, reapply, lease cleanup and foreign-table preservation passed')
     finally:
         subprocess.run(['ip','netns','del',ns],capture_output=True)
 

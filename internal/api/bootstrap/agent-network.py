@@ -78,13 +78,24 @@ def nft(path,args,body=None):
     if r.returncode or len(r.stdout)>131072:raise ValueError('Fixed nftables operation failed')
     return r.stdout
 
+def owned_table(path,table):
+    detail=json.loads(nft(path,['-j','list','table','inet',table]))['nftables']
+    matches=[x['table'] for x in detail if isinstance(x,dict) and isinstance(x.get('table'),dict) and x['table'].get('family')=='inet' and x['table'].get('name')==table]
+    if len(matches)!=1:return False
+    if 'comment' in matches[0]:return matches[0]['comment']==MARKER
+    # nftables 1.0.6 omits table comments from JSON, while its native listing
+    # retains them. Accept only our exact first table-level statement, never a
+    # chain/rule comment, a name prefix, or an explicitly foreign JSON marker.
+    text=nft(path,['-nn','list','table','inet',table])
+    prefix=r'\Atable[ \t]+inet[ \t]+'+re.escape(table)+r'[ \t]*\{[ \t]*\r?\n[ \t]+comment[ \t]+"'+re.escape(MARKER)+r'"[ \t]*;?[ \t]*\r?\n'
+    return re.match(prefix,text) is not None
+
 def reconcile(host,rules,path=None):
     table,body=compile_rules(host,rules);path=path or nft_path()
     tables=json.loads(nft(path,['-j','list','tables']))['nftables']
     exists=any(x.get('table',{}).get('name')==table and x['table'].get('family')=='inet' for x in tables)
     if exists:
-        detail=json.loads(nft(path,['-j','list','table','inet',table]))['nftables']
-        if not any(x.get('table',{}).get('name')==table and x['table'].get('comment')==MARKER for x in detail):raise ValueError('Existing table is not owned by Starhub')
+        if not owned_table(path,table):raise ValueError('Existing table is not owned by Starhub')
     batch=('delete table inet '+table+'\n' if exists else '')+(body if rules else '')
     if batch:nft(path,['--check','-f','-'],batch);nft(path,['-f','-'],batch)
 

@@ -33,4 +33,53 @@ class HoppingTests(unittest.TestCase):
         with self.assertRaises(ValueError):m.compile_rules('a'*32,[self.rule(port=True)])
         with self.assertRaises(ValueError):m.compile_rules('a'*32,[self.rule(listen='127.0.0.1')])
 
+    def test_nft_106_missing_json_comment_can_update_and_clear_owned_table(self):
+        table='starhub_hop_'+'a'*32
+        entry={'table':{'family':'inet','name':table,'handle':23}}
+        detail={'nftables':[{'metainfo':{'version':'1.0.6'}},entry,{'chain':{'family':'inet','table':table,'name':'prerouting'}}]}
+        for rules in ([],[self.rule()]):
+            calls=[]
+            def nft(path,args,body=None):
+                calls.append((args,body))
+                if args==['-j','list','tables']:return json.dumps({'nftables':[entry]})
+                if args==['-j','list','table','inet',table]:return json.dumps(detail)
+                if args==['-nn','list','table','inet',table]:return 'table inet '+table+' {\n\tcomment "'+m.MARKER+'"\n\tchain prerouting {\n\t}\n}\n'
+                return ''
+            with patch.object(m,'nft',side_effect=nft):m.reconcile('a'*32,rules,'/usr/sbin/nft')
+            self.assertEqual(calls[-2][0],['--check','-f','-'])
+            self.assertEqual(calls[-1][0],['-f','-'])
+            self.assertEqual(calls[-2][1],calls[-1][1])
+            self.assertTrue(calls[-1][1].startswith('delete table inet '+table+'\n'))
+            self.assertEqual('redirect to' in calls[-1][1],bool(rules))
+
+    def test_json_marker_needs_no_fallback_and_foreign_marker_cannot_be_overridden(self):
+        table='starhub_hop_'+'a'*32
+        for marker,expected in ((m.MARKER,True),('foreign',False),('',False),(None,False)):
+            detail=json.dumps({'nftables':[{'table':{'family':'inet','name':table,'comment':marker}}]})
+            with patch.object(m,'nft',return_value=detail) as nft:
+                self.assertEqual(m.owned_table('/usr/sbin/nft',table),expected)
+                self.assertEqual(nft.call_count,1)
+
+    def test_missing_json_marker_never_accepts_nested_or_foreign_native_marker(self):
+        table='starhub_hop_'+'a'*32
+        detail=json.dumps({'nftables':[{'table':{'family':'inet','name':table}}]})
+        for text in (
+            'table inet '+table+' {\n chain prerouting { comment "'+m.MARKER+'"; }\n}\n',
+            'table inet '+table+' {\n chain prerouting {\n  udp dport 24000 accept comment "'+m.MARKER+'"\n }\n}\n',
+            'table inet '+table+' {\n comment "foreign"\n chain prerouting { comment "'+m.MARKER+'"; }\n}\n',
+            'table inet '+table+'other {\n comment "'+m.MARKER+'"\n}\n',
+            'table ip '+table+' {\n comment "'+m.MARKER+'"\n}\n',
+            'table inet '+table+' {\n # comment "'+m.MARKER+'"\n}\n',
+            'table inet '+table+' {\n comment "'+m.MARKER+'-foreign"\n}\n',
+        ):
+            with self.subTest(text=text),patch.object(m,'nft',side_effect=[detail,text]):
+                self.assertFalse(m.owned_table('/usr/sbin/nft',table))
+
+    def test_native_fallback_requires_one_exact_json_table_identity(self):
+        table='starhub_hop_'+'a'*32
+        for entries in ([],[{'table':{'family':'ip','name':table}}],[{'table':{'family':'inet','name':table+'x'}}],[{'table':{'family':'inet','name':table}}]*2):
+            with patch.object(m,'nft',return_value=json.dumps({'nftables':entries})) as nft:
+                self.assertFalse(m.owned_table('/usr/sbin/nft',table))
+                self.assertEqual(nft.call_count,1)
+
 if __name__=='__main__':unittest.main()
