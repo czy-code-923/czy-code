@@ -30,6 +30,23 @@ Invoke-WebRequest https://github.com/czy-code-923/czy-code/releases/download/v0.
 
 [完整源码与四平台附件](https://github.com/czy-code-923/czy-code/releases/tag/v0.25.5-distribution) · [手动 / Compose / 离线安装](docs/INSTALL.md)
 
+## 后台常驻与开机自启
+
+一键新装 Linux 已使用 systemd，无需挂着 SSH 窗口。以 root 执行以下**完整单行命令**，启用并启动本项目已安装的组件：
+
+```bash
+( set -eu; f=$(mktemp); trap 'rm -f "$f"' EXIT; curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/czy-code-923/czy-code/main/scripts/panel-access.py -o "$f"; python3 "$f" enable-autostart --env /opt/starhub-control/control.env )
+```
+
+操作包括 Docker、归属校验通过的 PostgreSQL 容器重启策略、面板主服务、匹配的系统 Nginx，以及已安装的网关 / 更新助手 **timer**。宝塔 / 外部 Nginx 保留原监督方式；缺少助手会在 `missing_helpers` 列出，`complete=false`，不会假称已安装全部。不会开启临时恢复入口或改回普通网页的公网监听。其他 VPS 上的 Agent 由各自服务管理。
+
+```bash
+systemctl is-enabled docker.service starhub-control.service starhub-gateway.timer starhub-panel-updater.timer
+systemctl status starhub-control.service starhub-gateway.timer starhub-panel-updater.timer --no-pager
+```
+
+定时助手的 `.service` 显示 `static` 是正常现象，应启用对应的 `.timer`。详细检查、数据库策略和缺少组件的处理见 [后台常驻与开机自启](docs/PANEL-ACCESS.md#后台常驻与开机自启)。
+
 ## 后台版本与自动更新
 
 进入「系统设置 → 后台版本」，检查 GitHub 最新正式版，确认后提交更新。支持的 Linux systemd 安装由独立本机助手处理，关闭网页不会取消任务。更新包校验失败保留原版本；应用后健康检查失败则恢复数据库和文件。更新期间服务可能短暂中断，备份保留在仅 root 可读的 `/var/lib/starhub-updater/`。Windows、Compose 或助手未就绪时页面明确提示手动升级。只允许主管理员操作，委派 API 密钥无更新权限。
@@ -71,37 +88,19 @@ ssh -N -L 18082:127.0.0.1:18080 YOUR_USER@YOUR_VPS
 
 ### 永久关闭公网面板端口，保留域名访问
 
-适用于一键新装 Linux systemd 的默认目录与端口。先确认域名能正常登录，将下面的 `YOUR_PANEL_DOMAIN` 替换为自己的面板域名（不含 `https://`、路径和端口）。脚本先检查本机 Nginx 的 HTTPS 域名入口；检查失败停止修改。执行时会短暂重启控制端。
+一键新装 Linux systemd 可用下面的**完整单行命令**。以 root 执行；自动从本机已保存的站点配置读取域名和网页端口，无须填写域名占位符。直接复制整行，不插入反斜杠续行。
 
 ```bash
-(
-  set -eu
-  cfg=/opt/starhub-control/control.env
-  panel_domain='YOUR_PANEL_DOMAIN'
-  test -f "$cfg"
-  grep -q '^WEB_ADDR=' "$cfg"
-
-  curl --noproxy '*' \
-    --resolve "$panel_domain:443:127.0.0.1" \
-    --connect-timeout 5 --max-time 15 \
-    -fsS "https://$panel_domain/api/v1/branding" -o /dev/null
-
-  backup="$cfg.before-ip-close.$(date -u +%Y%m%dT%H%M%SZ)"
-  cp -p "$cfg" "$backup"
-  printf '配置备份：%s\n' "$backup"
-  sed -i 's/^WEB_ADDR=.*/WEB_ADDR=127.0.0.1:18080/' "$cfg"
-  systemctl restart starhub-control.service
-  python3 /opt/starhub-control/panel-access.py disable-ip --env "$cfg"
-)
+( set -eu; f=$(mktemp); trap 'rm -f "$f"' EXIT; curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/czy-code-923/czy-code/main/scripts/panel-access.py -o "$f"; python3 "$f" disable-public --env /opt/starhub-control/control.env )
 ```
 
-普通网页会改为 `127.0.0.1:18080`，域名网关继续本机回源；临时恢复服务同时关闭。配置重启后仍生效，正常后台更新保留该配置。检查：
+脚本校验 HTTPS 域名的本机回源及面板版本，再备份配置，将普通网页改为回环监听，重启并复查域名，最后关闭临时恢复服务；失败恢复普通网页配置。更新 / 回滚进行中会拒绝冲突操作。结果中的 `backup` 是私有备份路径，`web_listener` 是目标监听。默认新装关闭公网 18080，域名网关仍在 80/443 工作；普通后台更新和重启保留该配置。
 
 ```bash
 ss -lntp | grep -E ':18080|:18081'
 ```
 
-预期只看到 `127.0.0.1:18080`，没有 `0.0.0.0:18080`、`[::]:18080` 或本项目的 18081 监听。自定义端口需按实际安装调整。关闭管理端口不能隐藏源站 IP；域名入口的 80/443 和源站防护是独立配置。恢复步骤与说明见 [永久关闭普通网页公网监听](docs/PANEL-ACCESS.md#永久关闭普通网页公网监听)。
+预期只看到 `127.0.0.1:18080`。不要再粘贴旧示例中的 `YOUR_PANEL_DOMAIN`；反斜杠后若有空行，会把 curl 截断成“no URL specified”。关闭端口不能隐藏源站 IP。详细边界、备份和恢复见 [永久关闭普通网页公网监听](docs/PANEL-ACCESS.md#永久关闭普通网页公网监听)。
 
 ## Linux 一键卸载
 

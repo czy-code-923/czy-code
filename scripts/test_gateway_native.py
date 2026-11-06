@@ -82,6 +82,27 @@ with (directory/'fullchain.pem').open('ab') as f:f.write((root/'gateway-ci-ca.pe
             large_result=subprocess.run(['curl','--noproxy','*','--silent','--show-error','--output','/dev/null','--write-out','%{http_code}','--cacert',str(pem),'--resolve',DOMAIN+':443:127.0.0.1','--header','Content-Type: application/json','--data-binary','@'+str(large),'https://'+DOMAIN+'/api/v1/client-policies/import'],capture_output=True,check=True,text=True)
             assert large_result.stdout=='401';large.unlink()
             assert private.read_bytes()==original_env and unrelated.read_bytes()==unrelated_body
+            if provider=='cloudflare':
+                # Exercise the real SSH maintenance CLI under systemd, rather
+                # than mocking listener changes, container state, or startup.
+                public=original_env.replace(b'WEB_ADDR=127.0.0.1:18080',b'WEB_ADDR=0.0.0.0:18080')
+                assert public!=original_env;private.write_bytes(public)
+                subprocess.run(['systemctl','restart','starhub-control.service'],check=True)
+                for attempt in range(30):
+                    try:api('session');break
+                    except OSError:time.sleep(1)
+                closed=subprocess.run([sys.executable,str(root/'panel-access.py'),'disable-public','--env',str(private)],capture_output=True,text=True,check=True,timeout=90)
+                change=json.loads(closed.stdout);assert change['changed'] and change['web_listener']=='127.0.0.1:18080'
+                assert private.read_bytes()==original_env
+                sockets=subprocess.check_output(['ss','-H','-lnt','sport = :18080'],text=True)
+                assert '127.0.0.1:18080' in sockets and all(v not in sockets for v in ('0.0.0.0:18080','[::]:18080','*:18080'))
+                started=subprocess.run([sys.executable,str(root/'panel-access.py'),'enable-autostart','--env',str(private)],capture_output=True,text=True,check=True,timeout=90)
+                services=json.loads(started.stdout);assert services['complete'] and 'nginx.service' in services['enabled']
+                subprocess.run(['systemctl','is-enabled','--quiet','docker.service','nginx.service','starhub-control.service','starhub-gateway.timer','starhub-panel-updater.timer'],check=True)
+                subprocess.run(['systemctl','stop','starhub-gateway.timer','starhub-gateway.service'],check=True)
+                saved=Path(change['backup']);assert saved.parent==root and saved.name.startswith('control.env.before-ip-close.');saved.unlink()
+                assert private.read_bytes()==original_env
+                print('Real public listener closure, HTTPS preservation, identity preservation and autostart: PASS',flush=True)
             # No user data: remove only this fixture's marked vhost and test record.
             api('site',site_body,'PUT');api('certificates/'+cert['id'],method='DELETE')
             subprocess.run([sys.executable,str(root/'scripts/gateway-worker.py'),'--config',str(config_file)],check=True,timeout=120)
@@ -90,7 +111,8 @@ with (directory/'fullchain.pem').open('ab') as f:f.write((root/'gateway-ci-ca.pe
             state.unlink(missing_ok=True);lock.unlink(missing_ok=True)
             subprocess.run([config['nginx'],'-t'],check=True);subprocess.run([config['nginx'],'-s','reload'],check=True)
             print('Actual gateway '+provider+' issuance, challenge/TLS, credential preservation and existing-site preservation: PASS',flush=True)
-    except Exception:
+    except Exception as error:
+        if isinstance(error,subprocess.CalledProcessError) and error.stderr:print('Maintenance fixture stderr: '+str(error.stderr)[-4000:],flush=True)
         diagnostic=root/'gateway-ci-failure.txt'
         if diagnostic.exists():print('Disposable Certbot fixture: '+diagnostic.read_text(),flush=True)
         subprocess.run(['journalctl','-u','starhub-control.service','-n','20','--no-pager'],check=False)

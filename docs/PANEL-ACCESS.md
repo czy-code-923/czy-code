@@ -89,71 +89,87 @@ python3 /opt/harbor/panel-access.py disable-ip --env /etc/harbor/control.env
 
 ## 永久关闭普通网页公网监听
 
-这与 `disable-ip` 不同：把普通网页的 `WEB_ADDR` 改成回环监听，外部不能再直接连接 18080；Nginx 在同机通过 `127.0.0.1:18080` 回源，域名继续可用。配置在重启后保留，正常后台更新不会重写 `control.env`。
+新增 `disable-public` 操作针对 Linux systemd 一键安装。它从私有配置和本机鉴权 API 自动读取实际域名、HTTPS 设置与网页端口，验证域名回源后将普通网页改为回环监听。自定义前缀用实际 `--env` 路径；旧 `/opt/harbor` 与 Compose 使用各自的服务布局，不照抄此操作。
 
-以下命令只针对一键新装 Linux systemd 的默认 `/opt/starhub-control` 与 18080 端口。自定义前缀、端口或独立旧前端需按实际安装调整；Compose 应调整自身端口发布，不能照抄这一命令。
-
-先确认已绑定的域名可以正常登录；将 `YOUR_PANEL_DOMAIN` 换为自己的面板域名，不含协议、路径和端口。以 root 执行：
+下面是一条完整命令，以 root 执行，无须 sudo。复制整行，终端视觉换行不影响；不要在命令中手动加入空行或反斜杠续行，也不用替换域名：
 
 ```bash
-(
-  set -eu
-  cfg=/opt/starhub-control/control.env
-  panel_domain='YOUR_PANEL_DOMAIN'
-  test -f "$cfg"
-  grep -q '^WEB_ADDR=' "$cfg"
-
-  curl --noproxy '*' \
-    --resolve "$panel_domain:443:127.0.0.1" \
-    --connect-timeout 5 --max-time 15 \
-    -fsS "https://$panel_domain/api/v1/branding" -o /dev/null
-
-  backup="$cfg.before-ip-close.$(date -u +%Y%m%dT%H%M%SZ)"
-  cp -p "$cfg" "$backup"
-  printf '配置备份：%s\n' "$backup"
-  sed -i 's/^WEB_ADDR=.*/WEB_ADDR=127.0.0.1:18080/' "$cfg"
-  systemctl restart starhub-control.service
-  python3 /opt/starhub-control/panel-access.py disable-ip --env "$cfg"
-)
+( set -eu; f=$(mktemp); trap 'rm -f "$f"' EXIT; curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/czy-code-923/czy-code/main/scripts/panel-access.py -o "$f"; python3 "$f" disable-public --env /opt/starhub-control/control.env )
 ```
 
-此命令会：
+维护流程：
 
-- 先通过本机 Nginx 检查指定 HTTPS 域名的面板接口；证书校验或请求失败就停止，不修改现有入口。
-- 创建带 UTC 时间的配置备份，保留私有文件权限，只输出备份路径。
-- 将普通网页改为仅 IPv4 回环 `127.0.0.1:18080`，关闭该网页端口的 IPv4 / IPv6 公网监听。
-- 重启控制端，并停止本项目临时恢复服务。域名网关配置保持原样；控制端重启期间网页 / API 会短暂中断。
+- 验证私有配置、二进制和 systemd 主服务归属；与更新助手使用同一维护锁，避免打断备份、更新或回滚。
+- 从已保存站点读取有效 HTTPS 域名，经过本机 Nginx 检查证书及返回的面板版本；未配置域名或检查失败时不修改现有入口。
+- 创建仅本机保存的配置备份，只更改 `WEB_ADDR`，保留管理员令牌、数据库凭据和密钥；实际网页端口保持不变。
+- 重启控制端，复查健康和域名访问，再停止本项目临时恢复服务。应用阶段失败时恢复普通网页的原配置并重启；回退仍异常时明确给出私有备份路径。
 
-检查实际监听：
+成功结果会显示 `web_listener`、`domain`、`backup` 和 `recovery_disabled`。默认目标是 `127.0.0.1:18080`，IPv4 / IPv6 公网不再监听这一普通网页端口。已是回环监听时返回 `changed=false`，不重复创建备份。不要上传备份文件，其中含有私有凭据。
+
+此操作会短暂重启控制端。Nginx 域名网关继续本机回源，重启和正常后台更新保留 `control.env`。检查默认端口：
 
 ```bash
 ss -lntp | grep -E ':18080|:18081'
 ```
 
-预期普通网页只监听 `127.0.0.1:18080`，没有 `0.0.0.0:18080` / `[::]:18080`；本项目的临时恢复监听已经停止。其他软件若使用相同端口，应按进程核对。
-
-检查域名接口，然后在浏览器确认仍可登录（替换域名）：
-
-```bash
-curl --noproxy '*' --resolve YOUR_PANEL_DOMAIN:443:127.0.0.1 -fsS https://YOUR_PANEL_DOMAIN/api/v1/branding
-```
+预期只有 `127.0.0.1:18080`，没有 `0.0.0.0:18080`、`[::]:18080` 或本项目的临时恢复监听；自定义端口按结果中的实际端口检查。
 
 ### 恢复本次操作前的普通网页监听
 
-把 `PASTE_BACKUP_PATH` 替换为本次命令输出的实际备份文件路径。不要上传配置文件，其中有管理员令牌和密钥。
+把 `PASTE_BACKUP_PATH` 替换为本次结果中的实际 `backup` 路径：
 
 ```bash
-cp -p 'PASTE_BACKUP_PATH' /opt/starhub-control/control.env &&
-systemctl restart starhub-control.service
+cp -p 'PASTE_BACKUP_PATH' /opt/starhub-control/control.env && systemctl restart starhub-control.service
 ```
 
-这会恢复备份中的普通网页监听范围；临时恢复服务仍通过 `enable-ip` 单独开启。
+仅用于恢复本次普通网页配置；若备份后另改过凭据或其他配置，应按实际变更恢复，避免覆盖新设置。临时恢复服务仍通过 `enable-ip` 单独开启。
+
+### 复制报错与脚本版本
+
+- `curl: (2) no URL specified`：反斜杠续行后出现了空行，curl 提前执行。旧命令的 `set -e` 会在此处停止，后面的关闭操作并未执行。
+- `YOUR_PANEL_DOMAIN` 是旧示例的占位符，不是真实域名；新的 `disable-public` 自动读取已绑定域名。
+- 本机旧版脚本若显示 `invalid choice: disable-public`，使用上面的下载执行命令即可；这会运行更新后的维护脚本，不要求重装面板。
+- HTTPS 检查失败会保留原配置；先核实已保存域名、证书、本机网关及其回源，不要用关闭证书校验的方式跳过检查。
 
 ### 关闭端口与隐藏 IP 的边界
 
-绑定域名本身不能隐藏 IP；DNS 直连记录仍会暴露源站地址。以上命令关闭的是管理网页的直连端口，域名所用的 80/443 仍承接访问。
+绑定域名本身不能隐藏 IP，DNS 直连记录仍暴露源站地址。以上操作关闭管理网页的直接端口，域名所用的 80/443 仍承接访问。
 
-需要进一步限制绕过 Cloudflare 访问源站时，应使用 Cloudflare 代理，并为源站网页端口单独设置仅接受可信回源的策略；其他直接解析到同一 IP 的 DNS 记录也需要核对。见 [Cloudflare 源站保护说明](https://developers.cloudflare.com/fundamentals/security/protect-your-origin-server/)。这与普通网页的回环监听是两项独立设置。
+进一步限制绕过 Cloudflare 的请求，需要使用 Cloudflare 代理并为源站网页端口单独配置可信回源策略，同时核对其他 DNS 记录是否暴露同一 IP。见 [Cloudflare 源站保护说明](https://developers.cloudflare.com/fundamentals/security/protect-your-origin-server/)。这与普通网页回环监听是两项独立设置。
+
+## 后台常驻与开机自启
+
+关闭 SSH 窗口不会停止 systemd 管理的面板。新装 Linux 已安装主服务；需要统一启用已安装组件时，以 root 运行下面的完整单行命令：
+
+```bash
+( set -eu; f=$(mktemp); trap 'rm -f "$f"' EXIT; curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/czy-code-923/czy-code/main/scripts/panel-access.py -o "$f"; python3 "$f" enable-autostart --env /opt/starhub-control/control.env )
+```
+
+`enable-autostart` 会验证安装目录、配置、主服务、数据库容器和数据卷归属，并执行：
+
+1. 启用、启动 `docker.service`。
+2. 校验本项目 `starhub-control-db` 的镜像、数据库身份、私有端口和数据卷；将没有自动重启策略的容器设为 `unless-stopped`，保留已有 `always`，并启动已停止的项目数据库。
+3. 启用、启动 `starhub-control.service`，等待控制端健康。
+4. 若网关明确使用匹配的系统 `/usr/sbin/nginx`，启用 `nginx.service`；宝塔或外部 Nginx 继续由原软件管理。
+5. 验证并启用已安装的 `starhub-gateway.timer` 和 `starhub-panel-updater.timer`，不把 oneshot 服务改为常驻，也不重新开启恢复入口。
+
+`unless-stopped` 会在正常重启后恢复运行中的容器；以后若主动停止容器，仍尊重这次停止，需再次启动。已有的 `always` 策略不降级。
+
+结果中的 `enabled` 列出已启用的服务 / 定时器，`missing_helpers` 列出未安装的助手。若 `complete=false`，表示当前安装缺少助手，应按 [网关修复](GATEWAY.md) 或 [更新助手安装](RELEASE-v0238.md) 补齐；自启命令不会伪造或安装缺失服务。现有助手文件不完整或归属异常会停止操作。其他 VPS 的 Agent 继续由各自的安装服务启动。
+
+检查：
+
+```bash
+systemctl is-enabled docker.service starhub-control.service starhub-gateway.timer starhub-panel-updater.timer
+systemctl status starhub-control.service starhub-gateway.timer starhub-panel-updater.timer --no-pager
+docker inspect --format '{{.HostConfig.RestartPolicy.Name}}' starhub-control-db
+```
+
+已安装的组件应显示 `enabled`，主服务 / timer 应为 `active`。网关和更新助手的 `.service` 是按需执行的 oneshot，显示 `static` / 暂时 `inactive` 不表示未设置自启；应查看对应 timer：
+
+```bash
+systemctl list-timers --all --no-pager | grep -E 'starhub-gateway|starhub-panel-updater'
+```
 
 ## SSH 转发和其他安装方式
 
