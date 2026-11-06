@@ -8,6 +8,7 @@ def main():
     source=Path(__file__).resolve().parents[1]
     with tempfile.TemporaryDirectory(prefix='starhub-gateway-preflight-',dir='/var/tmp') as d:
         dist=Path(d);(dist/'bin').mkdir();(dist/'web').mkdir()
+        (dist/'bin').chmod(0o775) # Installer must harden its copy of a writable extraction directory.
         shutil.copytree(source/'scripts',dist/'scripts');shutil.copytree(source/'web/dist',dist/'web/dist')
         for name in ('control','gateway'):
             subprocess.run([os.environ.get('STARHUB_TEST_GO','go'),'build','-trimpath','-o',str(dist/'bin'/('harbor-'+name)),'./cmd/'+name],cwd=source,check=True,timeout=300)

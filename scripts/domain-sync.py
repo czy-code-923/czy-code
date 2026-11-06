@@ -26,7 +26,7 @@ def trusted_binary(path):
         for item in (candidate,*candidate.parents):
             st=item.stat()
             if st.st_uid!=0 or st.st_mode & (stat.S_IWGRP|stat.S_IWOTH):
-                raise ValueError('Executables and parents must be root owned and not group/world writable')
+                raise ValueError('Executables and parents must be root owned and not group/world writable: '+str(item))
     return str(p)
 
 def verify_output(output):

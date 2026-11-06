@@ -58,6 +58,9 @@ def main():
         run('icacls',str(root),'/inheritance:r','/grant:r',identity+':(OI)(CI)F','*S-1-5-18:(OI)(CI)F','*S-1-5-32-544:(OI)(CI)F',stdout=subprocess.DEVNULL)
     shutil.copyfile(source/'scripts/panel-access.py',root/'panel-access.py');shutil.copyfile(source/'scripts/uninstall.py',root/'uninstall.py');shutil.copyfile(source/'scripts/admin-token.py',root/'admin-token.py');shutil.copytree(source/'bin',root/'bin');shutil.copytree(source/'web/dist',root/'web')
     if os.name!='nt':
+        # Distribution extraction can inherit a group-writable umask. Harden
+        # our executable directory before any privileged helper validates it.
+        (root/'bin').chmod(0o755)
         for binary in (root/'bin').iterdir():binary.chmod(0o755)
     distribution=json.loads((source/'scripts/quickstart-distribution.json').read_text(encoding='utf-8'))
     with urllib.request.urlopen(distribution['agent_url'],timeout=180) as response:archive=response.read(200<<20)

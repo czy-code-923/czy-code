@@ -1,5 +1,5 @@
 name: Publish verified Starhub 0.25.5
-# Verify fresh gateway bootstrap and native TLS before publishing.
+# Verify hardened fresh gateway bootstrap and native TLS before publishing.
 on:
   push:
     branches: [main]
