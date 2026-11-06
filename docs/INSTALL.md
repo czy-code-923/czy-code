@@ -137,6 +137,24 @@ sudo python3 /opt/harbor/domain-sync.py \
 - 恢复必须同时具备数据库与原MASTER_KEY；生成新密钥不能解密旧服务。
 
 
+## 面板地址查询与临时 IP 恢复
+
+一键新装默认根目录是 `/opt/starhub-control`，旧 `/opt/harbor` 仅用于旧部署布局。以下以 root 执行，不需要 sudo：
+
+```bash
+python3 /opt/starhub-control/panel-access.py status --env /opt/starhub-control/control.env
+```
+
+```bash
+python3 /opt/starhub-control/panel-access.py enable-ip --env /opt/starhub-control/control.env --allow-http --minutes 30
+```
+
+```bash
+python3 /opt/starhub-control/panel-access.py disable-ip --env /opt/starhub-control/control.env
+```
+
+一键安装普通网页默认为 18080；上述恢复网页默认另用 18081。`disable-ip` 只停止临时恢复服务，不关闭普通 18080 或域名入口。普通用户先 `su -` 或使用已配置的 sudo。完整的新旧布局、自动 root / sudo 下载查询、SSH / Windows 和报错处理见 [面板访问命令](PANEL-ACCESS.md)。
+
 ## 获取面板管理员登录令牌
 
 只在自己的本机 / SSH 终端查看这台星枢已有的 `ADMIN_TOKEN`，它不是宝塔令牌，不会生成或重置凭据。将输出复制到星枢登录页，不要上传到 GitHub、日志或聊天。
@@ -179,11 +197,41 @@ Get-Content -LiteralPath "$env:ProgramData\StarhubControl\control.env" | Where-O
 
 ## 卸载面板运行组件
 
-一键卸载面板运行组件，**默认保留数据库卷、私有配置和所有备份**。下面是项目脚本，下载后可先去掉 --apply 查看计划；root 用户去掉命令中的 sudo：
+一键卸载面板运行组件，**默认保留数据库卷、私有配置和所有备份**。以下以 root 执行，不需要 sudo；先去掉 `--apply` 可以查看计划。
+
+一键新装 Linux：
 
 ```bash
-curl -fL https://raw.githubusercontent.com/czy-code-923/czy-code/main/scripts/uninstall.py -o /tmp/starhub-uninstall.py && sudo python3 /tmp/starhub-uninstall.py --apply
+python3 /opt/starhub-control/uninstall.py --layout quickstart --prefix /opt/starhub-control --apply
 ```
+
+旧部署布局：
+
+```bash
+python3 /opt/harbor/uninstall.py --layout legacy --apply
+```
+
+本地卸载脚本缺失时，下载项目脚本并自动区分 root / sudo：
+
+```bash
+(
+  set -eu
+  if [ "$(id -u)" -ne 0 ] && ! command -v sudo >/dev/null 2>&1; then
+    printf '%s\n' '请先执行 su - 切换到 root，再运行本命令。' >&2
+    exit 1
+  fi
+  uninstall_script=$(mktemp /tmp/starhub-uninstall.XXXXXX)
+  trap 'rm -f "$uninstall_script"' EXIT
+  curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/czy-code-923/czy-code/main/scripts/uninstall.py -o "$uninstall_script"
+  if [ "$(id -u)" -eq 0 ]; then
+    python3 "$uninstall_script" --apply
+  else
+    sudo python3 "$uninstall_script" --apply
+  fi
+)
+```
+
+此下载命令只针对脚本唯一识别的已安装面板；多个布局并存时会停止，使用实际的 `--layout` / `--prefix` 指定目标。自定义前缀替换为实际绝对路径。
 
 Windows（需要 Python 3；只卸载所选安装目录和对应的当前用户任务）：
 
@@ -196,3 +244,4 @@ Invoke-WebRequest https://raw.githubusercontent.com/czy-code-923/czy-code/main/s
 [网络 / 封装语义与协议核验](PROTOCOLS-v019.md) · [完整卸载脚本](../scripts/uninstall.py)
 
 当前订阅与客户端限制说明见 [0.20 工作流](WORKFLOW-v020.md)。Linux / Windows 通用安装、卸载、面板令牌命令置于 [README](../README.md) 前部。
+

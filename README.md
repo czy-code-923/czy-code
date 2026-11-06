@@ -38,52 +38,54 @@ Invoke-WebRequest https://github.com/czy-code-923/czy-code/releases/download/v0.
 
 ## 查询面板地址与临时 IP 备用入口
 
-查询配置地址、原生监听地址、备用入口状态（不显示登录令牌）。新安装默认根目录为 `/opt/starhub-control`；当前管理 VPS 为 `/opt/harbor`，脚本可自动识别。
+以下 Linux 命令以 **root** 执行；已经是 `root@主机名:~#` 时不需要 `sudo`。普通用户可先 `su -`，或使用已配置的 `sudo`。一键新装目录是 `/opt/starhub-control`，旧部署的 `/opt/harbor` 是另一种布局，不能混用路径。
+
+查询面板地址和临时恢复入口状态（不显示登录令牌）：
 
 ```bash
-curl -fL https://raw.githubusercontent.com/czy-code-923/czy-code/main/scripts/panel-access.py -o /tmp/starhub-panel-access.py && sudo python3 /tmp/starhub-panel-access.py status
+python3 /opt/starhub-control/panel-access.py status --env /opt/starhub-control/control.env
 ```
 
-当前管理 VPS 可直接查询：
+域名故障时，临时开启 **IP:18081，30 分钟后自动关闭**：
 
 ```bash
-sudo python3 /opt/harbor/panel-access.py status
+python3 /opt/starhub-control/panel-access.py enable-ip --env /opt/starhub-control/control.env --allow-http --minutes 30
 ```
 
-域名故障时临时开启 **IP:18081，30 分钟自动关闭**，不更改域名或订阅设置。HTTP 未加密，可信网络才显式启用；平时关闭，公网 API / 数据库端口继续只在回环。若主机或云防火墙阻止 18081，需仅放行此网页端口；脚本不会改全局防火墙。
+手动关闭临时恢复入口：
 
 ```bash
-sudo python3 /opt/harbor/panel-access.py enable-ip --allow-http --minutes 30
+python3 /opt/starhub-control/panel-access.py disable-ip --env /opt/starhub-control/control.env
 ```
 
-手动关闭：
+**18080 与 18081 是两个入口：** 一键安装的 `--public` 默认公开普通网页 `IP:18080`；`enable-ip` 额外创建临时 `IP:18081`。因此 `disable-ip` 只停止临时恢复服务，不会关闭普通的 18080、域名网关、Agent 或数据库；`recovery.active=false` 也不代表普通 IP 入口已关闭。普通网页监听以 `status` 返回的 `web_listener` 为准。
+
+临时入口使用未加密 HTTP，需显式加 `--allow-http`；脚本不会自动放开主机 / 云防火墙。明确需要常开可加 `--persistent`。也可在自己的电脑通过 SSH 转发，无需开放备用公网端口：
 
 ```bash
-sudo python3 /opt/harbor/panel-access.py disable-ip
+ssh -N -L 18082:127.0.0.1:18080 YOUR_USER@YOUR_VPS
+# 本机浏览器打开 http://127.0.0.1:18082
 ```
 
-明确需要常开可加 `--persistent`，不推荐在不可信网络长期使用 HTTP。也可通过 SSH 加密转发现有回环网页，无需开放任何备用公网端口：
-
-```bash
-ssh -N -L 18080:127.0.0.1:5173 YOUR_USER@YOUR_VPS
-# 本机浏览器打开 http://127.0.0.1:18080
-```
-
-新安装把本地脚本路径换为 `/opt/starhub-control/panel-access.py`，转发目标换为查询返回的 `web_listener`。Windows 可运行 `python "$env:ProgramData/StarhubControl/panel-access.py" status`；临时运行加 `enable-ip --allow-http --foreground`，窗口必须保留，超时或 Ctrl+C 关闭。Compose 使用自己的端口映射与 SSH 转发，详情见 [安装文档](docs/INSTALL.md)。
+上面的转发目标对应新装默认端口；自定义端口或旧部署请按实际监听配置调整。旧布局完整命令、脚本缺失时的自动 root / sudo 下载查询、自定义目录、Windows 与常见报错见 [面板访问命令](docs/PANEL-ACCESS.md)。Compose 使用自己的端口映射和 SSH 转发，见 [安装文档](docs/INSTALL.md)。
 
 ## Linux 一键卸载
 
-默认只卸载本项目运行组件，保留数据库、私有配置和备份。去掉 `--apply` 可以预览。彻底删除数据需自行备份后显式添加 `--purge-data`；远程 Agent 先在主机页逐台退役。
+默认只卸载本项目运行组件，保留数据库、私有配置和备份。去掉 `--apply` 可以预览。彻底删除数据需自行备份后显式添加 `--purge-data`；远程 Agent 先在主机页逐台退役。以下命令使用 root，不需要 sudo。
+
+一键新装的本地卸载命令：
 
 ```bash
-curl -fL https://raw.githubusercontent.com/czy-code-923/czy-code/main/scripts/uninstall.py -o /tmp/starhub-uninstall.py && sudo python3 /tmp/starhub-uninstall.py --apply
+python3 /opt/starhub-control/uninstall.py --layout quickstart --prefix /opt/starhub-control --apply
 ```
 
-已在当前管理 VPS 安装的本地卸载命令：
+仅旧 `/opt/harbor` 布局使用：
 
 ```bash
-sudo python3 /opt/harbor/uninstall.py --apply
+python3 /opt/harbor/uninstall.py --layout legacy --apply
 ```
+
+本地脚本缺失时的下载命令、普通用户及自定义目录用法见 [安装文档](docs/INSTALL.md#卸载面板运行组件)。
 
 ## 域名一直等待签发 / 新装网关修复
 
@@ -293,14 +295,15 @@ Linux / Windows 通用命令见本文前部，更多布局见 [安装文档](doc
 
 内存上限不是预占内存。新安装和 Compose 默认 512 MiB，Compose 用 `POSTGRES_MEMORY_LIMIT`，新安装用 `quickstart.py --db-memory-mb 512` 调整。旧 Linux 安装的更新助手仅扩大过小上限：物理内存 ≥1.5 GiB 时为 512 MiB，≥768 MiB 时为 384 MiB，否则为 256 MiB；保持原有更大或不限额设置，不重启数据库、不清理数据、不自动调高连接数。设置 → 后台版本可查看最近回报的限制与主机内存。
 
-需要更大容量时，在 SSH 执行（只允许扩大上限）：
+需要更大容量时，在一键新装的 SSH 中以 root 执行（只允许扩大上限，不需要 sudo）：
 
 ```bash
-sudo python3 /opt/harbor/scripts/panel-updater.py --env /etc/harbor/control.env --database-memory-mb 768
+python3 /opt/starhub-control/scripts/panel-updater.py --env /opt/starhub-control/control.env --database-memory-mb 768
 ```
 
-新安装使用 `/opt/starhub-control/scripts/panel-updater.py --env /opt/starhub-control/control.env`。几十台 VPS / 上百用户不是单靠内存额度就能保证的容量：持续观察峰值、OOM、响应延迟、磁盘、计量断报与备份；默认应用连接池 4 条并复用连接，VPS 数不等于数据库连接数。
+旧布局改用 `/opt/harbor/scripts/panel-updater.py --env /etc/harbor/control.env`。几十台 VPS / 上百用户不是单靠内存额度就能保证的容量：持续观察峰值、OOM、响应延迟、磁盘、计量断报与备份；默认应用连接池 4 条并复用连接，VPS 数不等于数据库连接数。
 
 端口跳跃：Hysteria / HY2 的可选设置、Linux 受限助手和客户端格式说明见 [PORT-HOPPING.md](docs/PORT-HOPPING.md)。现有节点默认关闭，远端主机需要先执行面板提供的助手安装 / 更新命令。
 
 HY2 服务端带宽与客户端带宽可分别设置；TUIC / AnyTLS 专属客户端参数也支持完整订阅同步。用法、单位、方向、协议范围及兼容限制见 [协议参数与性能设置](docs/PROTOCOL-PERFORMANCE.md)。
+
