@@ -37,6 +37,9 @@ def verify():
     else:raise ValueError('Control restart timed out')
     fake.write_text('''#!/usr/bin/python3
 import http.client,os,pathlib,subprocess,sys,time
+def failure(kind,value,tb):
+ pathlib.Path('/opt/starhub-control/gateway-ci-failure.txt').write_text(kind.__name__+': '+str(value));sys.__excepthook__(kind,value,tb)
+sys.excepthook=failure
 a=sys.argv[1:]
 if a[:1]==['plugins']:
  print('dns-cloudflare');sys.exit(0)
@@ -87,6 +90,11 @@ with (directory/'fullchain.pem').open('ab') as f:f.write((root/'gateway-ci-ca.pe
             state.unlink(missing_ok=True);lock.unlink(missing_ok=True)
             subprocess.run([config['nginx'],'-t'],check=True);subprocess.run([config['nginx'],'-s','reload'],check=True)
             print('Actual gateway '+provider+' issuance, challenge/TLS, credential preservation and existing-site preservation: PASS',flush=True)
+    except Exception:
+        diagnostic=root/'gateway-ci-failure.txt'
+        if diagnostic.exists():print('Disposable Certbot fixture: '+diagnostic.read_text(),flush=True)
+        subprocess.run(['journalctl','-u','starhub-control.service','-n','20','--no-pager'],check=False)
+        raise
     finally:
         api('site',site_body,'PUT');config_file.write_bytes(original_config)
         unrelated.unlink(missing_ok=True);fake.unlink(missing_ok=True)
