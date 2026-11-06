@@ -1,5 +1,5 @@
 name: Publish verified Starhub 0.25.5
-# Verify native gateway chains using an isolated locally trusted test CA.
+# Verify native gateway chains and HTTP challenge after asynchronous Nginx reload.
 on:
   push:
     branches: [main]

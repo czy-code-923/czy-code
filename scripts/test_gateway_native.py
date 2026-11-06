@@ -36,7 +36,7 @@ def verify():
         except OSError:time.sleep(1)
     else:raise ValueError('Control restart timed out')
     fake.write_text('''#!/usr/bin/python3
-import http.client,os,pathlib,subprocess,sys
+import http.client,os,pathlib,subprocess,sys,time
 a=sys.argv[1:]
 if a[:1]==['plugins']:
  print('dns-cloudflare');sys.exit(0)
@@ -47,8 +47,13 @@ if '--dns-cloudflare' in a:
  private=pathlib.Path(a[a.index('--dns-cloudflare-credentials')+1]);assert private.stat().st_mode&0o077==0
 else:
  assert '--webroot' in a
- web=pathlib.Path(a[a.index('-w')+1])/'.well-known/acme-challenge/starhub-ci';web.parent.mkdir(parents=True,exist_ok=True);web.write_text('local-challenge');web.chmod(0o644)
- c=http.client.HTTPConnection('127.0.0.1',80,timeout=10);c.request('GET','/.well-known/acme-challenge/starhub-ci',headers={'Host':domain});r=c.getresponse();assert r.status==200 and r.read()==b'local-challenge';c.close();web.unlink()
+ web=pathlib.Path(a[a.index('-w')+1])/'.well-known/acme-challenge/starhub-ci';web.parent.mkdir(parents=True,exist_ok=True);web.parent.chmod(0o755);web.parent.parent.chmod(0o755);web.write_text('local-challenge');web.chmod(0o644)
+ for attempt in range(30):
+  c=http.client.HTTPConnection('127.0.0.1',80,timeout=10);c.request('GET','/.well-known/acme-challenge/starhub-ci',headers={'Host':domain});r=c.getresponse();status=r.status;content=r.read();c.close()
+  if status==200 and content==b'local-challenge':break
+  time.sleep(0.2)
+ else:raise ValueError('HTTP challenge did not become reachable after Nginx reload; status '+str(status))
+ web.unlink()
 directory=pathlib.Path('/etc/letsencrypt/live')/domain;directory.mkdir(parents=True,exist_ok=True)
 root=pathlib.Path('/opt/starhub-control');csr=root/'gateway-ci-leaf.csr';ext=root/'gateway-ci-leaf.ext'
 ext.write_text('subjectAltName=DNS:'+domain+'\\nbasicConstraints=critical,CA:FALSE\\nkeyUsage=critical,digitalSignature,keyEncipherment\\nextendedKeyUsage=serverAuth\\n')
