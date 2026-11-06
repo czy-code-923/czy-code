@@ -76,7 +76,7 @@ def reconcile(config,helper):
     retire_management(config,site,sync)
     temporary=bootstrap_http(config,site,certs,sync) if config['enable_acme'] else []
     if config['enable_acme']:
-        try:subprocess.run([sys.executable,str(scripts/'managed-gateway.py'),'--env',config['env'],'--nginx',config['nginx'],'--vhost-dir',config['vhost_dir'],'--certbot',config['certbot']],check=True,timeout=900)
+        try:subprocess.run([sys.executable,str(scripts/'managed-gateway.py'),'--env',config['env'],'--nginx',config['nginx'],'--vhost-dir',config['vhost_dir'],'--certbot',config['certbot'],'--log-dir','/var/lib/starhub-gateway/logs'],check=True,timeout=900)
         finally:
             for path in temporary:
                 sync.verify_output(path)

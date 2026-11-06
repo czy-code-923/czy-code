@@ -42,7 +42,8 @@ def options(value):
     if result.get('host_header') and not re.fullmatch(r'[a-zA-Z0-9.-]{1,253}',result['host_header']):raise ValueError('Invalid Host header')
     return result
 
-def render(domain,target=None,certificate=False,settings=None,proxy_id=None,pinned=None):
+def render(domain,target=None,certificate=False,settings=None,proxy_id=None,pinned=None,log_dir='/var/log/harbor'):
+    if log_dir not in ('/var/log/harbor','/var/lib/starhub-gateway/logs'):raise ValueError('Unrecognized managed log directory')
     if not re.fullmatch(r'[a-z0-9.-]{1,253}',domain) or '.' not in domain or '..' in domain:raise ValueError('Invalid domain')
     o=options(settings);challenge='location ^~ /.well-known/acme-challenge/ { root /var/www/harbor-acme; }'
     text=HEADER
@@ -54,7 +55,7 @@ def render(domain,target=None,certificate=False,settings=None,proxy_id=None,pinn
         upstream(target);u=urllib.parse.urlsplit(target);base='/etc/harbor/gateway-certificates/'+domain
         endpoint=pinned or target;host=o.get('host_header') or (u.hostname if u.hostname not in ('127.0.0.1','::1') else '$host')
         text+='server { listen 443 ssl; listen [::]:443 ssl; server_name '+domain+'; ssl_certificate '+base+'/fullchain.pem; ssl_certificate_key '+base+'/privkey.pem; ssl_protocols TLSv1.2 TLSv1.3; client_max_body_size '+str(o['body_limit_mib'])+'m; '
-        if proxy_id:text+='access_log /var/log/harbor/reverse-'+proxy_id+'.jsonl starhub_'+proxy_id+' buffer=16k flush=10s; '
+        if proxy_id:text+='access_log '+log_dir+'/reverse-'+proxy_id+'.jsonl starhub_'+proxy_id+' buffer=16k flush=10s; '
         text+='location / { proxy_pass '+endpoint+'; proxy_http_version 1.1; proxy_set_header Host '+host+'; proxy_set_header X-Real-IP $remote_addr; proxy_set_header X-Forwarded-For $remote_addr; proxy_set_header X-Forwarded-Proto https; '
         if o['websocket']:text+='proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection "upgrade"; '
         if u.scheme=='https':text+='proxy_ssl_server_name on; proxy_ssl_name '+u.hostname+'; proxy_ssl_verify on; proxy_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt; '

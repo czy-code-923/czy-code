@@ -2,6 +2,10 @@ import importlib.util,json,tempfile,unittest
 from pathlib import Path
 spec=importlib.util.spec_from_file_location('gateway_config',Path(__file__).with_name('gateway-config.py'));m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 class GatewayConfigTests(unittest.TestCase):
+ def test_private_accounting_directory_and_log_path_injection(self):
+  text=m.render('app.example.com','http://127.0.0.1:3000',True,proxy_id='a'*32,log_dir='/var/lib/starhub-gateway/logs').decode()
+  self.assertIn('access_log /var/lib/starhub-gateway/logs/reverse-',text)
+  with self.assertRaises(ValueError):m.render('app.example.com',log_dir='/tmp/x; include /etc/passwd')
  def test_public_https_pinning_verification_and_injection(self):
   resolver=lambda *a,**k:[(2,1,6,'',('93.184.215.14',443))]
   pinned=m.pinned_upstream('https://www.example.com/path',resolver)

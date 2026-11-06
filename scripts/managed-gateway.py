@@ -67,7 +67,7 @@ def proxy_usage(directory,identity,state,baseline,nginx):
  return state
 
 def main():
- parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--env',required=True);parser.add_argument('--nginx',required=True);parser.add_argument('--vhost-dir',required=True);parser.add_argument('--certbot',default='/usr/bin/certbot');args=parser.parse_args()
+ parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--env',required=True);parser.add_argument('--nginx',required=True);parser.add_argument('--vhost-dir',required=True);parser.add_argument('--certbot',default='/usr/bin/certbot');parser.add_argument('--log-dir',choices=('/var/log/harbor','/var/lib/starhub-gateway/logs'),default='/var/log/harbor');args=parser.parse_args()
  if os.geteuid()!=0:raise ValueError('Root required')
  envfile=Path(args.env);st=envfile.stat()
  if st.st_uid!=0 or st.st_mode&0o077:raise ValueError('Private root-owned environment required')
@@ -89,7 +89,7 @@ def main():
  site=call('site');work=call('gateway/work',{});main_domain=sync.domain_name(site['domain']) if site.get('domain') else ''
  reserved={v for v in (main_domain,site.get('share_domain','')) if v}
  certbot=sync.trusted_binary(args.certbot) if work['certificates'] else None
- logs=Path('/var/log/harbor');sync.verify_output(logs);logs.mkdir(exist_ok=True,mode=0o700);sync.verify_output(logs/'ownership-check')
+ logs=Path(args.log_dir);sync.verify_output(logs);logs.mkdir(exist_ok=True,mode=0o700);sync.verify_output(logs/'ownership-check')
  state_path=Path('/etc/harbor/gateway-usage.json');sync.verify_output(state_path)
  usage=json.loads(state_path.read_text()) if state_path.exists() else {}
  if not isinstance(usage,dict) or len(usage)>100:raise ValueError('Invalid usage state')
@@ -143,7 +143,7 @@ def main():
       with os.fdopen(fd,'w') as file:file.write(content);file.flush();os.fsync(file.fileno())
       os.chmod(temporary,0o600);os.replace(temporary,path);changed=True
    pinned=config.pinned_upstream(proxy['upstream']) if enabled else None
-   content=render(domain,proxy['upstream'] if enabled else None,enabled,proxy.get('options'),proxy['id'],pinned)
+   content=render(domain,proxy['upstream'] if enabled else None,enabled,proxy.get('options'),proxy['id'],pinned,log_dir=args.log_dir)
    path=out/('harbor-route-'+domain+'.conf');ensure_domain_available(out,domain,path);reloaded=atomic_vhost(path,content,nginx)
    if changed and not reloaded:sync.run([nginx,'-t']);sync.run([nginx,'-s','reload'])
    for value in ({old_domain}|set(proxy.get('cleanup_domains') or []))-{domain,''}:

@@ -1,5 +1,5 @@
 name: Publish verified Starhub 0.25.5
-# Verify hardened gateway bootstrap on an isolated root-owned Linux fixture.
+# Verify hardened gateway bootstrap with private accounting state on Linux.
 on:
   push:
     branches: [main]

@@ -121,7 +121,7 @@ def install_gateway(env,source,install_deps=False,enable_acme=False):
     helper.local_api(installation['token'],'site')
     if scripts.exists():helper.trusted(scripts,True)
     else:scripts.mkdir(mode=0o755)
-    for directory in (Path('/etc/harbor'),Path('/var/log/harbor'),Path('/var/www/harbor-acme')):
+    for directory in (Path('/etc/harbor'),Path('/var/lib/starhub-gateway'),Path('/var/lib/starhub-gateway/logs'),Path('/var/www/harbor-acme')):
         if directory.exists():helper.trusted(directory,True)
         else:directory.mkdir(parents=True,mode=0o755 if 'www' in directory.parts else 0o700)
     touched=[scripts/name for name in FILES if name!='panel-updater.py']+[config]+targets
