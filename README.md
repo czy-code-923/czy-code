@@ -87,23 +87,65 @@ sudo python3 /opt/harbor/uninstall.py --apply
 
 ## Linux 获取面板管理员登录令牌
 
-仅显示已有星枢面板 `ADMIN_TOKEN`，不会生成或重置；与宝塔账号无关。不要把输出粘贴到聊天、日志或 GitHub。
+仅显示这台星枢面板已有的 `ADMIN_TOKEN`，不会生成、轮换或重置令牌；与宝塔账号无关。将输出复制到星枢登录页，不要粘贴到聊天、日志或 GitHub。
+
+**已经是 root（例如终端提示 `root@主机名:~#`）时，直接运行 `python3`，不需要 `sudo`，也不必为此安装 `sudo`。** 普通用户可使用已配置的 `sudo`；如果没有，先执行 `su -` 切换到 root。
+
+一键新安装 Linux 的默认目录是 `/opt/starhub-control`。root 用户直接执行：
 
 ```bash
-curl -fL https://raw.githubusercontent.com/czy-code-923/czy-code/main/scripts/admin-token.py -o /tmp/starhub-admin-token.py && sudo python3 /tmp/starhub-admin-token.py
+python3 /opt/starhub-control/admin-token.py --env /opt/starhub-control/control.env
 ```
 
-当前管理 VPS 的本地命令：
+普通用户（系统已安装且允许使用 `sudo`）：
 
 ```bash
-sudo python3 /opt/harbor/admin-token.py
+sudo python3 /opt/starhub-control/admin-token.py --env /opt/starhub-control/control.env
 ```
 
-源码 / Compose 安装，在项目目录读取自己的私有配置：
+如果已经按旧文档将脚本下载到 `/tmp/starhub-admin-token.py`，root 用户无需重新下载：
 
 ```bash
-python3 scripts/admin-token.py --env .env
+python3 /tmp/starhub-admin-token.py --env /opt/starhub-control/control.env
 ```
+
+通用下载命令：自动区分 root / 普通用户，并自动识别默认的新旧安装配置；没有 `sudo` 的普通用户会得到明确提示。
+
+```bash
+(
+  set -eu
+  if [ "$(id -u)" -eq 0 ]; then
+    token_reader=python3
+  elif command -v sudo >/dev/null 2>&1; then
+    token_reader='sudo python3'
+  else
+    printf '%s\n' '当前不是 root 且未安装 sudo，请先执行 su - 切换到 root，再运行本命令。' >&2
+    exit 1
+  fi
+  token_script=$(mktemp /tmp/starhub-admin-token.XXXXXX)
+  trap 'rm -f "$token_script"' EXIT
+  curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/czy-code-923/czy-code/main/scripts/admin-token.py -o "$token_script"
+  if [ "$token_reader" = python3 ]; then
+    python3 "$token_script"
+  else
+    sudo python3 "$token_script"
+  fi
+)
+```
+
+旧 `/opt/harbor` 部署布局的 root 命令（普通用户在 `python3` 前加 `sudo`）：
+
+```bash
+python3 /opt/harbor/admin-token.py --env /etc/harbor/control.env
+```
+
+源码 / Compose / 自定义 `--prefix` 安装：把下面两个占位路径替换成实际的**绝对路径**。不要在 `/root` 直接运行 `python3 scripts/admin-token.py`；该相对路径仅在源码项目目录中有效。
+
+```bash
+python3 /ABSOLUTE/PROJECT/scripts/admin-token.py --env /ABSOLUTE/PRIVATE/.env
+```
+
+`sudo: command not found` 表示系统没有安装 `sudo`，root 用户去掉它即可；`can't open file '/root/scripts/admin-token.py'` 表示当前目录下没有该源码脚本。若提示无法唯一定位配置，使用 `--env` 指定这台面板实际的 `control.env` 或私有 `.env`，不要新建令牌。
 
 ## Windows 一键卸载
 

@@ -135,18 +135,39 @@ sudo python3 /opt/harbor/domain-sync.py \
 - 恢复必须同时具备数据库与原MASTER_KEY；生成新密钥不能解密旧服务。
 
 
-## 获取管理员登录令牌与卸载
+## 获取面板管理员登录令牌
 
-只在自己的本机 / SSH 终端查看已有令牌，不要把输出上传到 GitHub、日志或聊天。不会重置令牌：
+只在自己的本机 / SSH 终端查看这台星枢已有的 `ADMIN_TOKEN`，它不是宝塔令牌，不会生成或重置凭据。将输出复制到星枢登录页，不要上传到 GitHub、日志或聊天。
+
+当前提示符若是 `root@主机名:~#`，已经具有 root 权限，直接运行下面的 `python3` 命令即可，**不需要安装或使用 `sudo`**。普通用户在命令前加 `sudo`；系统没有 `sudo` 时，先用 `su -` 切换 root，再运行 root 命令。
+
+一键新装 Linux（默认目录 `/opt/starhub-control`）：
 
 ```bash
-# 已有星枢管理安装：自动定位控制面配置（不是宝塔令牌）
-sudo python3 /opt/harbor/admin-token.py
-# 一键新装 Linux 布局
-sudo sed -n 's/^ADMIN_TOKEN=//p' /opt/starhub-control/control.env
-# 源码 / 自选私有环境文件：只打印 ADMIN_TOKEN
-python3 scripts/admin-token.py --env /ABSOLUTE/PRIVATE/.env
+python3 /opt/starhub-control/admin-token.py --env /opt/starhub-control/control.env
 ```
+
+已经下载过脚本到 `/tmp/starhub-admin-token.py`：
+
+```bash
+python3 /tmp/starhub-admin-token.py --env /opt/starhub-control/control.env
+```
+
+旧 `/opt/harbor` 部署布局：
+
+```bash
+python3 /opt/harbor/admin-token.py --env /etc/harbor/control.env
+```
+
+源码 / Compose / 自定义安装（替换为实际绝对路径）：
+
+```bash
+python3 /ABSOLUTE/PROJECT/scripts/admin-token.py --env /ABSOLUTE/PRIVATE/.env
+```
+
+`python3 scripts/admin-token.py --env .env` 只适用于已经进入源码项目目录的情况。在 `/root` 执行时会查找 `/root/scripts/admin-token.py`，因此报 `can't open file`；请使用上面的绝对路径。若修改了一键安装的 `--prefix`，脚本和 `control.env` 都位于实际安装目录下。
+
+如果本地脚本不存在，可使用 [README 的通用下载命令](../README.md#linux-获取面板管理员登录令牌)，它会自动判断是否需要 `sudo`，并识别默认新旧布局。自定义环境文件或同时存在多个安装配置时，用 `--env` 明确指定目标；不要重新生成令牌。
 
 Windows PowerShell（当前用户一键安装）：
 
@@ -154,7 +175,9 @@ Windows PowerShell（当前用户一键安装）：
 Get-Content -LiteralPath "$env:ProgramData\StarhubControl\control.env" | Where-Object { $_.StartsWith('ADMIN_TOKEN=') } | ForEach-Object { $_.Substring(12) }
 ```
 
-一键卸载面板运行组件，**默认保留数据库卷、私有配置和所有备份**。下面是项目脚本，下载后可先去掉 --apply 查看计划：
+## 卸载面板运行组件
+
+一键卸载面板运行组件，**默认保留数据库卷、私有配置和所有备份**。下面是项目脚本，下载后可先去掉 --apply 查看计划；root 用户去掉命令中的 sudo：
 
 ```bash
 curl -fL https://raw.githubusercontent.com/czy-code-923/czy-code/main/scripts/uninstall.py -o /tmp/starhub-uninstall.py && sudo python3 /tmp/starhub-uninstall.py --apply
