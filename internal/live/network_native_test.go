@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"os"
 	"os/exec"
@@ -44,7 +45,26 @@ func TestNativeSSUDPListener(t *testing.T) {
 						echo.WriteTo(b[:n], a)
 					}
 				}()
-				free := func() int {
+				free := func(tcpControl bool) int {
+					// SOCKS UDP also needs a TCP control listener. Windows allocates
+					// TCP and UDP ephemeral ports independently; UDP availability
+					// alone does not establish that the same TCP port can be bound.
+					if tcpControl {
+						for attempt := 0; attempt < 32; attempt++ {
+							listener, err := net.Listen("tcp", "127.0.0.1:0")
+							if err != nil {
+								t.Fatal(err)
+							}
+							port := listener.Addr().(*net.TCPAddr).Port
+							packet, err := net.ListenPacket("udp", fmt.Sprintf("127.0.0.1:%d", port))
+							listener.Close()
+							if err == nil {
+								packet.Close()
+								return port
+							}
+						}
+						t.Fatal("no free TCP/UDP pair for SOCKS control and relay")
+					}
 					c, e := net.ListenPacket("udp", "127.0.0.1:0")
 					if e != nil {
 						t.Fatal(e)
@@ -52,11 +72,12 @@ func TestNativeSSUDPListener(t *testing.T) {
 					defer c.Close()
 					return c.LocalAddr().(*net.UDPAddr).Port
 				}
-				s := Spec{Kind: kind, Engine: core, Listen: "127.0.0.1", Address: "127.0.0.1", Port: free(), Password: Secret()}
+				s := Spec{Kind: kind, Engine: core, Listen: "127.0.0.1", Address: "127.0.0.1", Port: free(kind == "socks"), Password: Secret()}
 				if kind == "shadowsocks" {
 					s.ListenNetwork = "udp"
 				}
 				var r *Runner
+				serverLog := filepath.Join(t.TempDir(), "server.log")
 				if core == "xray" {
 					_, files, err := s.Render()
 					if err != nil {
@@ -73,6 +94,12 @@ func TestNativeSSUDPListener(t *testing.T) {
 						t.Fatal(err)
 					}
 					cmd := exec.Command(binary, "run", "-config", path)
+					logFile, err := os.Create(serverLog)
+					if err != nil {
+						t.Fatal(err)
+					}
+					defer logFile.Close()
+					cmd.Stdout, cmd.Stderr = logFile, logFile
 					prepareChild(cmd)
 					if err = cmd.Start(); err != nil {
 						t.Fatal(err)
@@ -106,7 +133,7 @@ func TestNativeSSUDPListener(t *testing.T) {
 				if e != nil {
 					t.Fatal(e)
 				}
-				local := free()
+				local := free(false)
 				cfg := map[string]any{"log": map[string]any{"level": "error"}, "inbounds": []any{map[string]any{"type": "direct", "listen": "127.0.0.1", "listen_port": local, "network": "udp", "override_address": "127.0.0.1", "override_port": echo.LocalAddr().(*net.UDPAddr).Port}}, "outbounds": []any{out}, "route": map[string]any{"final": "proxy"}}
 				b, _ := json.Marshal(cfg)
 				path := filepath.Join(t.TempDir(), "udp-client.json")
@@ -146,7 +173,13 @@ func TestNativeSSUDPListener(t *testing.T) {
 				}
 				cmd.Process.Kill()
 				cmd.Wait()
-				t.Fatalf("native UDP forwarding failed; core=%s client=%s", core, logs.String())
+				if r != nil {
+					t.Logf("server reports: %+v", r.Reports())
+				}
+				if raw, err := os.ReadFile(serverLog); err == nil {
+					t.Logf("server log: %s", raw)
+				}
+				t.Fatalf("native UDP forwarding failed; core=%s port=%d client=%s", core, s.Port, logs.String())
 			})
 		}
 	}

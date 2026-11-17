@@ -7,6 +7,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
+  actions: read
 concurrency:
   group: starhub-release-0257
   cancel-in-progress: true
@@ -102,6 +103,13 @@ jobs:
               python3 /src/scripts/test_port_hopping.py
               unshare --net python3 /src/scripts/test_port_hopping_native.py
             '
+      - name: Require cross-platform protocol verification
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run_id="$(gh run list --repo '${{ github.repository }}' --commit "$GITHUB_SHA" --workflow check.yml --event push --limit 1 --json databaseId --jq '.[0].databaseId')"
+          test -n "$run_id" && test "$run_id" != null
+          gh run watch "$run_id" --repo '${{ github.repository }}' --exit-status --interval 15
       - name: Build four platforms and pin all artifacts
         env:
           GITHUB_TOKEN: ${{ github.token }}

@@ -10,6 +10,7 @@ VPS 协议配置的新增、编辑、参数 JSON、原生配置识别、加密�
 - Xray mKCP：Seed、数据包头、MTU、TTI、上 / 下行容量和拥塞控制。容量单位为 MB/s，不能与 HY2 的 Mbps 混用。
 - 补齐 sing-box HTTPS CONNECT 客户端 ALPN 导出，明确 Naive 的 Chromium 握手及专用 JSON、QUIC 协议的 TLS 范围。
 - 修复链式配置可能把 XHTTP 等不可表达的下一跳交给 sing-box 的问题；不支持的组合在保存时返回原因。
+- 修正 SOCKS UDP 原生测试在 Windows 上只检查 UDP 端口空闲的问题，同时检查 TCP 控制端口，并保留服务端失败日志。发布流程必须等待同提交的 Linux / Windows CI 全部通过。
 
 ## 现有协议检查范围
 
