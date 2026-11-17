@@ -14,6 +14,7 @@ import (
 // These conservative adapters export only formats we can represent without
 // dropping authentication, transport or security fields.
 func compatibleClient(c clientInfo, endpoint live.Spec) error {
+	endpoint, _ = adaptClientTransport(c, endpoint)
 	format := c.Format
 	if format == "mihomo-nodes" {
 		format = "mihomo"

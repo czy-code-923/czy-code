@@ -171,6 +171,7 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 	nodes := []clientpolicy.Node{}
 	warnings := []string{}
 	excluded := 0
+	adapted := 0
 	apply := func(base map[string]any) (map[string]any, error) {
 		config, notes, err := s.applyClientPolicy(r, user, client.ID, format, nodes, base)
 		if err != nil {
@@ -291,6 +292,7 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 		for _, address := range addresses {
 			endpoint := spec
 			endpoint.Address = address
+			endpoint, adaptations := adaptClientTransport(client, endpoint)
 			if format == "naive" && net.ParseIP(address) != nil && address != spec.ServerName {
 				target := address
 				if strings.Contains(address, ":") {
@@ -311,6 +313,9 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 				excluded++
 				continue
 			}
+			if len(adaptations) > 0 {
+				adapted++
+			}
 			if format == "xray" {
 				xray = append(xray, endpoint.XrayClient(tag))
 			}
@@ -329,6 +334,7 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request) error
 	}
 	w.Header().Set("X-Starhub-Excluded-Nodes", fmt.Sprint(excluded))
 	w.Header().Set("X-Starhub-Included-Nodes", fmt.Sprint(len(nodes)))
+	w.Header().Set("X-Starhub-Adapted-Nodes", fmt.Sprint(adapted))
 	w.Header().Set("X-Starhub-Client", client.ID)
 	if len(out) == 0 {
 		if excluded > 0 {

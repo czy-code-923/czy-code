@@ -42,6 +42,7 @@ func TestNativeTransportOptionsForwarding(t *testing.T) {
 		cases["xhttp/"+mode] = TransportOptions{XHTTPMode: mode, XHTTPPadding: "100-1000", TLSFingerprint: "chrome", XHTTPNoGRPCHeader: mode == "stream-up"}
 	}
 	cases["grpc/multi"] = TransportOptions{GRPCMultiMode: true, TLSFingerprint: "firefox"}
+	cases["grpc/compatible-client"] = TransportOptions{GRPCMultiMode: true, TLSFingerprint: "chrome"}
 	cases["kcp/utp"] = TransportOptions{KCPSeed: "transport-seed", KCPHeader: "utp", KCPMTU: 1300, KCPTTI: 20, KCPUplink: 5, KCPDownlink: 20, KCPCongestion: true}
 	for name, o := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -66,7 +67,13 @@ func TestNativeTransportOptionsForwarding(t *testing.T) {
 			json.Unmarshal(files["config.json"], &server)
 			// The official core blocks private targets by default. Only this local fixture is allowed.
 			server["outbounds"].([]any)[0].(map[string]any)["settings"] = map[string]any{"finalRules": []any{map[string]any{"action": "allow", "network": "tcp", "ip": []string{"127.0.0.1/32"}, "port": target.Listener.Addr().(*net.TCPAddr).Port}}}
-			outbound := s.XrayClient("proxy")
+			clientSpec := s
+			if name == "grpc/compatible-client" {
+				o := *s.TransportOptions
+				o.GRPCMultiMode = false
+				clientSpec.TransportOptions = &o
+			}
+			outbound := clientSpec.XrayClient("proxy")
 			if s.UsesTLS() {
 				// Trust only the fixture's CA, while keeping allowInsecure=false.
 				tls := outbound["streamSettings"].(map[string]any)["tlsSettings"].(map[string]any)

@@ -183,7 +183,11 @@ func (s *Server) inspectSubscription(w http.ResponseWriter, r *http.Request) err
 		if probeClient != "" {
 			reason = "自动订阅链接可分享，已验证 " + probeClient + " 配置；导入时由实际客户端识别格式，不代表所有客户端均支持此协议"
 		}
-		send(w, 200, map[string]any{"ready": ready, "stage": stage, "status": 200, "reason": reason, "hwid_required": hwidRequired, "max_devices": maxDevices, "content_type": recorder.Header().Get("Content-Type"), "included_nodes": recorder.Header().Get("X-Starhub-Included-Nodes"), "client": recorder.Header().Get("X-Starhub-Client"), "excluded_nodes": recorder.Header().Get("X-Starhub-Excluded-Nodes"), "warnings": recorder.Header().Get("X-Starhub-Policy-Warnings"), "client_tuning_notice": recorder.Header().Get("X-Starhub-Client-Tuning")})
+		adaptationNotice := ""
+		if count := recorder.Header().Get("X-Starhub-Adapted-Nodes"); count != "" && count != "0" {
+			adaptationNotice = "已按客户端自动处理可选参数：gRPC 使用兼容单流模式；不支持 HTTP 浏览器指纹时使用原生 TLS。认证、证书验证和服务端配置保持原有设置。"
+		}
+		send(w, 200, map[string]any{"ready": ready, "stage": stage, "status": 200, "reason": reason, "hwid_required": hwidRequired, "max_devices": maxDevices, "content_type": recorder.Header().Get("Content-Type"), "included_nodes": recorder.Header().Get("X-Starhub-Included-Nodes"), "client": recorder.Header().Get("X-Starhub-Client"), "excluded_nodes": recorder.Header().Get("X-Starhub-Excluded-Nodes"), "warnings": recorder.Header().Get("X-Starhub-Policy-Warnings"), "client_tuning_notice": recorder.Header().Get("X-Starhub-Client-Tuning"), "adapted_nodes": recorder.Header().Get("X-Starhub-Adapted-Nodes"), "adaptation_notice": adaptationNotice})
 		return nil
 	}
 	var config any

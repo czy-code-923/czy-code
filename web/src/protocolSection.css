@@ -1,0 +1,10 @@
+.protocol-tuning{padding:18px;margin:18px 0;border:1px solid var(--line);border-radius:12px;background:var(--panel-soft);min-inline-size:0}
+legend{padding:0 8px;color:var(--accent);font-size:13px}
+h4{margin:20px 0 12px}
+small{display:block;margin-top:7px;color:var(--muted);font-weight:400;line-height:1.6}
+p{line-height:1.7}
+details{margin-top:18px}
+.recommendation-row{display:flex;align-items:center;gap:12px;justify-content:space-between;margin-bottom:12px}
+.recommendation-row p{margin:0;flex:1}
+.recommendation-row button{flex-shrink:0}
+@media(max-width:600px){.protocol-tuning{padding:12px}.recommendation-row{align-items:flex-start;flex-direction:column}}

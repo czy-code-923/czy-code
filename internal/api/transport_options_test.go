@@ -38,12 +38,19 @@ func TestTransportSubscriptionDistributionAcrossClients(t *testing.T) {
 			continue
 		}
 		w := f.share(raw+"?client="+c.ID+"&policy=nodes-only", nil, 200)
-		included, excluded := "1", "2"
+		included, excluded := "2", "1"
 		if c.ID == "xray" {
 			included, excluded = "3", "0"
 		}
 		if w.Header().Get("X-Starhub-Included-Nodes") != included || w.Header().Get("X-Starhub-Excluded-Nodes") != excluded {
 			t.Fatal("lossy client compatibility filter", c.ID, w.Header())
+		}
+		adapted := "1"
+		if c.ID == "xray" {
+			adapted = "0"
+		}
+		if w.Header().Get("X-Starhub-Adapted-Nodes") != adapted {
+			t.Fatal("adaptation accounting mismatch", c.ID, w.Header())
 		}
 		if c.ID == "xray" {
 			var cfg map[string]any
@@ -131,8 +138,8 @@ func TestExistingSubscriptionReceivesTLSFingerprint(t *testing.T) {
 
 func TestTransportOptionsClientFormatAndImport(t *testing.T) {
 	s := live.Spec{Kind: "vmess", Engine: "xray", Transport: "grpc", ProtocolOptions: live.ProtocolOptions{TransportOptions: &live.TransportOptions{GRPCMultiMode: true}}}
-	if compatibleClient(clientInfo{ID: "v2rayng", Format: "base64", Full: false}, s) == nil {
-		t.Fatal("node URI lost gRPC multiMode")
+	if compatibleClient(clientInfo{ID: "v2rayng", Format: "base64", Full: false}, s) != nil {
+		t.Fatal("compatible gRPC single stream fallback was filtered")
 	}
 	if e := compatibleClient(clientInfo{ID: "xray", Format: "xray", Full: true}, s); e != nil {
 		t.Fatal(e)
