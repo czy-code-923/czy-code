@@ -743,6 +743,9 @@ func (s *Server) liveSync(w http.ResponseWriter, r *http.Request, host string) e
 		if v.Spec.RequiresV19() && !live.V19Capable(agentVersion) {
 			v.Enabled = false
 		}
+		if v.Spec.RequiresTransportAgent() && !live.TransportOptionsCapable(agentVersion) {
+			v.Enabled = false
+		}
 		if v.Spec.RequiresV13() && !live.V13Capable(agentVersion) {
 			v.Enabled = false
 		}
@@ -791,6 +794,9 @@ func (s *Server) liveSync(w http.ResponseWriter, r *http.Request, host string) e
 			if next.RequiresV19() && !live.V19Capable(agentVersion) {
 				work[i].Enabled = false
 			}
+			if next.TransportOptions != nil && *next.TransportOptions != (live.TransportOptions{}) && !live.TransportOptionsCapable(agentVersion) {
+				work[i].Enabled = false
+			}
 			if next.RequiresV13() && !live.V13Capable(agentVersion) {
 				work[i].Enabled = false
 			}
@@ -826,7 +832,15 @@ func (s *Server) liveSync(w http.ResponseWriter, r *http.Request, host string) e
 				}
 			}
 		}
-		compiled = append(compiled, live.Work{ID: work[i].ID, Version: work[i].Version, Enabled: work[i].Enabled, Spec: work[i].Spec.AgentSpec()})
+		wireSpec := work[i].Spec.AgentSpec()
+		// Disabled work still passes through the old Agent's strict JSON decoder.
+		if !live.TransportOptionsCapable(agentVersion) {
+			wireSpec.TransportOptions = nil
+			if wireSpec.Outbound != nil {
+				wireSpec.Outbound.TransportOptions = nil
+			}
+		}
+		compiled = append(compiled, live.Work{ID: work[i].ID, Version: work[i].Version, Enabled: work[i].Enabled, Spec: wireSpec})
 	}
 	if b.BundleMode {
 		compiled = live.BundleWork(compiled)

@@ -3,7 +3,15 @@ package api
 import "vps-control/internal/live"
 
 func applySecurity(s *live.Spec, b liveInput) error {
+	previousTransport := s.TransportOptions
 	s.ProtocolOptions = b.ProtocolOptions
+	// Old API clients omit the new object. An explicit empty object clears it.
+	if b.TransportOptions == nil {
+		s.TransportOptions = previousTransport
+	}
+	if s.TransportOptions != nil && *s.TransportOptions == (live.TransportOptions{}) {
+		s.TransportOptions = nil
+	}
 	s.Flow = b.Flow
 	s.ALPN = b.ALPN
 	s.Congestion = b.Congestion
@@ -43,6 +51,9 @@ func applySecurity(s *live.Spec, b liveInput) error {
 }
 
 func requireTunedChainAgent(s live.Spec, version string) error {
+	if s.RequiresTransportAgent() && !live.TransportOptionsCapable(version) {
+		return problem{409, "upgrade host/chain entry Agent to 0.25.7 for transport options"}
+	}
 	if s.Outbound != nil && s.Outbound.NeedsTunedClientAgent() && !live.ClientTuningCapable(version) {
 		return problem{409, "upgrade chain entry Agent to 0.23.17 for client tuning"}
 	}

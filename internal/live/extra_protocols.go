@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/url"
 	"strconv"
+	"strings"
 )
 
 func (s Spec) username() string {
@@ -95,6 +96,11 @@ func (s Spec) extraClient(tag string) (map[string]any, map[string]any, string, e
 		mh["tls"] = true
 		mh["sni"] = s.ServerName
 		q.Set("sni", s.ServerName)
+		if len(s.ALPN) > 0 && kind != "naive" {
+			sb["tls"].(map[string]any)["alpn"] = s.ALPN
+			mh["alpn"] = s.ALPN
+			q.Set("alpn", strings.Join(s.ALPN, ","))
+		}
 		if kind == "http" {
 			scheme = "https"
 		}
@@ -129,6 +135,7 @@ func (s Spec) extraClient(tag string) (map[string]any, map[string]any, string, e
 		u.RawQuery = ""
 		return sb, mh, u.String(), nil
 	}
+	s.clientTLSFingerprint(sb, mh, q)
 	u.RawQuery = q.Encode()
 	return sb, mh, u.String(), nil
 }

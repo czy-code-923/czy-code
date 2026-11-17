@@ -308,6 +308,10 @@ func (s *Server) liveUpdate(w http.ResponseWriter, r *http.Request) error {
 			rows.Close()
 			return e
 		}
+		if spec.TransportOptions != nil && *spec.TransportOptions != (live.TransportOptions{}) && !live.TransportOptionsCapable(parentVersion) {
+			rows.Close()
+			return problem{409, "upgrade dependent chain Agent to 0.25.7 for transport options"}
+		}
 		if spec.NeedsTunedClientAgent() && !live.ClientTuningCapable(parentVersion) {
 			rows.Close()
 			return problem{409, "upgrade dependent chain Agent to 0.23.17 for client tuning"}

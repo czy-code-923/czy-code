@@ -125,7 +125,41 @@ func inspectInbound(engine string, m map[string]any) inspectedInbound {
 			r.Warnings = append(r.Warnings, "REALITY 密钥不复用，保存时会生成新身份；请在表单设置握手目标/SNI 并更新客户端订阅")
 		}
 		tr := text(in["transport"])
-		cfg := object(stream[map[string]string{"ws": "wsSettings", "grpc": "grpcSettings", "httpupgrade": "httpupgradeSettings", "xhttp": "xhttpSettings"}[tr]])
+		cfg := object(stream[map[string]string{"ws": "wsSettings", "grpc": "grpcSettings", "httpupgrade": "httpupgradeSettings", "xhttp": "xhttpSettings", "kcp": "kcpSettings"}[tr]])
+		details := map[string]any{}
+		copyOption := func(to string, from map[string]any, key string) {
+			if v, ok := from[key]; ok {
+				details[to] = v
+			}
+		}
+		if tr == "xhttp" {
+			copyOption("xhttp_mode", cfg, "mode")
+			// Native Xray accepts extra overrides; preserve the effective values.
+			effective := map[string]any{}
+			for k, v := range cfg {
+				effective[k] = v
+			}
+			for k, v := range object(cfg["extra"]) {
+				effective[k] = v
+			}
+			copyOption("xhttp_padding_bytes", effective, "xPaddingBytes")
+			if v, ok := details["xhttp_padding_bytes"].(float64); ok {
+				details["xhttp_padding_bytes"] = fmt.Sprint(v)
+			}
+			copyOption("xhttp_no_grpc_header", effective, "noGRPCHeader")
+		}
+		if tr == "grpc" {
+			copyOption("grpc_multi_mode", cfg, "multiMode")
+		}
+		if tr == "kcp" {
+			for to, key := range map[string]string{"kcp_seed": "seed", "kcp_mtu": "mtu", "kcp_tti": "tti", "kcp_uplink_capacity": "uplinkCapacity", "kcp_downlink_capacity": "downlinkCapacity", "kcp_congestion": "congestion"} {
+				copyOption(to, cfg, key)
+			}
+			copyOption("kcp_header", object(cfg["header"]), "type")
+		}
+		if len(details) > 0 {
+			in["transport_options"] = details
+		}
 		in["path"] = cfg["path"]
 		in["service_name"] = cfg["serviceName"]
 		in["ws_host"] = cfg["host"]

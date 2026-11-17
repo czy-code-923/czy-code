@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "星枢 · VPS 多机管理 API",
-    "version": "0.25.6",
+    "version": "0.25.7",
     "description": "Self-workspace API for host agents, proxy protocols, user quotas and client subscriptions. Bearer administrator token or expiring scoped xs_ API key. No arbitrary shell; privileged gateway work and API key administration remain root-only."
   },
   "servers": [
@@ -2802,6 +2802,9 @@
                   },
                   "clear_hysteria_obfs": {
                     "type": "boolean"
+                  },
+                  "transport_options": {
+                    "$ref": "#/components/schemas/TransportOptions"
                   }
                 }
               }
@@ -3683,6 +3686,9 @@
                   },
                   "clear_hysteria_obfs": {
                     "type": "boolean"
+                  },
+                  "transport_options": {
+                    "$ref": "#/components/schemas/TransportOptions"
                   }
                 }
               }
@@ -9534,6 +9540,9 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 32
+          },
+          "transport_options": {
+            "$ref": "#/components/schemas/TransportOptions"
           }
         }
       },
@@ -9890,6 +9899,61 @@
             ],
             "default": "GB",
             "description": "Display only. GB=10^9 bytes, GiB=2^30 bytes. auto scales decimal B/KB/MB/GB/TB/PB. Raw byte quotas and counters remain unchanged. Host allowance tables retain each host display_unit."
+          }
+        }
+      },
+      "TransportOptions": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Optional transport parameters. Omitted on update preserves existing values; an empty object clears them. Zero values retain native defaults. New server transport options and tuned chain outbounds require Agent 0.25.7.",
+        "properties": {
+          "tls_fingerprint": {
+            "type": "string",
+            "description": "Client TCP/TLS uTLS fingerprint; REALITY uses reality.fingerprint. Not applicable to QUIC or Naive."
+          },
+          "xhttp_mode": {
+            "type": "string",
+            "description": "Xray XHTTP mode: auto, packet-up, stream-up, stream-one; empty preserves default."
+          },
+          "xhttp_padding_bytes": {
+            "type": "string",
+            "description": "XHTTP padding byte count or ascending range, 0-65535, for example 100-1000."
+          },
+          "xhttp_no_grpc_header": {
+            "type": "boolean",
+            "description": "XHTTP streaming client only: omit gRPC Content-Type."
+          },
+          "grpc_multi_mode": {
+            "type": "boolean",
+            "description": "Xray gRPC client multiMode; full Xray JSON export required."
+          },
+          "kcp_seed": {
+            "type": "string",
+            "description": "mKCP seed, up to 128 bytes."
+          },
+          "kcp_header": {
+            "type": "string",
+            "description": "mKCP header: none, srtp, utp, wechat-video, dtls, wireguard."
+          },
+          "kcp_mtu": {
+            "type": "integer",
+            "description": "0 for default or 576-1460 bytes."
+          },
+          "kcp_tti": {
+            "type": "integer",
+            "description": "0 for default or 10-100 milliseconds."
+          },
+          "kcp_uplink_capacity": {
+            "type": "integer",
+            "description": "mKCP uplink capacity, 0-10000 MB/s; 0 preserves default."
+          },
+          "kcp_downlink_capacity": {
+            "type": "integer",
+            "description": "mKCP downlink capacity, 0-10000 MB/s; 0 preserves default."
+          },
+          "kcp_congestion": {
+            "type": "boolean",
+            "description": "Enable mKCP congestion control."
           }
         }
       }

@@ -99,6 +99,11 @@ func (s *Spec) clearClientTuning() {
 // Agents retain correct BBR / Brutal behavior without a forced reinstall.
 func (s Spec) AgentSpec() Spec {
 	s.clearClientTuning()
+	o := s.serverTransportOptions()
+	s.TransportOptions = nil
+	if o != (TransportOptions{}) {
+		s.TransportOptions = &o
+	}
 	if s.Outbound != nil {
 		next := *s.Outbound
 		if next.Kind == "hysteria2" {

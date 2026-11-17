@@ -304,6 +304,7 @@ func (s Spec) Client(tag string) (map[string]any, map[string]any, string, error)
 		mh["alpn"] = s.ALPN
 		q.Set("alpn", strings.Join(s.ALPN, ","))
 	}
+	s.clientTLSFingerprint(sb, mh, q)
 	if s.Flow != "" {
 		sb["flow"] = s.Flow
 		mh["flow"] = s.Flow
@@ -378,6 +379,9 @@ func (s Spec) Client(tag string) (map[string]any, map[string]any, string, error)
 		}(), "type": "none", "tls": "", "sni": s.ServerName, "path": s.Path}
 		if s.UsesTLS() {
 			payload["tls"] = "tls"
+			if fp := s.transportOptions().TLSFingerprint; fp != "" {
+				payload["fp"] = fp
+			}
 		}
 		if s.Transport == "ws" {
 			payload["net"] = "ws"

@@ -41,7 +41,7 @@ func compatibleClient(c clientInfo, endpoint live.Spec) error {
 	if format == "shadowrocket-config" {
 		format = "shadowrocket"
 	}
-	if !c.Full && (endpoint.IsReality() && endpoint.Engine == "xray" || endpoint.Transport == "xhttp" || endpoint.Transport == "kcp" || endpoint.Transport == "httpupgrade") {
+	if !c.Full && (endpoint.IsReality() && endpoint.Engine == "xray" || endpoint.Transport == "xhttp" || endpoint.Transport == "kcp" || endpoint.Transport == "httpupgrade" || endpoint.TransportOptions != nil && endpoint.TransportOptions.GRPCMultiMode) {
 		return fmt.Errorf("节点链接无法无损表达此安全层或传输层，请使用对应内核 JSON")
 	}
 	return endpoint.ClientFormat(format)

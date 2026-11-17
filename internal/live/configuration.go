@@ -47,6 +47,13 @@ func (s Spec) validateRouting() error {
 		if e := next.validateClient(); e != nil {
 			return e
 		}
+		format := s.Engine
+		if format == "" {
+			format = "sing-box"
+		}
+		if e := next.ClientFormat(format); e != nil {
+			return e
+		}
 		if s.Engine != "xray" && next.Engine == "xray" && next.IsReality() {
 			return errors.New("pinned sing-box 1.14.4 cannot dial Xray 26.10.21 REALITY; choose a sing-box REALITY next hop")
 		}
@@ -121,6 +128,7 @@ func (s Spec) xrayStream(server bool) map[string]any {
 		}
 		stream["tlsSettings"] = tls
 	}
+	s.xrayTransportOptions(stream, server)
 	return stream
 }
 func (s Spec) renderXray() (string, map[string][]byte, error) {

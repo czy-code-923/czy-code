@@ -115,6 +115,14 @@ func (s *Server) protocolTemplates(w http.ResponseWriter, r *http.Request) error
 		}
 		t["layers"] = byCore
 		t["transports"] = transports
+		if slices.Contains([]string{"vless", "vmess", "trojan", "anytls", "http"}, kind) {
+			t["client_fingerprints"] = []string{"", "chrome", "firefox", "safari", "edge", "ios", "android", "randomized"}
+			t["optional"] = append(t["optional"].([]string), "transport_options")
+		}
+		if slices.Contains([]string{"vless", "vmess", "trojan"}, kind) {
+			t["transport_options_agent"] = "0.25.7"
+			t["xhttp_modes"] = []string{"", "auto", "packet-up", "stream-up", "stream-one"}
+		}
 		if kind == "hysteria" {
 			t["required_options"] = []string{"up_mbps", "down_mbps"}
 			t["optional"] = []string{"hysteria_obfs_password", "managed_users", "next_id", "hop_ports", "hop_interval_seconds"}

@@ -28,6 +28,12 @@ type Account struct {
 }
 
 func (s Spec) ClientFormat(format string) error {
+	if s.Kind == "http" && s.transportOptions().TLSFingerprint != "" && format != "sing-box" && format != "xray" {
+		return errors.New("HTTP CONNECT browser fingerprint requires sing-box/Xray JSON; Mihomo HTTP does not implement client-fingerprint")
+	}
+	if s.transportOptions().GRPCMultiMode && format != "xray" {
+		return errors.New("gRPC multi mode requires Xray JSON; other adapters do not preserve multiMode")
+	}
 	if s.Kind == "snell" && s.UserKey != "" && format != "sing-box" {
 		return errors.New("multi-user Snell requires sing-box 1.14+ with userkey")
 	}
