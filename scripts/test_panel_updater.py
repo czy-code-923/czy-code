@@ -6,6 +6,21 @@ if os.name=='nt':sys.modules.setdefault('fcntl',types.SimpleNamespace())
 spec=importlib.util.spec_from_file_location('panel_updater',Path(__file__).with_name('panel-updater.py'));u=importlib.util.module_from_spec(spec);spec.loader.exec_module(u)
 
 class UpdateTests(unittest.TestCase):
+    def test_gateway_starts_only_after_control_health_on_apply_or_restore(self):
+        with tempfile.TemporaryDirectory() as d:
+            events=[];worker=u.Updater({'token':'fixture','service':'harbor-control.service'},Path(d),api=lambda p,b=None:{})
+            worker.job={'units':['starhub-gateway.timer','starhub-gateway.service','harbor-control.service']}
+            for version in ('0.25.7','0.25.8'):
+                events.clear()
+                with patch.object(u,'run',side_effect=lambda *a,**kw:events.append(a)),patch.object(worker,'health',side_effect=lambda v:events.append(('health',v))):worker.start_units(version)
+                self.assertEqual(events,[('systemctl','start','harbor-control.service'),('health',version),('systemctl','start','starhub-gateway.service'),('systemctl','start','starhub-gateway.timer')])
+    def test_unhealthy_control_does_not_launch_gateway_workers(self):
+        with tempfile.TemporaryDirectory() as d:
+            worker=u.Updater({'token':'fixture','service':'harbor-control.service'},Path(d),api=lambda p,b=None:{})
+            worker.job={'units':['starhub-gateway.timer','starhub-gateway.service','harbor-control.service']}
+            with patch.object(u,'run') as run,patch.object(worker,'health',side_effect=RuntimeError('not ready')):
+                with self.assertRaises(RuntimeError):worker.start_units('0.25.8')
+            run.assert_called_once_with('systemctl','start','harbor-control.service',timeout=40)
     def test_database_headroom_only_increases_a_small_cap(self):
         self.assertEqual(u.memory_target(2<<30),512<<20)
         self.assertEqual(u.memory_target(1<<30),384<<20)

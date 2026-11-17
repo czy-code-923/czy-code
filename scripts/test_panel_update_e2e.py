@@ -65,6 +65,9 @@ def main():
             assert api('proxy-users/'+sentinel)['name']=='update-backup-sentinel'
             assert api('panel-updates')['items'][0]['state']=='rolled_back'
             print('Failed update restored actual binary, frontend and PostgreSQL data: PASS',flush=True)
+    except BaseException:
+        subprocess.run(['journalctl','-u',install['service'],'-u','starhub-gateway.service','-n','80','--no-pager'],check=False)
+        raise
     finally:
         version_file.write_text(original)
         subprocess.run(['systemctl','start','starhub-panel-updater.timer'],check=True)

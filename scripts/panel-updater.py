@@ -157,6 +157,15 @@ class Updater:
             except Exception:pass
             time.sleep(1)
         raise RuntimeError('Control version health check failed')
+    def start_units(self,version):
+        checked=False
+        for unit in reversed(self.job['units']):
+            run('systemctl','start',unit,timeout=40)
+            if unit==self.i.get('service'):
+                # Type=simple start only confirms process creation. Gateway
+                # workers need the API and database to be ready first.
+                self.health(version);checked=True
+        if not checked:self.health(version)
     def restore(self):
         for unit in self.job['units']:run('systemctl','stop',unit,timeout=40)
         for entry in self.job['files']:
@@ -165,8 +174,7 @@ class Updater:
             else:target.unlink(missing_ok=True)
         database=Path(self.job['directory'])/'database.dump'
         with database.open('rb') as dump:run('docker','exec','-i',self.i['container'],'pg_restore','-U','harbor','-d','harbor','--clean','--if-exists','--exit-on-error',stdin=dump,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=600)
-        for unit in reversed(self.job['units']):run('systemctl','start',unit,timeout=40)
-        self.health(self.job['from_version'])
+        self.start_units(self.job['from_version'])
     def recover(self):
         if not self.journal.exists():return
         self.job=json.loads(self.journal.read_text())
@@ -179,8 +187,7 @@ class Updater:
         if self.job.get('applying'):self.restore();terminal='rolled_back'
         else:
             if self.job.get('services_stopped'):
-                for unit in reversed(self.job['units']):run('systemctl','start',unit,timeout=40)
-                self.health(self.job['from_version'])
+                self.start_units(self.job['from_version'])
             terminal='failed'
         self.phase(terminal,'Interrupted update recovered; backup retained')
     def perform(self,job):
@@ -227,12 +234,11 @@ class Updater:
                 with (directory/'database.dump').open('xb') as dump:run('docker','exec',self.i['container'],'pg_dump','-U','harbor','-d','harbor','-Fc',stdout=dump,stderr=subprocess.DEVNULL,timeout=600);dump.flush();os.fsync(dump.fileno())
                 if (directory/'database.dump').stat().st_size<100:raise ValueError('Invalid database backup')
             except BaseException:
-                for unit in reversed(self.job['units']):run('systemctl','start',unit,timeout=40)
+                self.start_units(self.job['from_version'])
                 raise
             self.job['applying']=True;self.job['state']='applying';self.save()
             for entry in self.job['files']:atomic_copy(Path(entry['source']),Path(entry['target']))
-            for unit in reversed(self.job['units']):run('systemctl','start',unit,timeout=40)
-            self.health(job['target_version']);self.phase('checking')
+            self.start_units(job['target_version']);self.phase('checking')
             self.phase('succeeded','Verified update completed; database and file backups retained')
             self.job['detail']='Verified update completed; database and file backups retained';self.save()
             archive.unlink();shutil.rmtree(stage)
@@ -244,8 +250,7 @@ class Updater:
                 self.restore();self.phase('rolled_back','Update failed; previous database and files restored')
             else:
                 if self.job.get('services_stopped'):
-                    for unit in reversed(self.job['units']):run('systemctl','start',unit,timeout=40)
-                    self.health(job['from_version'])
+                    self.start_units(self.job['from_version'])
                 self.phase('failed','Update verification or backup failed; installation retained')
             raise
     def once(self):
