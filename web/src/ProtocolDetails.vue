@@ -5,7 +5,7 @@ const props=defineProps<{form:Record<string,any>,editing?:boolean}>()
 const o=computed(()=>props.form.transport_options)
 const fingerprint=computed(()=>props.form.tls_mode==='tls'&&['vless','vmess','trojan','anytls','http'].includes(props.form.kind))
 // Opening an existing node never rewrites its saved handshake or transport.
-watch(()=>[props.form,props.form.engine,props.form.kind,props.form.transport,props.form.tls_mode],(value,previous)=>{if(!previous&&!props.editing||previous&&value[0]===previous[0])applyTransportRecommendations(props.form)},{immediate:true})
+watch(()=>[props.form,props.form.engine,props.form.kind,props.form.transport,props.form.tls_mode],(value,previous)=>{if(value[0]===previous[0])applyTransportRecommendations(props.form)})
 </script>
 <template>
 <fieldset v-if="fingerprint||form.engine==='xray'&&['xhttp','grpc','kcp'].includes(form.transport)" class="protocol-tuning">

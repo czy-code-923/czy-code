@@ -36,5 +36,7 @@ it('selects protocol recommendations while preserving existing nodes and JSON im
  await w.setProps({form:imported});expect(imported.transport_options.xhttp_mode).toBe('stream-one')
  imported.transport='grpc';await w.vm.$nextTick();expect(imported.transport_options.grpc_multi_mode).toBe(false);expect(imported.transport_options.xhttp_mode).toBe('')
  expect(recommendedTransportOptions({kind:'vmess',engine:'xray',transport:'kcp',tls_mode:'none'})).toMatchObject({kcp_header:'none',kcp_mtu:1350,kcp_tti:50,kcp_uplink_capacity:5,kcp_downlink_capacity:20,kcp_congestion:false,tls_fingerprint:''})
- w.unmount()
+ imported.transport_options.tls_fingerprint='safari';imported.transport_options.grpc_multi_mode=true;w.unmount()
+ const reopened=mount(ProtocolDetails,{props:{form:imported}})
+ expect(imported.transport_options.xhttp_mode).toBe('');expect(imported.transport_options.tls_fingerprint).toBe('safari');expect(imported.transport_options.grpc_multi_mode).toBe(true);reopened.unmount()
 })

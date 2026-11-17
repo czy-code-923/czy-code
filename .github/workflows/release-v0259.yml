@@ -1,5 +1,6 @@
 name: Publish verified Starhub 0.25.9
 # Verify protocol options, legacy configuration, native forwarding and installation.
+# Preserve unsaved batch selections when a protocol editor is reopened.
 on:
   push:
     branches: [main]
