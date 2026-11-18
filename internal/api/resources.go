@@ -20,7 +20,7 @@ func (s *Server) updateResource(w http.ResponseWriter, r *http.Request) error {
 	}
 	allowed := "name"
 	if kind == "hosts" {
-		allowed += " provider address traffic"
+		allowed += " provider address address_mode traffic"
 	}
 	if kind == "nodes" {
 		allowed += " engine"
@@ -47,7 +47,7 @@ func (s *Server) updateResource(w http.ResponseWriter, r *http.Request) error {
 			return bad("update values must be strings")
 		}
 		v = strings.TrimSpace(v)
-		if v == "" || len([]rune(v)) > 255 {
+		if (v == "" && !(kind == "hosts" && key == "address")) || len([]rune(v)) > 255 {
 			return bad("invalid update value")
 		}
 		if key == "name" && len([]rune(v)) > 100 {
@@ -87,6 +87,44 @@ func (s *Server) updateResource(w http.ResponseWriter, r *http.Request) error {
 			}
 			if count > 0 {
 				return problem{409, "engine is immutable while instances reference this node"}
+			}
+		}
+	}
+	if kind == "hosts" {
+		var previous, mode string
+		var reported []byte
+		if e = tx.QueryRow(ctx, "SELECT address,address_mode,reported_addresses FROM hosts WHERE tenant_id=$1 AND id=$2", tenant, locked).Scan(&previous, &mode, &reported); e != nil {
+			return e
+		}
+		current := previous
+		if value, ok := updates["address"]; ok {
+			current = value
+			if current == "" {
+				current = "outbound-agent"
+				mode = "auto"
+			}
+		}
+		if value, ok := updates["address_mode"]; ok {
+			mode = value
+		} else if value, edited := updates["address"]; edited && value != previous && current != "outbound-agent" {
+			if _, isIP := usableHostIP(current); !isIP {
+				mode = "manual"
+			}
+		}
+		mode, e = hostAddressMode(current, mode)
+		if e != nil {
+			return e
+		}
+		addresses := []string{}
+		_ = json.Unmarshal(reported, &addresses)
+		// Explicit manual edits take effect immediately, even before Agent catches up.
+		if value, edited := updates["address"]; mode == "auto" && (!edited || value == previous || value == "") {
+			current = reportedPrimary(previous, addresses)
+		}
+		updates["address"], updates["address_mode"] = current, mode
+		if current != previous && len(s.MasterKey) == 32 {
+			if e = s.syncHostAddresses(r, tx, locked, previous, current, addresses); e != nil {
+				return e
 			}
 		}
 	}

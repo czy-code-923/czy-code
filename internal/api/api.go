@@ -322,7 +322,7 @@ func audit(ctx context.Context, tx pgx.Tx, actor, action, id string) error {
 }
 func (s *Server) list(w http.ResponseWriter, r *http.Request) error {
 	// SQL identifiers are selected solely from this fixed allowlist.
-	tables := map[string]string{"hosts": "SELECT tenant_id,id,name,provider,address,last_seen,COALESCE(last_seen>now()-interval '90 seconds',false) online,agent_mode,agent_version,platform,reported_addresses,control_origin,connection_paused,retire_state,retire_requested_at,cleanup_capable,created_at,(SELECT " + hostTrafficJSON + " FROM host_traffic t WHERE t.tenant_id=hosts.tenant_id AND t.host_id=hosts.id) traffic FROM hosts", "nodes": "SELECT * FROM nodes", "instances": "SELECT * FROM instances", "tunnels": "SELECT * FROM tunnels", "configs": "SELECT * FROM configs", "tasks": "SELECT tenant_id,id,instance_id,config_id,request_key,state,attempts,lease_until,result,created_at,updated_at,mode,operation,artifact_checksum FROM tasks", "audit": "SELECT * FROM audit", "routes": "SELECT * FROM route_plans"}
+	tables := map[string]string{"hosts": "SELECT tenant_id,id,name,provider,address,last_seen,COALESCE(last_seen>now()-interval '90 seconds',false) online,agent_mode,agent_version,platform,reported_addresses,address_mode,control_origin,connection_paused,retire_state,retire_requested_at,cleanup_capable,created_at,(SELECT " + hostTrafficJSON + " FROM host_traffic t WHERE t.tenant_id=hosts.tenant_id AND t.host_id=hosts.id) traffic FROM hosts", "nodes": "SELECT * FROM nodes", "instances": "SELECT * FROM instances", "tunnels": "SELECT * FROM tunnels", "configs": "SELECT * FROM configs", "tasks": "SELECT tenant_id,id,instance_id,config_id,request_key,state,attempts,lease_until,result,created_at,updated_at,mode,operation,artifact_checksum FROM tasks", "audit": "SELECT * FROM audit", "routes": "SELECT * FROM route_plans"}
 	tables["firewalls"] = "SELECT tenant_id,id,host_id,name,version,checksum,archived_at,deleted_at,created_at FROM firewall_policies"
 	q, ok := tables[r.PathValue("kind")]
 	if !ok {
@@ -363,24 +363,25 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) error {
 }
 
 type input struct {
-	Name       string            `json:"name"`
-	Provider   string            `json:"provider"`
-	Address    string            `json:"address"`
-	Engine     string            `json:"engine"`
-	HostID     string            `json:"host_id"`
-	NodeID     string            `json:"node_id"`
-	ListenPort int               `json:"listen_port"`
-	InstanceID string            `json:"instance_id"`
-	LocalHost  string            `json:"local_host"`
-	LocalPort  int               `json:"local_port"`
-	RemotePort int               `json:"remote_port"`
-	Hops       []string          `json:"hops"`
-	Traffic    *hostTrafficInput `json:"traffic"`
+	Name        string            `json:"name"`
+	Provider    string            `json:"provider"`
+	Address     string            `json:"address"`
+	AddressMode string            `json:"address_mode"`
+	Engine      string            `json:"engine"`
+	HostID      string            `json:"host_id"`
+	NodeID      string            `json:"node_id"`
+	ListenPort  int               `json:"listen_port"`
+	InstanceID  string            `json:"instance_id"`
+	LocalHost   string            `json:"local_host"`
+	LocalPort   int               `json:"local_port"`
+	RemotePort  int               `json:"remote_port"`
+	Hops        []string          `json:"hops"`
+	Traffic     *hostTrafficInput `json:"traffic"`
 }
 
 func (s *Server) create(w http.ResponseWriter, r *http.Request) error {
 	kind := r.PathValue("kind")
-	allowed := map[string]string{"hosts": "name provider address traffic", "nodes": "name engine", "instances": "name host_id node_id listen_port", "tunnels": "name instance_id local_host local_port remote_port", "routes": "name hops"}
+	allowed := map[string]string{"hosts": "name provider address address_mode traffic", "nodes": "name engine", "instances": "name host_id node_id listen_port", "tunnels": "name instance_id local_host local_port remote_port", "routes": "name hops"}
 	keys, ok := allowed[kind]
 	if !ok {
 		return problem{404, "unknown writable collection"}
@@ -422,8 +423,12 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) error {
 		if len(b.Address) > 255 || len(b.Provider) > 100 {
 			return bad("provider or inventory address too long")
 		}
+		b.AddressMode, e = hostAddressMode(b.Address, b.AddressMode)
+		if e != nil {
+			return e
+		}
 		token := ID() + ID()
-		_, e = tx.Exec(ctx, "INSERT INTO hosts(tenant_id,id,name,provider,address,agent_hash) VALUES($1,$2,$3,$4,$5,$6)", tenant, id, b.Name, b.Provider, b.Address, Hash(token))
+		_, e = tx.Exec(ctx, "INSERT INTO hosts(tenant_id,id,name,provider,address,agent_hash,address_mode) VALUES($1,$2,$3,$4,$5,$6,$7)", tenant, id, b.Name, b.Provider, b.Address, Hash(token), b.AddressMode)
 		result["agent_token"] = token
 		if e == nil {
 			e = initHostTraffic(ctx, tx, id, b.Traffic)

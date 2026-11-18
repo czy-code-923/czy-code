@@ -5,8 +5,8 @@ import (
 	"errors"
 	"github.com/jackc/pgx/v5"
 	"net/http"
-	"net/netip"
 	"regexp"
+	"slices"
 	"vps-control/internal/controlorigin"
 )
 
@@ -32,27 +32,13 @@ func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request, host string) 
 		return bad("invalid agent identity")
 	}
 	addresses := []string{}
-	primary := ""
-	best := 0
 	for _, value := range b.Addresses {
-		a, e := netip.ParseAddr(value)
-		if e != nil || a.Zone() != "" || a.IsUnspecified() || a.IsMulticast() || a.IsLoopback() || a.IsLinkLocalUnicast() {
+		a, ok := usableHostIP(value)
+		if !ok {
 			return bad("invalid interface address")
 		}
-		addresses = append(addresses, a.String())
-		rank := 1
-		if a.Is4() {
-			rank = 2
-		}
-		if !a.IsPrivate() {
-			rank = 3
-			if a.Is4() {
-				rank = 4
-			}
-		}
-		if rank > best {
-			best = rank
-			primary = a.String()
+		if !slices.Contains(addresses, a.String()) {
+			addresses = append(addresses, a.String())
 		}
 	}
 	if b.ControlOrigin != "" {
@@ -60,9 +46,38 @@ func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request, host string) 
 			return bad("invalid reported control origin")
 		}
 	}
-	raw, _ := json.Marshal(addresses)
-	_, e := s.DB.Exec(r.Context(), "UPDATE hosts SET last_seen=now(),cleanup_capable=$8,agent_mode=$3,agent_version=CASE WHEN $4<>'' THEN $4 ELSE agent_version END,control_origin=CASE WHEN $9<>'' THEN $9 ELSE control_origin END,platform=CASE WHEN $5<>'' THEN $5 ELSE platform END,reported_addresses=$6,address=CASE WHEN address='outbound-agent' AND $7<>'' THEN $7 ELSE address END WHERE tenant_id=$1 AND id=$2", tenant, host, b.Mode, b.Version, b.Platform, raw, primary, b.Cleanup, b.ControlOrigin)
+	tx, e := s.DB.Begin(r.Context())
 	if e != nil {
+		return e
+	}
+	defer tx.Rollback(r.Context())
+	if e = graphLock(r, tx); e != nil {
+		return e
+	}
+	var previous, addressMode string
+	var previousRaw []byte
+	if e = tx.QueryRow(r.Context(), `SELECT address,address_mode,reported_addresses FROM hosts WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL FOR UPDATE`, tenant, host).Scan(&previous, &addressMode, &previousRaw); e != nil {
+		return e
+	}
+	// Empty/legacy heartbeats must not erase a valid interface inventory.
+	if len(addresses) == 0 {
+		_ = json.Unmarshal(previousRaw, &addresses)
+	}
+	primary := previous
+	if addressMode == "auto" {
+		primary = reportedPrimary(previous, addresses)
+	}
+	raw, _ := json.Marshal(addresses)
+	_, e = tx.Exec(r.Context(), "UPDATE hosts SET last_seen=now(),cleanup_capable=$8,agent_mode=$3,agent_version=CASE WHEN $4<>'' THEN $4 ELSE agent_version END,control_origin=CASE WHEN $9<>'' THEN $9 ELSE control_origin END,platform=CASE WHEN $5<>'' THEN $5 ELSE platform END,reported_addresses=$6,address=$7 WHERE tenant_id=$1 AND id=$2", tenant, host, b.Mode, b.Version, b.Platform, raw, primary, b.Cleanup, b.ControlOrigin)
+	if e != nil {
+		return e
+	}
+	if len(s.MasterKey) == 32 {
+		if e = s.syncHostAddresses(r, tx, host, previous, primary, addresses); e != nil {
+			return e
+		}
+	}
+	if e = tx.Commit(r.Context()); e != nil {
 		return e
 	}
 	var rid *string

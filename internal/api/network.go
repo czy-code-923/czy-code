@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"github.com/jackc/pgx/v5"
 	"net/http"
-	"net/netip"
 	"slices"
 	"vps-control/internal/live"
 )
@@ -27,8 +26,9 @@ func (s *Server) applyNetwork(r *http.Request, tx pgx.Tx, b liveInput, spec *liv
 	ips = append([]string{address}, ips...)
 	known := map[string]bool{}
 	families := map[string]bool{}
-	for _, ip := range ips {
-		if a, e := netip.ParseAddr(ip); e == nil && a.Zone() == "" && !a.IsLoopback() && !a.IsUnspecified() && !a.IsLinkLocalUnicast() {
+	for i, ip := range ips {
+		if a, ok := usableHostIP(ip); ok {
+			ips[i] = a.String()
 			known[a.String()] = true
 			if a.Is4() {
 				families["ipv4"] = true
@@ -49,11 +49,13 @@ func (s *Server) applyNetwork(r *http.Request, tx pgx.Tx, b liveInput, spec *liv
 		}
 	}
 	if b.EndpointAddresses != nil {
-		spec.EndpointAddresses = *b.EndpointAddresses
-		for _, ip := range spec.EndpointAddresses {
-			if !known[ip] {
-				return bad("所选发布 IP 不属于此主机，请刷新地址或使用手动连接地址")
+		spec.EndpointAddresses = slices.Clone(*b.EndpointAddresses)
+		for i, ip := range spec.EndpointAddresses {
+			a, ok := usableHostIP(ip)
+			if !ok || !known[a.String()] {
+				return bad("所选发布 IP 不属于此主机，请重新选择新 IP；手动填写连接地址时请清空发布 IP 选择")
 			}
+			spec.EndpointAddresses[i] = a.String()
 		}
 		if len(spec.EndpointAddresses) > 0 {
 			spec.Address = spec.EndpointAddresses[0]

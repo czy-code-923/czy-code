@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "星枢 · VPS 多机管理 API",
-    "version": "0.25.9",
+    "version": "0.25.10",
     "description": "Self-workspace API for host agents, proxy protocols, user quotas and client subscriptions. Bearer administrator token or expiring scoped xs_ API key. No arbitrary shell; privileged gateway work and API key administration remain root-only."
   },
   "servers": [
@@ -2151,6 +2151,14 @@
                   },
                   "address": {
                     "type": "string"
+                  },
+                  "address_mode": {
+                    "type": "string",
+                    "enum": [
+                      "auto",
+                      "manual"
+                    ],
+                    "description": "auto follows Agent interface IP changes; manual preserves fixed inventory/NAT/domain addresses. Published IP selections follow the same address family; independent connection domains stay unchanged."
                   }
                 }
               }
@@ -8095,6 +8103,14 @@
           },
           "address": {
             "type": "string"
+          },
+          "address_mode": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "manual"
+            ],
+            "description": "auto follows Agent interface IP changes; manual preserves fixed inventory/NAT/domain addresses. Published IP selections follow the same address family; independent connection domains stay unchanged."
           }
         }
       },
