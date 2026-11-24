@@ -3,14 +3,46 @@ package engine
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"vps-control/internal/executor"
 )
+
+type releaseTransport func(*http.Request) (*http.Response, error)
+
+func (f releaseTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestOfficialMetadataUsesCITokenWithoutSendingItToAssets(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "test-ci-token")
+	for _, raw := range []string{"https://api.github.com/repos/SagerNet/sing-box/releases/latest", "https://api.github.com/repos/XTLS/Xray-core/releases/tags/v1.0.0", "https://github.com/SagerNet/sing-box/releases/download/v1.14.4/archive.tar.gz", "https://release-assets.githubusercontent.com/archive", "https://api.github.com.evil.test/repos/SagerNet/sing-box/releases/latest"} {
+		client := Client()
+		client.Transport = releaseTransport(func(r *http.Request) (*http.Response, error) {
+			expected := ""
+			if r.URL.Host == "api.github.com" {
+				expected = "Bearer test-ci-token"
+			}
+			if r.Header.Get("Authorization") != expected {
+				t.Fatal("unexpected release credential destination", r.URL.Host)
+			}
+			return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("{}")), Header: make(http.Header)}, nil
+		})
+		if _, err := request(context.Background(), client, raw, 100); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r, _ := http.NewRequest("GET", "https://release-assets.githubusercontent.com/archive", nil)
+	r.Header.Set("Authorization", "Bearer test-ci-token")
+	if err := Client().CheckRedirect(r, nil); err != nil || r.Header.Get("Authorization") != "" {
+		t.Fatal("redirect retained API credential", err)
+	}
+}
 
 func TestOfficialSelectionRejectsURLsAndUnverifiedAssets(t *testing.T) {
 	for _, v := range []string{"https://evil.test/file", "../../bin", "1.14.4;id", "latest/other"} {

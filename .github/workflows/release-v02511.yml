@@ -1,5 +1,5 @@
 name: Publish verified Starhub 0.25.11
-# Verify host IP changes, legacy inventory modes, subscriptions and installation.
+# Verify host recovery, metering, session stability and authenticated official downloads.
 on:
   push:
     branches: [main]

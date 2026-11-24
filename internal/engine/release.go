@@ -76,6 +76,8 @@ func officialURL(raw string) bool {
 }
 func Client() *http.Client {
 	return &http.Client{Timeout: 5 * time.Minute, CheckRedirect: func(r *http.Request, via []*http.Request) error {
+		// API credentials never belong on a release asset or redirect target.
+		r.Header.Del("Authorization")
 		if len(via) > 5 || !officialURL(r.URL.String()) {
 			return errors.New("unexpected official release redirect")
 		}
@@ -88,6 +90,11 @@ func request(ctx context.Context, client *http.Client, raw string, limit int64) 
 		return nil, e
 	}
 	req.Header.Set("User-Agent", "Starhub-official-engine-manager")
+	if req.URL.Scheme == "https" && req.URL.Host == "api.github.com" && req.URL.User == nil && (strings.HasPrefix(req.URL.Path, "/repos/SagerNet/sing-box/releases/") || strings.HasPrefix(req.URL.Path, "/repos/XTLS/Xray-core/releases/")) {
+		if token := os.Getenv("GITHUB_TOKEN"); token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+	}
 	res, e := client.Do(req)
 	if e != nil {
 		return nil, errors.New("official release connection failed")
