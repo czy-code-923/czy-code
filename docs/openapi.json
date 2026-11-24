@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "星枢 · VPS 多机管理 API",
-    "version": "0.25.10",
+    "version": "0.25.11",
     "description": "Self-workspace API for host agents, proxy protocols, user quotas and client subscriptions. Bearer administrator token or expiring scoped xs_ API key. No arbitrary shell; privileged gateway work and API key administration remain root-only."
   },
   "servers": [
@@ -8060,6 +8060,66 @@
           },
           "409": {
             "description": "Stale revision, revoked link or invalid selection"
+          }
+        }
+      }
+    },
+    "/api/v1/agent/status": {
+      "post": {
+        "operationId": "agentRecoveryStatus",
+        "summary": "Agent-local recovery health without exposing configuration",
+        "tags": [
+          "Agent"
+        ],
+        "security": [
+          {
+            "AgentToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Host-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current host heartbeat, OS traffic freshness, failed/pending enabled node counts and control server time",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "server_time": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "online": {
+                      "type": "boolean"
+                    },
+                    "traffic_fresh": {
+                      "type": "boolean"
+                    },
+                    "paused": {
+                      "type": "boolean"
+                    },
+                    "failed_services": {
+                      "type": "integer"
+                    },
+                    "pending_services": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid Agent identity"
           }
         }
       }

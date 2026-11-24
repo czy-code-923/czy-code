@@ -45,9 +45,8 @@ func preflightAdditional(old, next []Work) error {
 		}
 		for _, network := range portNetworks(w.Spec) {
 			ports := []int{w.Spec.Port}
-			if w.Spec.HopPorts != "" {
-				ports = w.Spec.ReservedPorts()
-			}
+			// Optional UDP redirects are checked independently by syncHopping.
+			// A hop conflict must not stop every inbound in this kernel bundle.
 			for _, port := range ports {
 				if occupied[network+"/"+portString(port)] {
 					continue

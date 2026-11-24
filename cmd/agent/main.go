@@ -67,8 +67,13 @@ func run(ctx context.Context) error {
 		liveCtx, cancel := context.WithCancel(ctx)
 		defer cancel()
 		liveErrors := make(chan error, 1)
+		trafficDone := make(chan struct{})
 		go func() {
-			err := runLive(liveCtx, call)
+			defer close(trafficDone)
+			runHostTraffic(liveCtx, call)
+		}()
+		go func() {
+			err := superviseLive(liveCtx, func(ctx context.Context) error { return runLive(ctx, call) }, 10*time.Second)
 			if err != nil {
 				log.Print("live runner initialization failed: ", err)
 			}
@@ -76,6 +81,7 @@ func run(ctx context.Context) error {
 		}()
 		defer func() {
 			cancel()
+			<-trafficDone
 			if err := <-liveErrors; err != nil {
 				log.Print("live runner stopped: ", err)
 			}
@@ -229,6 +235,12 @@ func controlCaller(client *http.Client, base, host, token string) func(context.C
 		}
 		if res.StatusCode >= 300 {
 			client.CloseIdleConnections()
+			var detail struct {
+				Error string `json:"error"`
+			}
+			if json.Unmarshal(data, &detail) == nil && (detail.Error == "host clock ahead of control server; enable NTP on both hosts" || detail.Error == "host clock behind control server; enable NTP on both hosts") {
+				return nil, res.StatusCode, fmt.Errorf("control HTTP %d: %s", res.StatusCode, detail.Error)
+			}
 			return nil, res.StatusCode, fmt.Errorf("control HTTP %d", res.StatusCode)
 		}
 		if readErr != nil {

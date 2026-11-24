@@ -49,6 +49,17 @@ func TestAdditivePortConflictRetainsIdenticalRunningMembers(t *testing.T) {
 		t.Fatal("initial core did not start")
 	}
 	pid := proc.cmd.Process.Pid
+	metadata := old
+	metadata.Version++
+	metadata.Spec.Address = "client-address.example"
+	if err := runner.Reconcile(context.Background(), BundleWork([]Work{metadata})); err != nil {
+		t.Fatal(err)
+	}
+	if proc.cmd == nil || proc.cmd.Process.Pid != pid || proc.members[0].Version != metadata.Version {
+		t.Fatal("metadata-only revision restarted the running core or was not acknowledged")
+	}
+	old = metadata
+	initial = BundleWork([]Work{old})
 	occupied, e := net.Listen("tcp", "127.0.0.1:0")
 	if e != nil {
 		t.Fatal(e)

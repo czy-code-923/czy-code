@@ -1,5 +1,5 @@
 """Repair an existing Linux Agent control origin without changing its identity."""
-import hashlib,hmac,io,json,os,platform,re,secrets,shutil,stat,subprocess,sys,tempfile,time,urllib.parse,urllib.request,zipfile
+import datetime,hashlib,hmac,io,json,os,platform,re,secrets,shutil,stat,subprocess,sys,tempfile,time,urllib.parse,urllib.request,zipfile
 from pathlib import Path
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -87,10 +87,39 @@ def verify(origin,values):
     body=json.dumps({'host_id':values['HOST_ID'],'nonce':nonce,'origin':origin}).encode()
     req=urllib.request.Request(origin+'/api/v1/agent/verify-origin',data=body,headers={'Content-Type':'application/json','User-Agent':'Starhub-Agent-Repair/'+VERSION})
     with urllib.request.build_opener(urllib.request.ProxyHandler({}),NoRedirect()).open(req,timeout=15) as response:
-        proof=json.loads(response.read(2048))['proof']
+        result=json.loads(response.read(2048));proof=result['proof']
     key=hashlib.sha256(values['AGENT_TOKEN'].encode()).hexdigest().encode()
     expected=hmac.new(key,('starhub-control-origin-v1:'+nonce+':'+origin).encode(),hashlib.sha256).hexdigest()
     if not hmac.compare_digest(proof,expected):raise ValueError('New endpoint does not prove this Agent identity; nothing changed')
+    if result.get('server_time'):
+        server_time=datetime.datetime.fromisoformat(result['server_time'].replace('Z','+00:00')).timestamp()
+        if abs(time.time()-server_time)>30:raise ValueError('Clock skew exceeds 30 seconds. Enable NTP on both the control server and this VPS before repairing the address.')
+
+def health(origin,values):
+    req=urllib.request.Request(origin+'/api/v1/agent/status',data=b'null',headers={'Content-Type':'application/json','Authorization':'Bearer '+values['AGENT_TOKEN'],'X-Host-ID':values['HOST_ID'],'User-Agent':'Starhub-Agent-Repair/'+VERSION})
+    with urllib.request.build_opener(urllib.request.ProxyHandler({}),NoRedirect()).open(req,timeout=10) as response:return json.loads(response.read(4096))
+
+def healthy(status,since=None):
+    if not (status.get('online') is True and status.get('traffic_fresh') is True and not status.get('paused') and status.get('failed_services')==0 and status.get('pending_services')==0):return False
+    if since:
+        def at(value):return datetime.datetime.fromisoformat(value.replace('Z','+00:00'))
+        required=['last_seen','last_sample_at']+(['last_node_report_at'] if status.get('enabled_services',0)>0 else [])
+        try:
+            if any(not status.get(k) or at(status[k])<at(since) for k in required):return False
+        except (TypeError,ValueError):return False
+    return True
+
+def confirm_recovery(origin,values,deadline=60,since=None):
+    until=time.monotonic()+deadline;last={}
+    while time.monotonic()<until:
+        try:
+            last=health(origin,values)
+            if healthy(last,since):
+                print('Verified: Agent heartbeat, OS traffic sampling and all enabled node versions are healthy. Existing identity and traffic ledger were preserved.')
+                return
+        except Exception:pass
+        time.sleep(3)
+    raise ValueError('Address updated but recovery is incomplete: online='+str(last.get('online'))+', traffic_fresh='+str(last.get('traffic_fresh'))+', paused='+str(last.get('paused'))+', failed_nodes='+str(last.get('failed_services'))+', pending_nodes='+str(last.get('pending_services'))+'. Check NTP and journalctl -u harbor-agent.service; for UDP hopping also check starhub-agent-network.service and port conflicts. Credentials were not replaced.')
 
 def main():
     if os.geteuid()!=0:raise ValueError('Run as root on the existing Agent host')
@@ -110,9 +139,24 @@ def main():
         with temporary.open('x') as out:out.write(updated);out.flush();os.fsync(out.fileno())
         temporary.chmod(0o600);os.replace(temporary,path)
     finally:temporary.unlink(missing_ok=True)
+    restarted=True
     if '--upgrade-agent' in sys.argv[2:]:upgrade_agent(path)
-    else:subprocess.run(['systemctl','restart','harbor-agent.service'],check=True,timeout=40)
-    print('Control address repaired. Agent identity, proxy configuration and traffic ledger were preserved. Confirm the new heartbeat in the panel.')
+    else:
+        current={}
+        if values['CONTROL_URL'].rstrip('/')==origin:
+            try:current=health(origin,values)
+            except Exception:pass
+        if current.get('paused'):raise ValueError('Management is paused in the panel; resume it there before recovery. Agent identity was preserved.')
+        if not healthy(current):subprocess.run(['systemctl','restart','harbor-agent.service'],check=True,timeout=40)
+        else:
+            restarted=False
+            print('Control address is unchanged and the Agent is healthy; unnecessary restart skipped.')
+    since=None
+    if restarted:
+        since=datetime.datetime.now(datetime.timezone.utc).isoformat()
+        try:since=health(origin,values).get('server_time')
+        except Exception:pass
+    confirm_recovery(origin,values,since=since)
 
 if __name__=='__main__':
     try:main()

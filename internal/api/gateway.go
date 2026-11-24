@@ -348,6 +348,22 @@ func (s *Server) saveManagedCertificate(r *http.Request, tx pgx.Tx, id, domain s
 	if e != nil {
 		return bad("invalid certificate")
 	}
+	var previousSealed []byte
+	if e = tx.QueryRow(r.Context(), "SELECT sealed FROM managed_certificates WHERE tenant_id=$1 AND id=$2", tenant, id).Scan(&previousSealed); e != nil {
+		return e
+	}
+	unchanged := false
+	if len(previousSealed) > 0 {
+		previousRaw, err := live.Open(s.MasterKey, previousSealed)
+		if err != nil {
+			return err
+		}
+		var previous certificatePair
+		if err = json.Unmarshal(previousRaw, &previous); err != nil {
+			return err
+		}
+		unchanged = strings.TrimSpace(previous.Certificate) == strings.TrimSpace(pair.Certificate) && strings.TrimSpace(previous.PrivateKey) == strings.TrimSpace(pair.PrivateKey)
+	}
 	raw, _ := json.Marshal(certificatePair{pair.Certificate, pair.PrivateKey})
 	sealed, e := live.Seal(s.MasterKey, raw)
 	if e != nil {
@@ -386,6 +402,11 @@ func (s *Server) saveManagedCertificate(r *http.Request, tx pgx.Tx, id, domain s
 			rows.Close()
 			return bad("certificate binding mismatch")
 		}
+		// Certbot retains a not-yet-due certificate. A successful check must
+		// not restart every bound proxy when its TLS material is unchanged.
+		if strings.TrimSpace(spec.Certificate) == strings.TrimSpace(pair.Certificate) && strings.TrimSpace(spec.PrivateKey) == strings.TrimSpace(pair.PrivateKey) {
+			continue
+		}
 		spec.Certificate = pair.Certificate
 		spec.PrivateKey = pair.PrivateKey
 		raw, _ = json.Marshal(spec)
@@ -408,5 +429,8 @@ func (s *Server) saveManagedCertificate(r *http.Request, tx pgx.Tx, id, domain s
 			return e
 		}
 	}
-	return nil
+	if unchanged && len(changes) == 0 {
+		_, e = tx.Exec(r.Context(), "UPDATE managed_certificates SET result='证书已检查；现有证书内容未变化，未重新部署节点' WHERE tenant_id=$1 AND id=$2", tenant, id)
+	}
+	return e
 }

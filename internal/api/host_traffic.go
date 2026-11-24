@@ -192,7 +192,13 @@ func (s *Server) hostTrafficReport(w http.ResponseWriter, r *http.Request, host 
 		return e
 	}
 	now := time.Now()
-	if b.State != "collecting" && b.State != "unavailable" || len(b.Interfaces) > 64 || !manifest.ValidID(b.Epoch) || b.At.After(now.Add(time.Minute)) || b.At.Before(now.Add(-24*time.Hour)) || b.Started.After(b.At) || b.Started.Before(time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)) || b.Gaps < 0 {
+	if b.At.After(now.Add(time.Minute)) {
+		return bad("host clock ahead of control server; enable NTP on both hosts")
+	}
+	if b.At.Before(now.Add(-24 * time.Hour)) {
+		return bad("host clock behind control server; enable NTP on both hosts")
+	}
+	if b.State != "collecting" && b.State != "unavailable" || len(b.Interfaces) > 64 || !manifest.ValidID(b.Epoch) || b.Started.After(b.At) || b.Started.Before(time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)) || b.Gaps < 0 {
 		return bad("invalid host interface report")
 	}
 	seen := map[string]bool{}

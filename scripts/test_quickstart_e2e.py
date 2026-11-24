@@ -79,6 +79,7 @@ def main():
     row=api('live',{'name':'CI disposable SS','host_id':host['id'],'engine':'sing-box','kind':'shadowsocks','listen':'127.0.0.1','address':'127.0.0.1','port':24789},201)
     api('live/'+row['id']+'/toggle',{'enabled':True})
     wait(lambda:any(v['id']==row['id'] and v['state']=='running' and v['reported_version']==v['version'] for v in api('live')),'Native inbound deployment')
+    wait(lambda: (lambda s: s['online'] and s['traffic_fresh'] and s['failed_services']==0 and s['pending_services']==0)(api('agent/status',{},agent=credentials)), 'Verified Agent recovery health')
     print('One-command Agent onboarding and real native deployment: PASS',flush=True)
     update=api('hosts/'+host['id']+'/engine-updates',{'engine':'sing-box','version':'latest'},202)
     def switched():

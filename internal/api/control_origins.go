@@ -65,7 +65,7 @@ func (s *Server) verifyControlOrigin(w http.ResponseWriter, r *http.Request) err
 	if e := s.DB.QueryRow(r.Context(), `SELECT agent_hash FROM hosts WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL AND retire_state=''`, tenant, b.Host).Scan(&hash); e != nil {
 		return e
 	}
-	send(w, 200, map[string]string{"proof": controlorigin.Proof(hash, b.Nonce, origin)})
+	send(w, 200, map[string]string{"proof": controlorigin.Proof(hash, b.Nonce, origin), "server_time": time.Now().UTC().Format(time.RFC3339Nano)})
 	return nil
 }
 

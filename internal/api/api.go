@@ -239,6 +239,7 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("PUT /api/v1/hosts/{id}/traffic", s.admin(s.hostTraffic))
 	m.HandleFunc("POST /api/v1/hosts/{id}/traffic/calibrate", s.admin(s.hostTraffic))
 	m.HandleFunc("POST /api/v1/agent/host-traffic", s.agent(s.hostTrafficReport))
+	m.HandleFunc("POST /api/v1/agent/status", s.agent(s.agentStatus))
 	m.HandleFunc("GET /api/v1/engine-releases", s.admin(s.engineRelease))
 	m.HandleFunc("GET /api/v1/hosts/{id}/engine-updates", s.admin(s.engineUpdates))
 	m.HandleFunc("POST /api/v1/hosts/{id}/engine-updates", s.admin(s.engineUpdates))

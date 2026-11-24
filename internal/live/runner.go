@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -27,23 +28,25 @@ type Report struct {
 	State   string `json:"state"`
 }
 type process struct {
-	hops     []hopRule
-	rejected []Report
-	meter    *kernelMeter
-	members  []Work
-	engine   string
-	version  int
-	sum      string
-	cmd      *exec.Cmd
-	done     chan error
-	started  time.Time
-	retry    time.Time
-	attempts int
-	state    string
-	release  func()
+	hops      []hopRule
+	rejected  []Report
+	meter     *kernelMeter
+	members   []Work
+	engine    string
+	version   int
+	sum       string
+	renderSum string
+	cmd       *exec.Cmd
+	done      chan error
+	started   time.Time
+	retry     time.Time
+	attempts  int
+	state     string
+	release   func()
 }
 type Runner struct {
 	hopRevision string
+	hopFailures map[string]bool
 	lastWork    []Work
 	usage       *usageStore
 	root        *os.Root
@@ -139,14 +142,14 @@ func (r *Runner) Reports() []Report {
 				if !m.Enabled {
 					state = "stopped"
 				}
-				if m.Spec.HopPorts != "" && !hoppingReady && state != "failed" {
+				if m.Spec.HopPorts != "" && (!hoppingReady || r.hopFailures[m.ID]) && state != "failed" && m.Enabled {
 					state = "pending"
 				}
 				reports = append(reports, Report{m.ID, m.Version, state})
 			}
 		} else {
 			state := p.state
-			if len(p.hops) > 0 && !hoppingReady {
+			if len(p.hops) > 0 && (!hoppingReady || r.hopFailures[id]) {
 				state = "pending"
 			}
 			reports = append(reports, Report{id, p.version, state})
@@ -193,6 +196,7 @@ func (r *Runner) Reconcile(ctx context.Context, work []Work) error {
 		}
 		// One expired certificate must not block other instances or prevent a stop request.
 		if e := w.validate(); e != nil {
+			log.Printf("live service %s: specification validation failed", w.ID)
 			if len(w.Members) > 0 {
 				stopProcess(p)
 				p.members = w.Members
@@ -226,12 +230,26 @@ func (r *Runner) Reconcile(ctx context.Context, work []Work) error {
 		p.retry = time.Now().Add(30 * time.Second)
 		engine, files, e := w.Render()
 		if e != nil {
+			log.Printf("live service %s: render failed", w.ID)
+			continue
+		}
+		// Versions and client export settings can change without changing
+		// runtime bytes. Acknowledge them without dropping active sessions.
+		rendered, _ := json.Marshal(struct {
+			Binary executor.Binary
+			Files  map[string][]byte
+		}{r.binary[engine], files})
+		renderSum := manifest.Digest(rendered)
+		if p.cmd != nil && p.engine == engine && p.renderSum == renderSum {
+			p.sum, p.version, p.members, p.hops = sum, w.Version, w.Members, workHops(w)
+			p.rejected = nil
 			continue
 		}
 		var meter *kernelMeter
 		if len(w.Members) > 0 && (engine == "sing-box" || engine == "xray") {
 			meter, e = prepareMeter(engine, files, r.usage)
 			if e != nil {
+				log.Printf("live service %s: meter preparation failed", w.ID)
 				continue
 			}
 		}
@@ -262,6 +280,7 @@ func (r *Runner) Reconcile(ctx context.Context, work []Work) error {
 		abs := filepath.Join(r.root.Name(), filepath.FromSlash(dir))
 		v := executor.NativeValidator{Binaries: r.binary}
 		if e = v.Check(ctx, abs, []manifest.Artifact{{Name: "config.json", Engine: engine, Content: files["config.json"]}}); e != nil {
+			log.Printf("live service %s: %v", w.ID, e)
 			if p.cmd != nil && canRetainMembers(p.members, w.Members) {
 				rejectAdditive(p, w.Members)
 				continue
@@ -281,6 +300,7 @@ func (r *Runner) Reconcile(ctx context.Context, work []Work) error {
 				old = p.members
 			}
 			if e = preflightAdditional(old, w.Members); e != nil {
+				log.Printf("live service %s: port preflight failed: %v", w.ID, e)
 				if p.cmd != nil && canRetainMembers(p.members, w.Members) {
 					rejectAdditive(p, w.Members)
 				} else {
@@ -325,16 +345,19 @@ func (r *Runner) Reconcile(ctx context.Context, work []Work) error {
 		cmd.Stderr = io.Discard
 		prepareChild(cmd)
 		if e = cmd.Start(); e != nil {
+			log.Printf("live service %s: process startup failed: %v", w.ID, e)
 			continue
 		}
 		release, e := guardChild(cmd)
 		if e != nil {
+			log.Printf("live service %s: process guard failed", w.ID)
 			cmd.Process.Kill()
 			cmd.Wait()
 			continue
 		}
 		if meter != nil {
 			if e = meter.start(); e != nil {
+				log.Printf("live service %s: meter startup failed", w.ID)
 				cmd.Process.Kill()
 				cmd.Wait()
 				release()
@@ -348,6 +371,7 @@ func (r *Runner) Reconcile(ctx context.Context, work []Work) error {
 		p.done = make(chan error, 1)
 		go func(done chan error, c *exec.Cmd) { done <- c.Wait() }(p.done, cmd)
 		p.sum = sum
+		p.renderSum = renderSum
 		p.started = time.Now()
 		p.state = "pending"
 		r.prune(w.ID, sum)

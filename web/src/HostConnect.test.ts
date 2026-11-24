@@ -4,6 +4,13 @@ import {mount,flushPromises} from '@vue/test-utils'
 import HostConnect from './HostConnect.vue'
 let wrapper:ReturnType<typeof mount>|undefined
 afterEach(()=>{wrapper?.unmount();vi.useRealTimers();vi.restoreAllMocks()})
+it('distinguishes a live heartbeat from a stalled OS traffic sampler',async()=>{
+ const api=vi.fn(async()=>[{id:'b',online:true,traffic:{fresh:false}}])
+ wrapper=mount(HostConnect,{props:{host:{id:'b',name:'Existing',agent_version:'0.25.10'},api}});await flushPromises()
+ expect(wrapper.get('[role="status"]').text()).toContain('流量采样已断报')
+ expect(wrapper.get('[role="status"]').text()).toContain('NTP')
+ expect(wrapper.get('[role="status"]').text()).not.toContain('主机已连接')
+})
 it('generates a one-time command for a new host and stops polling after unmount',async()=>{
  vi.useFakeTimers();const api=vi.fn(async(_path:string,method='GET')=>method==='POST'?{command:'safe-test-command',expires_at:new Date(Date.now()+900000).toISOString()}:{state:'waiting'})
  wrapper=mount(HostConnect,{props:{host:{id:'a',name:'NAT host'},api}});await flushPromises()

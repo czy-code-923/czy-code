@@ -2,6 +2,8 @@ package live
 
 import (
 	"encoding/json"
+	"log"
+	"net"
 	"os"
 	"runtime"
 	"sort"
@@ -37,9 +39,17 @@ func (r *Runner) syncHopping() {
 		return
 	}
 	rules := []hopRule{}
+	r.hopFailures = map[string]bool{}
 	for _, p := range r.processes {
 		if p.cmd != nil {
-			rules = append(rules, p.hops...)
+			for _, rule := range p.hops {
+				if err := preflightHop(rule); err != nil {
+					r.hopFailures[rule.ID] = true
+					log.Printf("live service %s: optional UDP hopping unavailable: %v; primary listener retained", rule.ID, err)
+					continue
+				}
+				rules = append(rules, rule)
+			}
 		}
 	}
 	if len(rules) == 0 && r.hopRevision == "" {
@@ -78,6 +88,21 @@ func (r *Runner) syncHopping() {
 		return
 	}
 	r.hopRevision = revision
+}
+
+func preflightHop(rule hopRule) error {
+	spec := Spec{Port: rule.Port, ProtocolOptions: ProtocolOptions{HopPorts: rule.Ports}}
+	for _, port := range spec.ReservedPorts() {
+		if port == rule.Port {
+			continue
+		}
+		listener, err := net.ListenPacket("udp", net.JoinHostPort(rule.Listen, portString(port)))
+		if err != nil {
+			return err
+		}
+		listener.Close()
+	}
+	return nil
 }
 func (r *Runner) hoppingReady() bool {
 	if r.hopRevision == "" {
